@@ -68,23 +68,17 @@ function chef_env() {
   : ${CHEF_ENV:?}
   CHEF_CLIENT_KEY="${_CHEF_HOME:?}/${_CHEF_USER:?}-${CHEF_ENV,,}.pem"
   # comma-delimited paths will become an 'array'
-  CHEF_CB_PATH="${REPO_HOME:?}/chef-repo/cookbooks"
+  CHEF_COOKBOOK_PATH="${REPO_HOME:?}/chef-repo/cookbooks"
 
   unalias knife 2>/dev/null
   case ${CHEF_ENV,,} in
     chef10|10)
-    	CHEF_SERVER="https://chef.psddev.com"
-	;;
-    chef11|11)
-    	CHEF_SERVER="https://chef-east.psddev.com"
-	;;
-    snag)
-    	CHEF_SERVER="https://chef.snagfilms.com"
-	CHEF_CB_PATH="{REPO_HOME}/${CHEF_ENV,,}-repo/cookbooks"
+    	CHEF_SERVER="https://chef.dev.com"
+	CHEF_COOKBOOK_PATH="{REPO_HOME}/${CHEF_ENV,,}-repo/cookbooks"
 	;;
     beam)
     	unset CHEF_SERVER CHEF_CLIENT_KEY
-	CHEF_CB_PATH=""
+	CHEF_COOKBOOK_PATH=""
 	alias knife='\knife solo'
 	;;
     none|clear)

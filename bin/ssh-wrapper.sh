@@ -76,7 +76,6 @@ function _ssh() {
 # casting about for IDENTITY is dangerous, don't do it!
 #	{,${HOME:-\~}/{,.ssh,.aws/$AWS_PROFILE}/}{"$IDENTITY",id_rsa,$PROFILE}{,.pem}
 
-
   _cmd=SSH
   case ${1^^} in
     SCP|SFTP)
@@ -90,7 +89,6 @@ function _ssh() {
   esac
 
   : ${DEBUG:+${VERBOSE:=-v}}
-
   _env=
   for v in SSH_CONFIG SSH_OPTS PROFILE IDENTITY ${!AWS_*} VERBOSE; do
       [ -n "${!v}" ] || continue
