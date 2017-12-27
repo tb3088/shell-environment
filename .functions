@@ -1,0 +1,165 @@
+# $Id$
+
+__prompt() {
+  RC=$?
+  local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
+  PROMPT="\n${FCYN}\u${RS}@${FGRN}\h${RS}"
+
+#  _temp=$(
+  eval $(
+    set -e -o pipefail
+    awk '
+        NR==1 {
+	    gsub(/[\[\]]/," "); sub(/\.{3,}/," ")
+	    printf "_branch=%s _upstream=%s _status=%s _delta=%s ", $2, $3, $4, $5
+	    next
+	}
+        $1 ~ /M/ { mod++; } 
+	$1 ~ /D/ { del++; } 
+	$1 ~ /A/ { add++; }
+	$1 ~ /\?/ { unk++; }
+	$1 ~ /\!/ { ign++; }
+	END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
+    ' < <(git --no-pager status -b --porcelain 2>/dev/null)
+# TODO handle .svn
+  )
+#  [ -n "$_temp" ] && eval "$_temp"
+  if [ -n "$_branch" ]; then
+    case "$_status" in
+	'ahead')  _status='>'
+	    ;;
+	'behind') _status='<'
+	    ;;
+	'up-to-date'|*)
+	    # _status=`echo -e '\u2713'`
+	    unset _status _delta
+    esac
+    [[ $_mod == 0 ]] && unset _mod
+    [[ $_del == 0 ]] && unset _del
+    [[ $_add == 0 ]] && unset _add
+    [[ $_unk == 0 ]] && unset _unk
+    [[ $_ign == 0 ]] && unset _ign
+    [ $_tot -le 0 ] && unset _tot
+
+    PROMPT+=" git:$_branch"
+    _stat="${_status}${_delta}${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
+    PROMPT+="${_stat:+|${FRED}${_stat## }${RS}|}"
+  fi
+
+  _aws="${AWS_PROFILE:+AWS:${AWS_PROFILE:--}/${AWS_REGION:--}}"
+  [ "${#_aws}" -gt 8 ] && PROMPT+=" $_aws"
+
+  PROMPT+=" ${FYEL}\w${RS}\n\!.\j"
+#  PROMPT+="${CHEF_ENV+ ${BMAG}${CHEF_ENV}${RS}}"
+#  [[ $UID == 0 ]] && PROMPT+="${BRED}
+  [[ $RC != 0 ]] && PROMPT+="($RC)"
+  PROMPT+=" \$ "
+  PS1="$PROMPT"
+}
+
+
+function pidof() {
+  ps | awk -v pat="$1" '$NF ~ pat { print $1 }'
+}
+
+
+function chef_env() {
+  [ -n "$1" ] && CHEF_ENV=$1
+  : ${CHEF_ENV:?}
+  CHEF_CLIENT_KEY="${_CHEF_HOME:?}/${_CHEF_USER:?}-${CHEF_ENV,,}.pem"
+  # comma-delimited paths will become an 'array'
+  CHEF_CB_PATH="${REPO_HOME:?}/chef-repo/cookbooks"
+
+  unalias knife 2>/dev/null
+  case ${CHEF_ENV,,} in
+    chef10|10)
+    	CHEF_SERVER="https://chef.psddev.com"
+	;;
+    chef11|11)
+    	CHEF_SERVER="https://chef-east.psddev.com"
+	;;
+    snag)
+    	CHEF_SERVER="https://chef.snagfilms.com"
+	CHEF_CB_PATH="{REPO_HOME}/${CHEF_ENV,,}-repo/cookbooks"
+	;;
+    beam)
+    	unset CHEF_SERVER CHEF_CLIENT_KEY
+	CHEF_CB_PATH=""
+	alias knife='\knife solo'
+	;;
+    none|clear)
+	unset ${!CHEF_*}
+	return 0
+	;;
+    *)	echo "ERROR: unknown value ($CHEF_ENV) - exiting..."
+	unset CHEF_ENV
+	return 2
+  esac
+  export ${!CHEF_*}
+  for p in ${!CHEF_*}; do echo -n "$p = "; printenv $p; done
+}
+
+function git_branch() {
+  git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
+}
+
+function git_check() {
+  git diff --stat origin/$(git_branch) 2>/dev/null
+}
+
+function getcert() {
+  : ${1:?}
+  host=${1%:*}
+  port=${1#*:}
+  [ "$host" = "$port" ] && port=${2:-443}
+
+  output=`openssl s_client -connect ${host}:${port} </dev/null 2>/dev/null`
+  if [ -n "$output" ]; then
+	gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
+	gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" | openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
+  else 
+	return 1
+  fi
+}
+
+function cdl() { cd "${1:-.}" && ls; }
+
+#function beam() { test "${PWD##*/ops/}" != "beam" && return || `which beam` $@; }
+
+function myip() { nslookup myip.opendns.com resolver1.opendns.com; }
+
+function ask() { 
+  read -n 1 -t 3 -p "Are you sure (y/N)? "
+  echo
+  [ "${REPLY,,}" = 'y' ]
+}
+
+function runv() {
+  # mimic 'set -x'
+  echo >&2 "+ $*"
+  "$@"
+}
+
+function join_by() {
+  # escape whitespaces if no quote char. even delimiter is eligible (rare)
+  [ -n "$quote" ] || set -- "${@// /\\ }"
+
+  delim="${1:?}"; shift
+  [ $# -ne 0 ] || return
+
+  printf "${quote}%s${quote}" "$1"
+  shift
+  printf "${delim}${quote}%s${quote}" "$@"
+	# or process all but last and tack it on
+	# with ${@:1:$# -1}?
+
+#  echo -n "${quote}$1${quote}"; shift
+#  for elem in "$@"; do
+#    echo -n "${delim}${quote}${elem}${quote}"
+#  done
+  echo
+}
+
+function join_quote() {
+  quote=\' join_by "$@"
+}

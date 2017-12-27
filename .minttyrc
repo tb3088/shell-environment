@@ -1,0 +1,16 @@
+BoldAsFont=no
+FontHeight=10
+Transparency=off
+OpaqueWhenFocused=yes
+ScrollbackLines=500
+ClicksPlaceCursor=yes
+Columns=132
+Rows=50
+ScrollMod=off
+PgUpDnScroll=yes
+CursorType=underscore
+RightClickAction=paste
+BackspaceSendsBS=yes
+Font=Lucida Sans Typewriter
+CopyAsRTF=no
+Term=xterm-256color

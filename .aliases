@@ -1,0 +1,66 @@
+# To override the alias instruction use a '\' before it
+# eg. \rm will call the real /bin/rm not an alias.
+
+# Interactive operation...
+alias rm='\rm -i'
+alias mv='\mv -i'
+
+alias df='\df -h'
+alias du='\du -hD'
+
+alias grep='\grep --color'
+
+#alias ffs='sudo $(fc -ln -1)'
+alias ffs='eval sudo !!'
+alias free='\free -m'
+alias edit='eval ${EDITOR:?}'
+alias vi='`\which vim vi 2>/dev/null | head -1` -i NONE'
+
+alias ps='\ps -o uid,pid,ppid,stime,etime,cmd'
+
+case `uname -o` in
+  Cygwin)
+	alias ps='\ps -s';
+	alias 7z='run /cygdrive/c/Program\ Files\ \(x86\)/7-Zip/7z.exe'
+	alias np='run /cygdrive/c/Program\ Files\ \(x86\)/Notepad++/notepad++.exe'
+	alias downloads='pushd $USERPROFILE/Downloads'
+	alias workspace='pushd $USERPROFILE/workspace'
+	;;
+  darwin*)
+	#alias subl='open -a "Sublime Text 2"'
+	alias bbe='open -a "TextWrangler"'
+	alias gvim='open -a "MacVim"'
+	alias xc='open -a "Xcode"'
+	alias edit='${EDITOR:-open -e}'
+	;;
+esac
+
+# Some shortcuts for different directory listings
+alias ls='\ls -hAF --color=tty'
+alias ll='ls -lh'
+alias ld='ls -d'
+alias lt='ls -t'
+alias lS='ls -S'
+alias cdu='cd ..'
+
+alias sftp='\sftp -R 256 -B 262144'
+alias screen='\screen ${HOSTNAME:+-t ${HOSTNAME%%.*}}'
+alias ntpdate='sudo /usr/sbin/ntpd -gq'
+
+alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{time_starttransfer} Total time: %{time_total} ReturnCode: %{http_code} Download Size: %{size_download} Speed: %{speed_download} \n"'
+
+alias chef-repo='pushd $REPO_HOME/chef-repo'
+alias ops-repo='pushd $REPO_HOME/operations'
+alias gsb='git status -sb'
+alias gbl='git show-branch --all --list'
+alias krf='\knife role from file'
+alias ksn='\knife search node'
+alias kds='knife data bag show'
+alias kde='knife data bag edit'
+
+alias yaml2js="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
+#alias 18f='export HOME=awk -F: '{ print $(NF-1); }' /etc/passwd'
+
+#alias example='eval PROFILE=lab1 SSH_CONFIG="$HOME/.aws/${AWS_PROFILE:?}/$PROFILE/${AWS_REGION:?}/config" IDENTITY="$HOME/.aws/$AWS_PROFILE/lab.pem" SSH_OPTS="-o\ UserKnownHostsFile=${SSH_CONFIG%/*}/known_hosts" ssh-wrapper.sh'
+alias go-lab1='eval PROFILE=lab1 AWS_PROFILE=itg-assist AWS_REGION=us-east-1 SSH_CONFIG="\$HOME/.aws/\${AWS_PROFILE:?}/\$PROFILE/\${AWS_REGION:?}/config" SSH_OPTS="-o\ UserKnownHostsFile=\${SSH_CONFIG%/*}/known_hosts" ssh-wrapper.sh'
+#IDENTITY="$HOME/.aws/$AWS_PROFILE/lab.pem" 

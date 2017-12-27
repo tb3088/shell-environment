@@ -1,0 +1,61 @@
+# http://quenenni.domainepublic.net/screenrc.txt
+
+vbell off
+vbell_msg "Ring"
+
+# detach on hangup
+autodetach on
+
+# don't display copyright page
+startup_message off
+
+# scroll back
+defscrollback 1000
+
+# disable problems with 'cs' inherited from /etc/screenrc
+termcapinfo xterm* cs
+
+# purpose???
+#termcapinfo xterm-*|rxvt*|kterm*|Eterm*|cygwin hs:ts=\E]0;:fs=\007:ds=\E]0;\007
+
+hardstatus alwayslastline "%{-b gk}%-w%{+b kg}%50>%n %t%{-b gk}%+w"
+#hardstatus alwayslastline "%?%{yk}%-Lw%?%{wb}%n*%f %t%?(%u)%?%?%{yk}%+Lw%?"
+#hardstatus alwayslastline "%-Lw%{= BW}%50>%n%f* %t%{-}%+Lw%<"
+
+# caption is like hardstatus
+#caption always "%{= ck}%H  %= %Y-%m-%d | %c"
+#caption always "%{= bb}%{+b w}[ %t ]  %= %Y-%m-%d | %c"
+#caption always "%3n %t%? @%u%?%? [%h]%?%=%c"
+
+# kill bad bindings - see if /etc/screenrc already takes care of them
+bind .
+bind ^\
+bind k
+#bind \\ quit
+
+# ALT-right/left bindings
+bindkey "^[[1;3C" next
+bindkey "^[[1;3D" prev
+# do 'ctrl-v <keypress>' in normal window to see escape codes
+
+bindkey -k k1 select 1	# F1
+bindkey -k k2 select 2
+bindkey -k k3 select 3
+bindkey -k k4 select 4
+bindkey -k k5 select 5
+bindkey -k k6 select 6
+bindkey -k k7 select 7
+bindkey -k k8 select 8	# F8
+
+# use ctrl-Oh or F11 instead of Ctrl-a for command mode
+escape ^Oo
+bindkey -k F1 command	# F11
+
+bindkey "^[[5;3~" copy	# ALT-PgUP to enter COPY mode
+bindkey "^[[6;3~" copy	# ALT-PgDN "" 
+
+# Set the altscreen so that when you quit vi, it will go back to
+# what it was before
+altscreen on
+
+deflogin off
