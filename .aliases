@@ -25,6 +25,7 @@ case `uname -o` in
 	alias np='run /cygdrive/c/Program\ Files\ \(x86\)/Notepad++/notepad++.exe'
 	alias downloads='pushd $USERPROFILE/Downloads'
 	alias workspace='pushd $USERPROFILE/workspace'
+#	alias packer='packer-1.1.1.exe'
 	;;
   darwin*)
 	#alias subl='open -a "Sublime Text 2"'
@@ -58,7 +59,7 @@ alias ksn='\knife search node'
 alias kds='knife data bag show'
 alias kde='knife data bag edit'
 
-alias yaml2js="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
+alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
 #alias 18f='export HOME=awk -F: '{ print $(NF-1); }' /etc/passwd'
 
 #alias example='eval PROFILE=lab1 SSH_CONFIG="$HOME/.aws/${AWS_PROFILE:?}/$PROFILE/${AWS_REGION:?}/config" IDENTITY="$HOME/.aws/$AWS_PROFILE/lab.pem" SSH_OPTS="-o\ UserKnownHostsFile=${SSH_CONFIG%/*}/known_hosts" ssh-wrapper.sh'

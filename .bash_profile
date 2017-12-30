@@ -18,13 +18,20 @@ function addPath() {
     done
 }
 
-#_temp=`dirname "$(which java 2>/dev/null)"`
-#[ -n "$_temp" ] && \
-#    : ${JAVA_HOME:="${_temp%/bin}"}
+function path2unix() {
+    [ -n "$1" ] || return
+    # apparently Cygwin handling of spaces only works in PATH
+    if [ "$OSTYPE" = 'cygwin' -o `uname -o` = 'Cygwin' ]; then
+	cygpath -u -- "$1" 2>/dev/null
+	#echo "${path// /\\ }"
+    else
+	echo "$1"
+    fi
+}
 
-for dir in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
-    [ -z "$dir" -o -h "$dir" ] && continue
-    : ${EC2_HOME:="$dir"}
+for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
+    [ -z "$d" -o -h "$d" ] && continue
+    : ${EC2_HOME:="$d"}
     break
 done
 
@@ -36,12 +43,17 @@ case `uname -o` in
 	# setting GEM_HOME will alter INSTALLATION DIRECTORY and EXECUTABLE DIRECTORY.
 	# However 'USER INSTALLATION DIRECTORY' will *always* be ~/.gem/ruby/<vers>
 	# observe via 'gem env'. Therefore to keep Dropbox from syncing contents
-	: ${GEM_HOME:="`cygpath $LOCALAPPDATA`/rubygems"}
+	GEM_HOME=`path2unix "${GEM_HOME:-$LOCALAPPDATA/rubygems}"`
 	# ln -s $USERPROFILE/.{gem,bundle,berkshelf}
-	function command_not_found_handle() { cmd.exe /C $@ ;}
 
-	#function su() { # sorta works - shell prompt doesn't change
-	#  eval `awk -v who=$1 -F: '$1 == who { printf("USERNAME=%s USER=%s HOME=%s %s --login", who, $(NF-1), $NF) }' /etc/passwd`
+	PUPPET_BASE=`path2unix "${PUPPET_BASE:-$PROGRAMFILES/Puppet Labs/Puppet/bin}"`
+	GOROOT=`path2unix "${GOROOT:-$PROGRAMFILES/go-1.9.2}"`
+	GOPATH=`path2unix "${GOPATH:-$LOCALAPPDATA/go}"`
+
+	function command_not_found_handle() { cmd.exe /C "$@" ;}
+
+	#function su() { # sorta works - 'uid' dosn't get updated
+	#  eval `awk -v who=$1 -F: '$1 == who { printf("env USER=%s HOME=%s %s --login", who, $(NF-1), $NF) }' /etc/passwd` "$@"
 	#}
         ;;
     darwin*)
