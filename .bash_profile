@@ -71,6 +71,13 @@ for v in {JAVA,EC2,GEM}_HOME; do
     [ -n "${!v}" ] && { export $v; addPath "${!v}/bin"; } || unset $v
 done
 
+for f in .bashrc{,.local} .bash_profile.local; do
+    [ -f "$HOME/$f" ] && source "$HOME/$f"
+    [ -n "$USERPROFILE" ] && {
+        f=`cygpath "$USERPROFILE"`/$f
+        [ -f "$f" ] && source "$f"
+    }
+done
 
 [ -f "${HOME}/.bashrc" ] && source "${HOME}/.bashrc"
 

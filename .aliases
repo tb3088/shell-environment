@@ -14,8 +14,7 @@ alias grep='\grep --color'
 alias ffs='eval sudo !!'
 alias free='\free -m'
 alias edit='eval ${EDITOR:?}'
-alias vi='`\which vim vi 2>/dev/null | head -1` -i NONE'
-
+alias vi='eval `[ "${TERM%.*}" = "screen" ] && echo screen` `\which vim vi 2>/dev/null | head -1` -i NONE'
 alias ps='\ps -o uid,pid,ppid,stime,etime,cmd'
 
 case `uname -o` in
@@ -60,8 +59,4 @@ alias kds='knife data bag show'
 alias kde='knife data bag edit'
 
 alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
-#alias 18f='export HOME=awk -F: '{ print $(NF-1); }' /etc/passwd'
 
-#alias example='eval PROFILE=lab1 SSH_CONFIG="$HOME/.aws/${AWS_PROFILE:?}/$PROFILE/${AWS_REGION:?}/config" IDENTITY="$HOME/.aws/$AWS_PROFILE/lab.pem" SSH_OPTS="-o\ UserKnownHostsFile=${SSH_CONFIG%/*}/known_hosts" ssh-wrapper.sh'
-alias go-lab1='eval PROFILE=lab1 AWS_PROFILE=itg-assist AWS_REGION=us-east-1 SSH_CONFIG="\$HOME/.aws/\${AWS_PROFILE:?}/\$PROFILE/\${AWS_REGION:?}/config" SSH_OPTS="-o\ UserKnownHostsFile=\${SSH_CONFIG%/*}/known_hosts" ssh-wrapper.sh'
-#IDENTITY="$HOME/.aws/$AWS_PROFILE/lab.pem" 
