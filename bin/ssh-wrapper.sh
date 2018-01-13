@@ -63,18 +63,21 @@ function _ssh() {
   }
 
   if [ -z "$SSH_CONFIG" ]; then
-      # attempt a quick search
-      for _conf in {,${HOME:-\~}/.ssh/}{$PROFILE{,/config},config{,{.,-,_}$PROFILE}}; do
+      # attempt a quick search - traversing CWD not advised.
+      for _conf in $HOME/{.ssh,.aws/$AWS_PROFILE}/{,$PROFILE{,/$AWS_REGION}/}config{,{.,-,_}$PROFILE} ; do
           [ -f "$_conf" ] && {
 	      SSH_CONFIG="$_conf"
 	      >&2 echo "+ found '$SSH_CONFIG' for SSH_CONFIG"
 	      break
 	  }
       done
-      [ -n "$SSH_CONFIG" ] || { >&2 echo "ERROR: search for SSH_CONFIG failed"; return 1; }
+      [ -n "$SSH_CONFIG" ] || { >&2 echo "ERROR: search for SSH_CONFIG ($PROFILE) failed"; return 1; }
   fi
 # casting about for IDENTITY is dangerous, don't do it!
 #	{,${HOME:-\~}/{,.ssh,.aws/$AWS_PROFILE}/}{"$IDENTITY",id_rsa,$PROFILE}{,.pem}
+
+  # UserKnownHostFile shouldn't be hard-coded inside 'config' because that makes it non-portable
+  SSH_OPTS+=" -o UserKnownHostsFile=${SSH_CONFIG%/*}/known_hosts"
 
   _cmd=SSH
   case ${1^^} in
@@ -92,7 +95,7 @@ function _ssh() {
   _env=
   for v in SSH_CONFIG SSH_OPTS PROFILE IDENTITY ${!AWS_*} VERBOSE; do
       [ -n "${!v}" ] || continue
-      _env+="$v='${!v}' "
+      _env+=" $v='${!v}'"
   done
 
 #${DEBUG:+runv} ${_screen:+$_screen -t "$PROFILE" ${TERM:+-T $TERM} bash -c \"$_vars} ${!_cmd} ${VERBOSE:+-v} \

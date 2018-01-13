@@ -43,7 +43,7 @@ case `uname -o` in
 	# setting GEM_HOME will alter INSTALLATION DIRECTORY and EXECUTABLE DIRECTORY.
 	# However 'USER INSTALLATION DIRECTORY' will *always* be ~/.gem/ruby/<vers>
 	# observe via 'gem env'. Therefore to keep Dropbox from syncing contents
-	GEM_HOME=`path2unix "${GEM_HOME:-$LOCALAPPDATA/rubygems}"`
+	GEM_HOME=`path2unix "${GEM_HOME:-$LOCALAPPDATA/.gem}"`
 	# ln -s $USERPROFILE/.{gem,bundle,berkshelf}
 
 	PUPPET_BASE=`path2unix "${PUPPET_BASE:-$PROGRAMFILES/Puppet Labs/Puppet/bin}"`
@@ -80,7 +80,6 @@ for f in .bashrc{,.local} .bash_profile.local; do
 done
 
 [ -f "${HOME}/.bashrc" ] && source "${HOME}/.bashrc"
-
 
 : ${SSH_AGENT=`which ssh-agent 2>/dev/null`}
 if [ -z "$SSH_AUTH_SOCK" -a -n "$SSH_AGENT" ]; then

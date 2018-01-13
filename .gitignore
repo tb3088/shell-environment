@@ -1,4 +1,5 @@
 .viminfo
+.vim/bundle/
 .bash_history
 .aws/
 .ssh/
