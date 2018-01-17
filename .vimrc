@@ -20,7 +20,7 @@ au BufRead,BufNewFile *.py,*.pyw match BadWhitespace /^\t\+/
 au BufRead,BufNewFile *.py,*.pyw,*.c,*.h,*.yml,*.yaml,*.json,*.pp match BadWhitespace /\s\+$/
 
 au BufRead,BufNewFile *.py,*.pyw,*.c,*.h,*.pp set textwidth=78
-au BufRead,BufNewFile *.py,*.pyw set expandtab
+au BufRead,BufNewFile *.py,*.pyw,*.tf set expandtab
 au BufRead,BufNewFile *.yml,*.yaml,*.json set expandtab shiftwidth=2
 " prevent insertion of '*' at the beginning of every line in a comment
 au BufRead,BufNewFile *.c,*.h set formatoptions-=c formatoptions-=o formatoptions-=r
@@ -46,3 +46,6 @@ set wrap linebreak
 set guifont=Liberation_Mono:h9:cANSI
 set guioptions=egmrLt
 
+" squelch gratuitous noise
+set noerrorbells visualbell t_vb=
+autocmd GUIEnter * set visualbell t_vb=
