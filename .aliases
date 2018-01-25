@@ -13,17 +13,23 @@ alias grep='\grep --color'
 #alias ffs='sudo $(fc -ln -1)'
 alias ffs='eval sudo !!'
 alias free='\free -m'
-alias edit='eval ${EDITOR:?}'
-alias vi='eval `[ "${TERM%.*}" = "screen" ] && echo screen` `\which vim vi 2>/dev/null | head -1` -i NONE'
+alias edit='eval `[ "${TERM%.*}" = "screen" ] && echo screen` ${EDITOR:?}'
 alias ps='\ps -o uid,pid,ppid,stime,etime,cmd'
 
 case `uname -o` in
   Cygwin)
 	alias ps='\ps -s';
-	alias 7z='run /cygdrive/c/Program\ Files\ \(x86\)/7-Zip/7z.exe'
-	alias np='run /cygdrive/c/Program\ Files\ \(x86\)/Notepad++/notepad++.exe'
-	alias downloads='pushd $USERPROFILE/Downloads'
-	alias workspace='pushd $USERPROFILE/workspace'
+	for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+	  bin=`path2unix "${!dir}"`/7-Zip/7z.exe
+	  [ -x "$bin" ] && { alias 7z="run $bin"; break; }
+	done
+	for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+	  bin=`path2unix "${!dir}"`/Notepad++/notepad++.exe
+	  [ -x "$bin" ] && { alias npp="run $bin"; break; }
+	done
+	unset dir bin
+	alias downloads='cd `path2unix "$USERPROFILE"`/Downloads'
+	alias workspace='cd `path2unix "$USERPROFILE"`/workspace'
 #	alias packer='packer-1.1.1.exe'
 	;;
   darwin*)

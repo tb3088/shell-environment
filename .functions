@@ -1,67 +1,32 @@
 # $Id$
 
-__prompt() {
-  RC=$?
-  local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
-  PROMPT="\n${FCYN}\u${RS}@${FGRN}\h${RS}"
-
-#  _temp=$(
-  eval $(
-    set -e -o pipefail
-    awk '
-        NR==1 {
-	    gsub(/[\[\]]/," "); sub(/\.{3,}/," ")
-	    printf "_branch=%s _upstream=%s _status=%s _delta=%s ", $2, $3, $4, $5
-	    next
-	}
-        $1 ~ /M/ { mod++; } 
-	$1 ~ /D/ { del++; } 
-	$1 ~ /A/ { add++; }
-	$1 ~ /\?/ { unk++; }
-	$1 ~ /\!/ { ign++; }
-	END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
-    ' < <(git --no-pager status -b --porcelain 2>/dev/null)
-# TODO handle .svn
-  )
-#  [ -n "$_temp" ] && eval "$_temp"
-  if [ -n "$_branch" ]; then
-    case "$_status" in
-	'ahead')  _status='>'
-	    ;;
-	'behind') _status='<'
-	    ;;
-	'up-to-date'|*)
-	    # _status=`echo -e '\u2713'`
-	    unset _status _delta
+function addPath() {
+    case $# in
+      0)  return ;; 
+      1)  k='PATH' ;;
+      *)  k=$1; shift
     esac
-    [[ $_mod == 0 ]] && unset _mod
-    [[ $_del == 0 ]] && unset _del
-    [[ $_add == 0 ]] && unset _add
-    [[ $_unk == 0 ]] && unset _unk
-    [[ $_ign == 0 ]] && unset _ign
-    [ $_tot -le 0 ] && unset _tot
-
-    PROMPT+=" git:$_branch"
-    _stat="${_status}${_delta}${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
-    PROMPT+="${_stat:+|${FRED}${_stat## }${RS}|}"
-  fi
-
-  _aws="${AWS_PROFILE:+AWS:${AWS_PROFILE:--}/${AWS_REGION:--}}"
-  [ "${#_aws}" -gt 8 ] && PROMPT+=" $_aws"
-
-  PROMPT+=" ${FYEL}\w${RS}\n\!.\j"
-#  PROMPT+="${CHEF_ENV+ ${BMAG}${CHEF_ENV}${RS}}"
-#  [[ $UID == 0 ]] && PROMPT+="${BRED}
-  [[ $RC != 0 ]] && PROMPT+="($RC)"
-  PROMPT+=" \$ "
-  PS1="$PROMPT"
+    for v in "$@"; do
+	grep -q ":$v:" <<< ":${!k}:" && continue
+	# leading '-' means prepend
+	[ "${v:0:1}" = '-' ] && eval $k="${v:1}:\$$k" || eval $k+=":$v"
+    done
 }
 
+function path2unix() {
+    [ -n "$1" ] || return
+    # apparently Cygwin handling of spaces only works in PATH
+    if [ "$OSTYPE" = 'cygwin' -o `uname -o` = 'Cygwin' ]; then
+	cygpath -u -- "$1" 2>/dev/null | sed -e 's/ /\\ /g'
+	#echo "${path// /\\ }"
+    else
+	echo "$1"
+    fi
+}
 
 function pidof() {
   ps | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
-
 
 function chef_env() {
   [ -n "$1" ] && CHEF_ENV=$1
@@ -156,4 +121,38 @@ function join_by() {
 
 function join_quote() {
   quote=\' join_by "$@"
+}
+
+function __parse_options() {
+  local option option2 i IFS='
+,/|';
+  option=;
+  for i in $1; do
+    case $i in
+      ---*)
+	    break
+	    ;;
+      --?*)
+	    option=$i;
+	    break
+    	    ;;
+      -?*)
+	    [[ -n $option ]] || option=$i
+	    ;;
+      *)
+	    break
+	    ;;
+    esac;
+  done;
+  [[ -n $option ]] || return 0;
+  IFS='
+';
+  if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
+      option2=${option/"${BASH_REMATCH[1]}"/};
+      option2=${option2%%[<{().[]*};
+      printf '%s\n' "${option2/=*/=}";
+      option=${option/"${BASH_REMATCH[1]}"/"${BASH_REMATCH[2]}"};
+  fi;
+  option=${option%%[<{().[]*};
+  printf '%s\n' "${option/=*/=}"
 }

@@ -1,7 +1,6 @@
 # To pick up the latest recommended .bashrc content,
 # look in /etc/defaults/etc/skel/.bashrc
 
-
 # ANSI color codes
 RS="\[\033[0m\]"    # reset
 HC="\[\033[1m\]"    # hicolor
@@ -23,6 +22,63 @@ BBLE="\[\033[44m\]" # background blue
 BMAG="\[\033[45m\]" # background magenta
 BCYN="\[\033[46m\]" # background cyan
 BWHT="\[\033[47m\]" # background white
+
+function __prompt() {
+  RC=$?
+  local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
+  PROMPT="\n${FCYN}\u${RS}@${FGRN}\h${RS}"
+
+#  _temp=$(
+  eval $(
+    set -e -o pipefail
+    awk '
+        NR==1 {
+	    gsub(/[\[\]]/," "); sub(/\.{3,}/," ")
+	    printf "_branch=%s _upstream=%s _status=%s _delta=%s ", $2, $3, $4, $5
+	    next
+	}
+        $1 ~ /M/ { mod++; } 
+	$1 ~ /D/ { del++; } 
+	$1 ~ /A/ { add++; }
+	$1 ~ /\?/ { unk++; }
+	$1 ~ /\!/ { ign++; }
+	END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
+    ' < <(git --no-pager status -b --porcelain 2>/dev/null)
+# TODO handle .svn
+  )
+#  [ -n "$_temp" ] && eval "$_temp"
+  if [ -n "$_branch" ]; then
+    case "$_status" in
+	'ahead')  _status='>'
+	    ;;
+	'behind') _status='<'
+	    ;;
+	'up-to-date'|*)
+	    # _status=`echo -e '\u2713'`
+	    unset _status _delta
+    esac
+    [[ $_mod == 0 ]] && unset _mod
+    [[ $_del == 0 ]] && unset _del
+    [[ $_add == 0 ]] && unset _add
+    [[ $_unk == 0 ]] && unset _unk
+    [[ $_ign == 0 ]] && unset _ign
+    [ $_tot -le 0 ] && unset _tot
+
+    PROMPT+=" git:$_branch"
+    _stat="${_status}${_delta}${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
+    PROMPT+="${_stat:+|${FRED}${_stat## }${RS}|}"
+  fi
+
+  _aws="${AWS_PROFILE:+AWS:${AWS_PROFILE:--}/${AWS_REGION:--}}"
+  [ "${#_aws}" -gt 8 ] && PROMPT+=" $_aws"
+
+  PROMPT+=" ${FYEL}\w${RS}\n\!.\j"
+#  PROMPT+="${CHEF_ENV+ ${BMAG}${CHEF_ENV}${RS}}"
+#  [[ $UID == 0 ]] && PROMPT+="${BRED}
+  [[ $RC != 0 ]] && PROMPT+="($RC)"
+  PROMPT+=" \$ "
+  PS1="$PROMPT"
+}
 
 PS1="\n${FCYN}\u${RS}@${FGRN}\h ${FYEL}\w${RS}\n\!.\j \$ "
 #if [[ ${EUID} == 0 ]]; 
@@ -52,39 +108,42 @@ shopt -s nocaseglob globstar
 # for example, cd /vr/lgo/apaache would find /var/log/apache
 shopt -s cdspell
 
+### History Options
+shopt -s histappend
+
+# Don't put duplicate lines in the history.
+export HISTCONTROL="erasedups ignorespace"
+HISTFILESIZE=300
+HISTSIZE=1000
+HISTTIMEFORMAT="%H:%M "
+# Ignore some controlling instructions
+HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
+
+#for f in .{functions,aliases}{,.local}; do
+#    [ -f "$HOME/$f" ] && source "$HOME/$f"
+#    [ -n "$USERPROFILE" ] && {
+#	f=`path2unix "$USERPROFILE"`/$f
+#	[ -f "$f" ] && source "$f"
+#    }
+#done
+
+for f in .functions{,.local} .bashrc.local .aliases{,.local}; do
+    [ -f "$HOME/$f" ] && source "$HOME/$f" || true
+#    [ -n "$USERPROFILE" ] && {
+#        f=`path2unix "$USERPROFILE"`/$f
+#        [ -f "$f" ] && source "$f"
+#    }
+done
 
 ### Completion options
 # If this shell is interactive, turn on programmable completion enhancements.
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
     *i*)
-	. {,/usr/local}/etc/bash_completion 2>/dev/null
-	. {,/usr/local}/etc/bash_completion.d/* 2>/dev/null
-	. ~/.bash_completion 2>/dev/null
+	for f in {,/usr/local}/etc/bash_completion{,.d/*} ~/.bash_completion; do
+	    [ -f "$f" ] && source "$f" || true
+	done
 	;;
     *c*)
 	SSH_AGENT=""
 esac
-
-
-### History Options
-shopt -s histappend
-
-# Don't put duplicate lines in the history.
-export HISTCONTROL="erasedups ignorespace"
-
-HISTFILESIZE=500
-HISTSIZE=300
-HISTTIMEFORMAT="%H:%M "
-
-# Ignore some controlling instructions
-HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
-
-for f in .{functions,aliases}{,.local}; do
-    [ -f "$HOME/$f" ] && source "$HOME/$f"
-    [ -n "$USERPROFILE" ] && {
-	f=`cygpath "$USERPROFILE"`/$f
-	[ -f "$f" ] && source "$f"
-    }
-done
-

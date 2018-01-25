@@ -5,29 +5,7 @@ for ed in vim vi nano pico emacs; do
   [ -n "$EDITOR" ] && { export EDITOR; break; }
 done
 
-function addPath() {
-    case $# in
-      0)  return ;; 
-      1)  k='PATH' ;;
-      *)  k=$1; shift
-    esac
-    for v in "$@"; do
-	grep -q ":$v:" <<< ":${!k}:" && continue
-	# leading '-' means prepend
-	[ "${v:0:1}" = '-' ] && eval $k="${v:1}:\$$k" || eval $k+=":$v"
-    done
-}
-
-function path2unix() {
-    [ -n "$1" ] || return
-    # apparently Cygwin handling of spaces only works in PATH
-    if [ "$OSTYPE" = 'cygwin' -o `uname -o` = 'Cygwin' ]; then
-	cygpath -u -- "$1" 2>/dev/null
-	#echo "${path// /\\ }"
-    else
-	echo "$1"
-    fi
-}
+source "$HOME/.functions"
 
 for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
     [ -z "$d" -o -h "$d" ] && continue
@@ -35,11 +13,11 @@ for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
     break
 done
 
+export GEM_HOME="${LOCALAPPDATA:-$HOME}/.gem"
+export PUPPET_BASE="${PROGRAMFILES:-/opt}/puppetlabs/puppet/bin"
+export GOROOT="${PROGRAMFILES:-/opt}/go-${GO_VERSION:-1.9.2}"
+export GOPATH="${LOCALAPPDATA:-$HOME}/.go}"
 
-GEM_HOME="${LOCALAPPDATA:-$HOME}/.gem"
-PUPPET_BASE="${PROGRAMFILES:-/opt}/puppetlabs/puppet/bin"
-GOROOT="${PROGRAMFILES:-/opt}/go-${GO_VERSION:-1.9.2}"
-GOPATH="${LOCALAPPDATA:-$HOME}/.go}"
 case `uname -o` in
     Cygwin)
 	#FODO leading period is not default in Windows
@@ -77,16 +55,6 @@ for v in {JAVA,EC2,GEM}_HOME; do
     [ -n "${!v}" ] && { export $v; addPath "${!v}/bin"; } || unset $v
 done
 
-for f in .bashrc{,.local} .bash_profile.local; do
-    [ -f "$HOME/$f" ] && source "$HOME/$f"
-    [ -n "$USERPROFILE" ] && {
-        f=`cygpath "$USERPROFILE"`/$f
-        [ -f "$f" ] && source "$f"
-    }
-done
-
-[ -f "${HOME}/.bashrc" ] && source "${HOME}/.bashrc"
-
 : ${SSH_AGENT=`which ssh-agent 2>/dev/null`}
 if [ -z "$SSH_AUTH_SOCK" -a -n "$SSH_AGENT" ]; then
     eval `$SSH_AGENT ${SSH_AGENT_ARGS:-${BASH_VERSION:+-s}}`
@@ -95,3 +63,6 @@ if [ -z "$SSH_AUTH_SOCK" -a -n "$SSH_AGENT" ]; then
     alias ssh='ssh -A'
 fi
 
+for f in .bash_profile.local .bashrc; do
+    [ -f "$HOME/$f" ] && source "$HOME/$f" || true
+done
