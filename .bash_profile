@@ -35,15 +35,21 @@ for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
     break
 done
 
+
+GEM_HOME="${LOCALAPPDATA:-$HOME}/.gem"
+PUPPET_BASE="${PROGRAMFILES:-/opt}/puppetlabs/puppet/bin"
+GOROOT="${PROGRAMFILES:-/opt}/go-${GO_VERSION:-1.9.2}"
+GOPATH="${LOCALAPPDATA:-$HOME}/.go}"
 case `uname -o` in
     Cygwin)
+	#FODO leading period is not default in Windows
 	# WARNING! very crude hack. could result in double escaping
 	#PATH="${PATH// /\\ }"
 
 	# setting GEM_HOME will alter INSTALLATION DIRECTORY and EXECUTABLE DIRECTORY.
 	# However 'USER INSTALLATION DIRECTORY' will *always* be ~/.gem/ruby/<vers>
 	# observe via 'gem env'. Therefore to keep Dropbox from syncing contents
-	GEM_HOME=`path2unix "${GEM_HOME:-$LOCALAPPDATA/.gem}"`
+	GEM_HOME=`path2unix "${GEM_HOME}"`
 	# ln -s $USERPROFILE/.{gem,bundle,berkshelf}
 
 	PUPPET_BASE=`path2unix "${PUPPET_BASE:-$PROGRAMFILES/Puppet Labs/Puppet/bin}"`
