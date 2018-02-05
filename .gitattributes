@@ -1,5 +1,5 @@
-*	text=auto
-*.txt	text
+*	text eol=lf
+*.txt	text=auto
 *.sh	text eol=lf
 *.pl	text eol=lf
 *.py*	text eol=lf
