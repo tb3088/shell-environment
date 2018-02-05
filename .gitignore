@@ -10,6 +10,7 @@
 *.ini
 *.kdb*
 .lesshst
+.minttyrc
 *.rdp
 .viminfo
 *~
