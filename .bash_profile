@@ -20,7 +20,9 @@ export GOPATH="${LOCALAPPDATA:-$HOME}/.go}"
 
 case `uname -o` in
     Cygwin)
-	#FODO leading period is not default in Windows
+	export CYGWIN+=" winsymlinks:native"
+
+	#TODO leading period is not default in Windows
 	# WARNING! very crude hack. could result in double escaping
 	#PATH="${PATH// /\\ }"
 
