@@ -28,12 +28,11 @@ function __prompt() {
   local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
   PROMPT="\n${FCYN}\u${RS}@${FGRN}\h${RS}"
 
-#  _temp=$(
   eval $(
     set -e -o pipefail
     awk '
         NR==1 {
-	    gsub(/[\[\]]/," "); sub(/\.{3,}/," ")
+	    gsub(/[\[\],]/, " "); sub(/\.{3,}/, " ")
 	    printf "_branch=%s _upstream=%s _status=%s _delta=%s ", $2, $3, $4, $5
 	    next
 	}
@@ -44,10 +43,10 @@ function __prompt() {
 	$1 ~ /\!/ { ign++; }
 	END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
     ' < <(git --no-pager status -b --porcelain 2>/dev/null)
-# TODO handle .svn
+  # TODO handle .svn
   )
-#  [ -n "$_temp" ] && eval "$_temp"
   if [ -n "$_branch" ]; then
+    # TODO handle both ahead AND behind
     case "$_status" in
 	'ahead')  _status='>'
 	    ;;
