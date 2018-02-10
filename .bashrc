@@ -118,20 +118,8 @@ HISTTIMEFORMAT="%H:%M "
 # Ignore some controlling instructions
 HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 
-#for f in .{functions,aliases}{,.local}; do
-#    [ -f "$HOME/$f" ] && source "$HOME/$f"
-#    [ -n "$USERPROFILE" ] && {
-#	f=`path2unix "$USERPROFILE"`/$f
-#	[ -f "$f" ] && source "$f"
-#    }
-#done
-
 for f in .functions{,.local} .bashrc.local .aliases{,.local}; do
     [ -f "$HOME/$f" ] && source "$HOME/$f" || true
-#    [ -n "$USERPROFILE" ] && {
-#        f=`path2unix "$USERPROFILE"`/$f
-#        [ -f "$f" ] && source "$f"
-#    }
 done
 
 ### Completion options

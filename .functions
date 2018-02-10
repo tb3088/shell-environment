@@ -1,31 +1,42 @@
 # $Id$
-
 function addPath() {
-    case $# in
-      0)  return ;; 
-      1)  k='PATH' ;;
-      *)  k=$1; shift
-    esac
+    local k v flag
+    [ -n "$1" ] || return
+
+    [ $# -eq 1 ] && { k='PATH'; flag='-p'; } || { k="$1"; shift; }
     for v in "$@"; do
-	grep -q ":$v:" <<< ":${!k}:" && continue
-	# leading '-' means prepend
-	[ "${v:0:1}" = '-' ] && eval $k="${v:1}:\$$k" || eval $k+=":$v"
+        v=`path2unix $flag "$v"`
+        grep -q ":$v:" <<< ":${!k}:" && continue
+
+        # leading '-' means prepend
+        [ "${v:0:1}" = '-' ] && eval $k="${v:1}:\$$k" || eval $k+=":\$v"
     done
 }
 
 function path2unix() {
+    local override=0
+    # Cygwin automagically escapes spaces on the $PATH and
+    # must NOT have them escaped to work properly. But interactive
+    # use on command-line needs to be inside quotes or escaped.
+    #
+    # Processing .bash_profile is Interactive so must be overridden
+    [ "$1" = '-p' ] && { override=1; shift; }
     [ -n "$1" ] || return
-    # apparently Cygwin handling of spaces only works in PATH
+
     if [ "$OSTYPE" = 'cygwin' -o `uname -o` = 'Cygwin' ]; then
-	cygpath -u -- "$1" 2>/dev/null | sed -e 's/ /\\ /g'
-	#echo "${path// /\\ }"
+        grep -q 'i' <<< "$-" && [ $override -eq 0 ] && \
+            cygpath -u -- "$1" 2>/dev/null | sed -e 's/ /\\ /g' || \
+                cygpath -u -- "$1" 2>/dev/null
+        #alternatively
+        #echo "${path// /\\ }"
     else
-	echo "$1"
+        echo "$1"
     fi
 }
 
 function pidof() {
-  ps | awk -v pat="$1" '$NF ~ pat { print $1 }'
+    [ "$OSTYPE" = 'cygwin' -o `uname -o` = 'Cygwin' ] && _ps='procps'
+    ${_ps:-ps} -o pid,comm | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
 
 function chef_env() {
@@ -83,76 +94,80 @@ function getcert() {
 
 function cdl() { cd "${1:-.}" && ls; }
 
-#function beam() { test "${PWD##*/ops/}" != "beam" && return || `which beam` $@; }
+#function beam() { test "${PWD##*/ops/}" != "beam" && return || `which beam` "$@"; }
 
 function myip() { nslookup myip.opendns.com resolver1.opendns.com; }
 
+function pause() {
+  [ $# -ne 0 ] && read -p "$*" || read -p 'Press [ENTER] to continue ...'
+}
+
 function ask() { 
-  read -n 1 -t 3 -p "Are you sure (y/N)? "
+  read -n 1 -t 30 -p 'Are you sure (y/N)? '
   echo
   [ "${REPLY,,}" = 'y' ]
 }
 
-function runv() {
-  # mimic 'set -x'
-  echo >&2 "+ $*"
-  "$@"
-}
+# mimic 'set -x'
+function runv() { >&2 echo "+ $*"; "$@"; }
 
 function join_by() {
-  # escape whitespaces if no quote char. even delimiter is eligible (rare)
-  [ -n "$quote" ] || set -- "${@// /\\ }"
+    # escape whitespaces if no quote char. even delimiter is eligible (rare)
+    [ -n "$quote" ] || set -- "${@// /\\ }"
 
-  delim="${1:?}"; shift
-  [ $# -ne 0 ] || return
+    delim="${1:?}"; shift
+    [ $# -ne 0 ] || return
 
-  printf "${quote}%s${quote}" "$1"
-  shift
-  printf "${delim}${quote}%s${quote}" "$@"
-	# or process all but last and tack it on
-	# with ${@:1:$# -1}?
+    printf "${quote}%s${quote}" "$1"; shift
+    printf "${delim}${quote}%s${quote}" "$@"
 
-#  echo -n "${quote}$1${quote}"; shift
-#  for elem in "$@"; do
-#    echo -n "${delim}${quote}${elem}${quote}"
-#  done
-  echo
+    # or process all but last and tack it on with ${@:1:$# -1}?
+    # alternate implementation using just 'echo'
+#    echo -n "${quote}$1${quote}"; shift
+#    for elem in "$@"; do
+#        echo -n "${delim}${quote}${elem}${quote}"
+#    done
+    echo
 }
 
-function join_quote() {
-  quote=\' join_by "$@"
-}
+function join_quote() { quote=\' join_by "$@"; }
 
 function __parse_options() {
-  local option option2 i IFS='
+    local option option2 i IFS='
 ,/|';
-  option=;
-  for i in $1; do
-    case $i in
-      ---*)
-	    break
-	    ;;
-      --?*)
-	    option=$i;
-	    break
-    	    ;;
-      -?*)
-	    [[ -n $option ]] || option=$i
-	    ;;
-      *)
-	    break
-	    ;;
-    esac;
-  done;
-  [[ -n $option ]] || return 0;
-  IFS='
+    option=
+    for i in $1; do
+        case $i in
+            ---*)   break
+                    ;;
+            --?*)   option=$i; break
+                    ;;
+            -?*)    [ -n "$option" ] || option=$i
+                    ;;
+            *)      break
+                    ;;
+        esac;
+    done
+    [ -n "$option" ] || return 0
+    IFS='
 ';
-  if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
-      option2=${option/"${BASH_REMATCH[1]}"/};
-      option2=${option2%%[<{().[]*};
-      printf '%s\n' "${option2/=*/=}";
-      option=${option/"${BASH_REMATCH[1]}"/"${BASH_REMATCH[2]}"};
-  fi;
-  option=${option%%[<{().[]*};
-  printf '%s\n' "${option/=*/=}"
+    if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
+        option2=${option/"${BASH_REMATCH[1]}"/}
+        option2=${option2%%[<{().[]*}
+        printf '%s\n' "${option2/=*/=}"
+        option=${option/"${BASH_REMATCH[1]}"/"${BASH_REMATCH[2]}"}
+    fi;
+    option="${option%%[<{().[]*}"
+    printf '%s\n' "${option/=*/=}"
 }
+
+case `uname -o` in
+    Cygwin)
+        function command_not_found_handle() { cmd.exe /D /C "$@"; }
+
+        #function su() {    # sorta works. 'uid' dosn't get updated
+        #  eval `awk -v who=$1 -F: '$1 == who { printf("env USER=%s HOME=%s %s", who, $(NF-1), $NF) }' /etc/passwd` "$@"
+        #}
+        ;;
+esac
+
