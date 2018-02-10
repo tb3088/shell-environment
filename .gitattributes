@@ -2,6 +2,7 @@
 *.txt	text=auto
 *.sh	text eol=lf
 *.pl	text eol=lf
+*.pp	text eol=lf
 *.py*	text eol=lf
 *.rb	text eol=lf
 *.tf	text eol=lf
