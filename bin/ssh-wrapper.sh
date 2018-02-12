@@ -19,7 +19,7 @@ esac
 : ${WHICH:=which}
 for p in SSH SCP SFTP SCREEN; do
   [ "${!p:0:1}" = '/' ] || eval $p=`$WHICH ${!p:-${p,,}} 2>/dev/null`
-  [ -x "${!p}" ] || {
+  [ -x "${!p}" -o "$p" = "SCREEN" ] || {
       >&2 echo -e "ERROR: missing $p binary '${!p}'"; exit 2; }
 done
 
