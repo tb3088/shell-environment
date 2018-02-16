@@ -21,12 +21,14 @@ done
 addPath "-$HOME/bin"
 export PATH MANPATH
 
-: ${SSH_AGENT=`which ssh-agent 2>/dev/null`}
-if [ -z "$SSH_AUTH_SOCK" -a -n "$SSH_AGENT" ]; then
-    eval `$SSH_AGENT ${SSH_AGENT_ARGS:-${BASH_VERSION:+-s}}`
-    trap "kill $SSH_AGENT_PID" 0
-    /usr/bin/ssh-add
-    alias ssh='ssh -A'
-fi
+[[ $- == *i* ]] && {	# interactive
+    : ${SSH_AGENT=`which ssh-agent 2>/dev/null`}
+    if [ -z "$SSH_AUTH_SOCK" -a -n "$SSH_AGENT" ]; then
+        eval `$SSH_AGENT ${SSH_AGENT_ARGS:-${BASH_VERSION:+-s}}`
+        trap "kill $SSH_AGENT_PID" 0
+        /usr/bin/ssh-add
+        alias ssh='ssh -A'
+    fi
+  }
 
 [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" || true
