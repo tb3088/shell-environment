@@ -1,0 +1,9 @@
+[[ "${OSTYPE:-`uname -o`}" == darwin* ]] || return
+
+#alias subl='open -a "Sublime Text 2"'
+#alias bbe='open -a "TextWrangler"'
+#alias gvim='open -a "MacVim"'
+#alias xc='open -a "Xcode"'
+#alias edit='${EDITOR:-open -e}'
+
+# vim: set expandtab:ts=4:sw=4

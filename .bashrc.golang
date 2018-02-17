@@ -1,0 +1,12 @@
+which go &>/dev/null && return
+
+
+    : ${GOROOT:="${PROGRAMFILES:-/opt}/golang${GO_VERSION}"}
+  #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
+  #: ${GOPATH:=${LOCALAPPDATA:-$HOME}/.go}
+  #GOBIN=$HOME/bin
+
+for v in GOROOT; do
+    [ -n "${!v}" ] || { unset $v; continue; }
+    [ -d "${!v}/bin" ] && addPath "${!v}/bin"
+done

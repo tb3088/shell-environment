@@ -3,7 +3,8 @@
 
 # Interactive operation...
 alias rm='\rm -i'
-alias mv='\mv -i'
+alias mv='\mv -iv'
+alias cp='\cp -v'
 
 alias df='\df -h'
 alias du='\du -hD'
@@ -14,37 +15,9 @@ alias grep='\grep --color'
 alias ffs='eval sudo !!'
 alias free='\free -m'
 alias edit='eval `[ "${TERM%.*}" = "screen" ] && echo screen` ${EDITOR:?}'
-alias ps='\ps -o uid,pid,ppid,stime,etime,cmd'
 
-case `uname -o` in
-    Cygwin)
-	which procps &>/dev/null && \
-	    alias ps='\procps -o uid,pid,ppid,stime,etime,cmd' || \
-	    alias ps='\ps -s'
-	which 7z &>/dev/null || {
-	  bin='7-Zip/7z.exe'
-	  for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
-	    [ -x "${!dir}/$bin" ] && { alias 7z="run `path2unix "${!dir}"`/$bin"; break; }
-	  done
-	}
-	which notepad++ &>/dev/null || {
-	  bin='Notepad++/notepad++.exe'
-	  for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
-	    [ -x "${!dir}/$bin" ] && { alias npp="run `path2unix "${!dir}"`/$bin"; break; }
-	  done
-	}
-	# single-quotes for lazy evaluation
-	alias downloads='cd "$USERPROFILE"/Downloads'
-	alias workspace='cd "$USERPROFILE"/workspace'
-	;;
-    darwin*)
-	#alias subl='open -a "Sublime Text 2"'
-	alias bbe='open -a "TextWrangler"'
-	alias gvim='open -a "MacVim"'
-	alias xc='open -a "Xcode"'
-	alias edit='${EDITOR:-open -e}'
-	;;
-esac
+PSARGS='-o uid,pid,ppid,stime,etime,cmd'
+alias ps='ps $PSARGS'
 
 # Some shortcuts for different directory listings
 alias ls='\ls -hAF --color=tty'
@@ -60,15 +33,7 @@ alias ntpdate='sudo /usr/sbin/ntpd -gq'
 
 alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{time_starttransfer} Total time: %{time_total} ReturnCode: %{http_code} Download Size: %{size_download} Speed: %{speed_download} \n"'
 
-alias chef-repo='pushd $REPO_HOME/chef-repo'
-alias ops-repo='pushd $REPO_HOME/operations'
-alias gsb='git status -sb'
-alias gbl='git show-branch --all --list'
-alias krf='\knife role from file'
-alias ksn='\knife search node'
-alias kds='knife data bag show'
-alias kde='knife data bag edit'
-
 alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
+alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
 
 # vim: set expandtab:ts=4:sw=4

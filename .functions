@@ -1,80 +1,52 @@
 # $Id$
+
+#TODO handle Hash and Array
+function contains() {
+    # 'delim' and 'method' passed as invocation arg
+    local source="$delim$1$delim" sub="$delim$2$delim"
+
+    # empty string inside empty is valid
+    case "$method" in
+      'grep')
+            grep -q "$sub" <<< "$source" 2>/dev/null
+            ;;
+      'pe')
+            [ "${source#*$sub}" != "$source" ]
+            ;;
+      'regex')  # must not quote RegEx
+            [[ "$source" =~ $sub ]]
+            ;;
+#      'insensitive')
+#            ;&
+        *)  [[ "$source" == *"$sub"* ]]
+    esac
+}
+
+# placeholder
+function path2unix() { echo "$1"; }
+
+# pre-/post-pend [multiple] elements to an environment variable
+#TODO use join_string() to handle arbitrary delimiters and whitespace
+#TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 function addPath() {
     local k v flag
     [ -n "$1" ] || return
 
-    [ $# -eq 1 ] && { k='PATH'; flag='-p'; } || { k="$1"; shift; }
+    [ $# -eq 1 ] && { k='PATH'; flag='-n'; } || { k="$1"; shift; }
     for v in "$@"; do
+    #FIXME
         v=`path2unix $flag "$v"`
-        grep -q ":$v:" <<< ":${!k}:" && continue
+
+        delim=':' contains "${!k}" "$v" && continue
 
         # leading '-' means prepend
         [ "${v:0:1}" = '-' ] && eval $k="${v:1}:\$$k" || eval $k+=":\$v"
     done
 }
 
-function path2unix() {
-    local override=0
-    # Cygwin automagically escapes spaces on the $PATH and
-    # must NOT have them escaped to work properly. But interactive
-    # use on command-line needs to be inside quotes or escaped.
-    #
-    # Processing .bash_profile is Interactive so must be overridden
-    [ "$1" = '-p' ] && { override=1; shift; }
-    [ -n "$1" ] || return
-
-    if [ "$OSTYPE" = 'cygwin' -o `uname -o` = 'Cygwin' ]; then
-        grep -q 'i' <<< "$-" && [ $override -eq 0 ] && \
-            cygpath -u -- "$1" 2>/dev/null | sed -e 's/ /\\ /g' || \
-                cygpath -u -- "$1" 2>/dev/null
-        #alternatively
-        #echo "${path// /\\ }"
-    else
-        echo "$1"
-    fi
-}
-
 function pidof() {
-    [ "$OSTYPE" = 'cygwin' -o `uname -o` = 'Cygwin' ] && _ps='procps'
-    ${_ps:-ps} -o pid,comm | awk -v pat="$1" '$NF ~ pat { print $1 }'
-}
-
-function chef_env() {
-  [ -n "$1" ] && CHEF_ENV=$1
-  : ${CHEF_ENV:?}
-  CHEF_CLIENT_KEY="${_CHEF_HOME:?}/${_CHEF_USER:?}-${CHEF_ENV,,}.pem"
-  # comma-delimited paths will become an 'array'
-  CHEF_COOKBOOK_PATH="${REPO_HOME:?}/chef-repo/cookbooks"
-
-  unalias knife 2>/dev/null
-  case ${CHEF_ENV,,} in
-    chef10|10)
-    	CHEF_SERVER="https://chef.dev.com"
-	CHEF_COOKBOOK_PATH="{REPO_HOME}/${CHEF_ENV,,}-repo/cookbooks"
-	;;
-    beam)
-    	unset CHEF_SERVER CHEF_CLIENT_KEY
-	CHEF_COOKBOOK_PATH=""
-	alias knife='\knife solo'
-	;;
-    none|clear)
-	unset ${!CHEF_*}
-	return 0
-	;;
-    *)	echo "ERROR: unknown value ($CHEF_ENV) - exiting..."
-	unset CHEF_ENV
-	return 2
-  esac
-  export ${!CHEF_*}
-  for p in ${!CHEF_*}; do echo -n "$p = "; printenv $p; done
-}
-
-function git_branch() {
-  git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
-}
-
-function git_check() {
-  git diff --stat origin/$(git_branch) 2>/dev/null
+    #FIXME cygwin needs procps with -o, or suitable flags to simple 'ps'
+    ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
 
 function getcert() {
@@ -94,8 +66,6 @@ function getcert() {
 
 function cdl() { cd "${1:-.}" && ls; }
 
-#function beam() { test "${PWD##*/ops/}" != "beam" && return || `which beam` "$@"; }
-
 function myip() { nslookup myip.opendns.com resolver1.opendns.com; }
 
 function pause() {
@@ -111,7 +81,7 @@ function ask() {
 # mimic 'set -x'
 function runv() { >&2 echo "+ $*"; "$@"; }
 
-function join_by() {
+function join_string() {
     # escape whitespaces if no quote char. even delimiter is eligible (rare)
     [ -n "$quote" ] || set -- "${@// /\\ }"
 
@@ -130,7 +100,7 @@ function join_by() {
     echo
 }
 
-function join_quote() { quote=\' join_by "$@"; }
+function join_quote() { quote=\' join_string "$@"; }
 
 function __parse_options() {
     local option option2 i IFS='
@@ -160,14 +130,4 @@ function __parse_options() {
     option="${option%%[<{().[]*}"
     printf '%s\n' "${option/=*/=}"
 }
-
-case `uname -o` in
-    Cygwin)
-        function command_not_found_handle() { cmd.exe /D /C "$@"; }
-
-        #function su() {    # sorta works. 'uid' dosn't get updated
-        #  eval `awk -v who=$1 -F: '$1 == who { printf("env USER=%s HOME=%s %s", who, $(NF-1), $NF) }' /etc/passwd` "$@"
-        #}
-        ;;
-esac
 

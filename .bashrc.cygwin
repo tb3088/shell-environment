@@ -1,0 +1,57 @@
+[[ "${OSTYPE:-`uname -o`}" == [cC]ygwin ]] || return
+
+function path2unix() {
+    local escape=1
+    # Cygwin automagically handle spaces on the $PATH and
+    # must NOT have them escaped to work properly. But interactive
+    # use on command-line needs to be inside quotes or escaped.
+    #
+    # Processing .bash_profile is Interactive so must be overridden
+    [ "$1" = '-n' ] && { escape=0; shift; }
+    [ -n "$1" ] || return
+
+    # interactive lends itself to cut/paste without having to enquote
+    [ $escape -eq 1 ] && \
+        cygpath -u -- "$1" 2>/dev/null | sed -e 's/ /\\ /g' || \
+        cygpath -u -- "$1" 2>/dev/null
+}
+
+function command_not_found_handle() { cmd.exe /D /C "$@"; }
+
+#function su() {    # sorta works. 'uid' dosn't get updated
+#  eval `awk -v who=$1 -F: '$1 == who { printf("env USER=%s HOME=%s %s", who, $(NF-1), $NF) }' /etc/passwd` "$@"
+#}
+
+#FIXME this is a fn mess! get it consistent columns and formats (time) if possible
+which procps &>/dev/null && \
+    alias ps='\procps ${PSARGS:--o uid,pid,ppid,stime,etime,cmd}' || alias ps='\ps -f'
+
+#which 7z &>/dev/null || {
+#    bin='7-Zip/7z.exe'
+#    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+#      [ -x "${!dir}/$bin" ] && { alias 7z="run \"\$$dir/$bin\""; break; }
+#    done
+#  }
+
+which notepad++ &>/dev/null || {
+    bin='Notepad++/notepad++.exe'
+    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+      [ -x "${!dir}/$bin" ] && { alias npp="run \"\$$dir/$bin\""; break; }
+	# also works! npp="run `path2unix "${!dir}"`/`path2unix "$bin"`"
+    done
+  }
+
+# single-quotes for lazy evaluation
+alias downloads='cd "$USERPROFILE"/Downloads'
+alias workspace='cd "$USERPROFILE"/workspace'
+
+
+# setting GEM_HOME will alter 'INSTALLATION' and 'EXECUTABLE' directory.
+# However 'USER INSTALLATION DIRECTORY' is hard-coded to $HOME/.gem/ruby/<version>
+# To prevent Dropbox from syncing contents
+#   ln -s $USERPROFILE/.{gem,bundle,berkshelf}
+#
+# GEM_HOME="${LOCALAPPDATA:-$HOME}/.gem"
+
+
+# vim: set expandtab:ts=4:sw=4

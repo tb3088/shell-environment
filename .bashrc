@@ -118,8 +118,10 @@ HISTTIMEFORMAT="%H:%M "
 # Ignore some controlling instructions
 HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 
-for f in .functions{,.local} .bashrc.local .aliases{,.local}; do
-    [ -f "$HOME/$f" ] && source "$HOME/$f" || true
+
+#for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
+for f in "$HOME"/.{aliases{,.*},bashrc.*}; do
+    [ -f "$f" ] && source "$f" || true
 done
 
 ### Completion options
@@ -127,10 +129,12 @@ done
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
     *i*)
-	for f in {,/usr/local}/etc/bash_completion{,.d/*} ~/.bash_completion; do
-	    [ -f "$f" ] && source "$f" || true
-	done
+#        for f in {,/usr/local}/etc/bash_completion{,.d/*} ~/.bash_completion; do
+#            [ -f "$f" ] && source "$f"
+#        done
 	;;
     *c*)
 	SSH_AGENT=""
 esac
+
+# vim: set expandtab:ts=4:sw=4

@@ -1,0 +1,18 @@
+
+which git &>/dev/null && {
+  function git_branch() {
+     git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
+  }
+
+  function git_check() {
+    git diff --stat origin/$(git_branch) 2>/dev/null
+  }
+
+  alias gsb='git status -sb'
+  alias gbl='git show-branch --all --list'
+}
+
+alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
+alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
+
+# vim: set expandtab:ts=4:sw=4

@@ -1,0 +1,57 @@
+return
+
+which chef &>/dev/null || return
+
+echo "processing .bashrc.chef top"
+
+#TODO attempt to find binary like this
+#which notepad++ &>/dev/null || {
+#    bin='Notepad++/notepad++.exe'
+#    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+#      [ -x "${!dir}/$bin" ] && { alias npp="run \"\$$dir/$bin\""; break; }
+#    done
+#  }
+#    : ${PUPPET_BASE:="${PROGRAMFILES:-/opt}/puppetlabs/puppet"}
+
+
+function chef_env() {
+  [ -n "$1" ] && CHEF_ENV=$1
+  : ${CHEF_ENV:?}
+  CHEF_CLIENT_KEY="${_CHEF_HOME:?}/${_CHEF_USER:?}-${CHEF_ENV,,}.pem"
+  # comma-delimited paths will become an 'array'
+  CHEF_COOKBOOK_PATH="${REPO_HOME:?}/chef-repo/cookbooks"
+
+  unalias knife 2>/dev/null
+  case ${CHEF_ENV,,} in
+    chef10|10)
+    	CHEF_SERVER="https://chef.dev.com"
+	CHEF_COOKBOOK_PATH="{REPO_HOME}/${CHEF_ENV,,}-repo/cookbooks"
+	;;
+    beam)
+    	unset CHEF_SERVER CHEF_CLIENT_KEY
+	CHEF_COOKBOOK_PATH=""
+	alias knife='\knife solo'
+	;;
+    none|clear)
+	unset ${!CHEF_*}
+	return 0
+	;;
+    *)	echo "ERROR: unknown value ($CHEF_ENV) - exiting..."
+	unset CHEF_ENV
+	return 2
+  esac
+  export ${!CHEF_*}
+  for p in ${!CHEF_*}; do echo -n "$p = "; printenv $p; done
+}
+
+echo "processing .bashrc.chef"
+
+alias chef-repo='pushd $REPO_HOME/chef-repo'
+alias ops-repo='pushd $REPO_HOME/operations'
+alias krf='\knife role from file'
+alias ksn='\knife search node'
+alias kds='knife data bag show'
+alias kde='knife data bag edit'
+
+
+# vim: set expandtab:ts=4:sw=4
