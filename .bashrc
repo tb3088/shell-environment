@@ -120,7 +120,7 @@ HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 
 
 #for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
-for f in "$HOME"/.{aliases{,.*},bashrc.*}; do
+for f in "$HOME"/.{functions.*,bashrc.*,aliases{,.*}}; do
     [ -f "$f" ] && source "$f" || true
 done
 

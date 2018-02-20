@@ -6,8 +6,8 @@ case "${OSTYPE:-`uname -o`}" in
         ;;
 esac
 
-for f in "$HOME"/.{bash_profile.local,functions,bashrc.`uname -o`}; do
-    [ -f "${f,,}" ] && source "${f,,}" || true
+for f in "$HOME"/.{bash_profile.local,functions,bashrc.${OSTYPE:-`uname -o`}; do
+    [ -f "$f" ] && source "$f" || true
 done
 
 for ed in vim vi nano pico emacs; do
