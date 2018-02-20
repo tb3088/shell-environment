@@ -6,7 +6,7 @@ case "${OSTYPE:-`uname -o`}" in
         ;;
 esac
 
-for f in "$HOME"/.{bash_profile.local,functions,bashrc.${OSTYPE:-`uname -o`}; do
+for f in "$HOME"/.{bash_profile.local,functions,bashrc.${OSTYPE:-`uname -o`}}; do
     [ -f "$f" ] && source "$f" || true
 done
 
