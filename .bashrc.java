@@ -1,6 +1,6 @@
 which java &>/dev/null && return
 
-: ${JAVA_HOME:="${PROGRAMFILES:-/opt}/java${JAVA_VERSION"}
+: ${JAVA_HOME:="${PROGRAMFILES:-/opt}/java${JAVA_VERSION}"}
 
 for v in JAVA_HOME; do
     [ -n "${!v}" ] || { unset $v; continue; }
