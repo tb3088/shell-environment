@@ -34,9 +34,8 @@ function addPath() {
 
     [ $# -eq 1 ] && { k='PATH'; flag='-n'; } || { k="$1"; shift; }
     for v in "$@"; do
-    #FIXME
-        v=`path2unix $flag "$v"`
-
+        [[ "${OSTYPE:-`uname -o`}" == [cC]ygwin ]] && \
+            v=`path2unix $flag "$v"`
         delim=':' contains "${!k}" "$v" && continue
 
         # leading '-' means prepend

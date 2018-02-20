@@ -1,5 +1,7 @@
 [[ "${OSTYPE:-`uname -o`}" == [cC]ygwin ]] || return
 
+contains "${CYGWIN:-xxx}" "winsymlinks" || export CYGWIN+=" winsymlinks:native"
+
 function path2unix() {
     local escape=1
     # Cygwin automagically handle spaces on the $PATH and
@@ -13,7 +15,7 @@ function path2unix() {
     # interactive lends itself to cut/paste without having to enquote
     [ $escape -eq 1 ] && \
         cygpath -u -- "$1" 2>/dev/null | sed -e 's/ /\\ /g' || \
-        cygpath -u -- "$1" 2>/dev/null
+            cygpath -u -- "$1" 2>/dev/null
 }
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }

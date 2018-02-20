@@ -1,11 +1,5 @@
 umask 022
 
-case "${OSTYPE:-`uname -o`}" in
-    [c|C]ygwin)
-        export CYGWIN+=" winsymlinks:native"
-        ;;
-esac
-
 for f in "$HOME"/.{bash_profile.local,functions,bashrc.${OSTYPE:-`uname -o`}}; do
     [ -f "$f" ] && source "$f" || true
 done
