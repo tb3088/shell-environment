@@ -22,9 +22,6 @@ function contains() {
     esac
 }
 
-# placeholder
-function path2unix() { echo "$1"; }
-
 # pre-/post-pend [multiple] elements to an environment variable
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO rewrite callers as PATH=`join_string $1 $2 $delim`
