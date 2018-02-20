@@ -1,5 +1,8 @@
 .aws/
+.berkshelf/
+.bundle/
 .chef/
+.gem/
 .gnupg/
 .ssh/
 .vim/
@@ -19,3 +22,6 @@ Employment/
 Work_Projects/
 Forks-by-Matt/
 Public/
+Downloads/
+Dropbox/
+workspace/
