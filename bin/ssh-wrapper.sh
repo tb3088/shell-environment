@@ -11,21 +11,21 @@ shopt -s nullglob
 [ ${#@} -gt 0 ] || { >&2 echo ' insufficient arguments'; exit 1; }
 
 case `uname -o` in
-  Cygwin*) 
-      WHICH='\which --skip-functions --skip-alias'
+    Cygwin*) 
+        WHICH='\which --skip-functions --skip-alias'
 	;;
 esac
 
 : ${WHICH:=which}
 for p in SSH SCP SFTP SCREEN; do
-  [ "${!p:0:1}" = '/' ] || eval $p=`$WHICH ${!p:-${p,,}} 2>/dev/null`
-  [ -x "${!p}" -o "$p" = "SCREEN" ] || {
-      >&2 echo -e "ERROR: missing $p binary '${!p}'"; exit 2; }
+    [ "${!p:0:1}" = '/' ] || eval $p=`$WHICH ${!p:-${p,,}} 2>/dev/null`
+    [ -x "${!p}" -o "$p" = "SCREEN" ] || {
+        >&2 echo -e "ERROR: missing $p binary '${!p}'"; exit 2; }
 done
 
 function runv() {
-  >&2 echo "+ $*"
-  "$@"
+    >&2 echo "+ $*"
+    "$@"
 }
 
 function _ssh() {
@@ -40,9 +40,9 @@ function _ssh() {
   local i v p
 
   if [ "${TERM%.*}" = "screen" ]; then
-    _screen="$SCREEN";
-    TERM=${TERM/screen./}
-    TERM=${TERM/screen/}
+      _screen="$SCREEN";
+      TERM=${TERM/screen./}
+      TERM=${TERM/screen/}
   fi
 
   _cmd=SSH
@@ -58,24 +58,26 @@ function _ssh() {
   esac
 
   for i in `seq ${DEBUG:-0} 2>/dev/null`; do
-    VERBOSE+=' -v'
+      VERBOSE+=' -v'
   done
 
   for v in IDENTITY SSH_CONFIG; do
-    [ -n "${!v}" -a ! -f "${!v}" ] && {
-        >&2 echo "ERROR: $v file '${!v}' not found"; return 1; }
+      [ -n "${!v}" -a ! -f "${!v}" ] && {
+          >&2 echo "ERROR: $v file '${!v}' not found"; return 1; }
   done
 
   if [ -z "$SSH_CONFIG" ]; then
     # attempt a quick search - traversing CWD not advised.
-    for _conf in $HOME/{.ssh,.aws/$AWS_PROFILE}/{,$PROFILE{,/$AWS_REGION}/}config{,{.,-,_}$PROFILE} ; do
-      [ -f "$_conf" ] && {
-	        SSH_CONFIG="$_conf"
-	        >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
-	        break; }
-    done
-    [ -n "$SSH_CONFIG" ] || { 
-        >&2 echo "ERROR: no SSH_CONFIG found ${PROFILE+for PROFILE '$PROFILE'}"; return 1; }
+      for _conf in $HOME/{.ssh,.aws/$AWS_PROFILE}/{,$PROFILE{,/$AWS_REGION}/}config{,{.,-,_}$PROFILE} ; do
+          [ -f "$_conf" ] && {
+              SSH_CONFIG="$_conf"
+# gratuitous output screws with 'rsync' etc.
+#	      >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
+              break
+	  }
+      done
+      [ -n "$SSH_CONFIG" ] || { 
+          >&2 echo "ERROR: no SSH_CONFIG found ${PROFILE+for PROFILE '$PROFILE'}"; return 1; }
   fi
 
   # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
@@ -86,36 +88,33 @@ function _ssh() {
 
   # propagate environment when running Screen
   _env=
-  if [ -n "${_screen}" ]; then
-    for v in SSH_CONFIG PROFILE IDENTITY ${!AWS_*} VERBOSE; do
+  for v in SSH_CONFIG PROFILE IDENTITY ${!AWS_*} VERBOSE; do
       [ -n "${!v}" ] || continue
       _env+=" $v='${!v}'"
-    done
-  fi
+  done
 
-  ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"${_env:+ env $_env}} \
+  ${DEBUG:+runv} eval ${_screen:+$_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
+      ${_env:+ env $_env} \
       ${!_cmd} $VERBOSE \
       ${IDENTITY:+ -i "$IDENTITY"} \
       ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
       ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
       $SSH_OPTS \
       "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
-
-      #	${DEBUG:+ 2>"/tmp/ssh-$PROFILE_$1.err"}
 }
 
 
 #--- main---
 if [ -z "$PROFILE" ]; then
   # compute from wrapper filename
-  _origin=$( basename -s .sh `readlink "$0"`)
-  _prog=$( basename -s .sh "$0")
-  [ "$_prog" != "$_origin" ] && PROFILE="$_prog"
+    _origin=$( basename -s .sh `readlink "$0"`)
+    _prog=$( basename -s .sh "$0")
+    [ "$_prog" != "$_origin" ] && PROFILE="$_prog"
 fi
 
 # disable Screen
 for s in ${NO_SCREEN:-git rsync}; do
-  [ "${PROFILE##*.}" = "$s" ] && { unset SCREEN; break; }
+    [ "${PROFILE##*.}" = "$s" ] && { unset SCREEN; break; }
 done
 
 _ssh "$@"
