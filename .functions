@@ -40,6 +40,13 @@ function addPath() {
     done
 }
 
+# Assign a HEREDOC to a variable. To preserve space/tab use '<<-'
+# contents will be expanded unless marker is quoted
+# Usage: define VAR <<_EOF ...
+function define() {
+  IFS='\n' read -r -d '' $1 || true
+}
+
 function pidof() {
     #FIXME cygwin needs procps with -o, or suitable flags to simple 'ps'
     ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
