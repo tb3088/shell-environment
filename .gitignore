@@ -1,13 +1,14 @@
-.aws/
+.aws
 .berkshelf/
 .bundle/
-.chef/
+.chef
 .gem/
 .gitconfig
 .gnupg/
 .packer.d/
 .rnd
 .ssh/
+.sudo_as_admin_successful
 .terraform.d/
 .vim/
 .bash_history
