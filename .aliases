@@ -30,6 +30,8 @@ alias cdu='cd ..'
 alias sftp='\sftp -R 256 -B 262144'
 alias screen='\screen ${HOSTNAME:+-t ${HOSTNAME%%.*}}'
 alias ntpdate='sudo /usr/sbin/ntpd -gq'
+# --filter=':- .gitignore'      mind the space
+alias rsync="\rsync --cvs-exclude --exclude='.git*'"
 
 alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{time_starttransfer} Total time: %{time_total} ReturnCode: %{http_code} Download Size: %{size_download} Speed: %{speed_download} \n"'
 

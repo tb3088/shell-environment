@@ -1,7 +1,7 @@
-.aws
+.aws/
 .berkshelf/
 .bundle/
-.chef
+.chef/
 .gem/
 .gitconfig
 .gnupg/
@@ -22,7 +22,7 @@
 *.rdp
 .viminfo
 *~
-bin/*
+bin/
 Bookmarks/
 Employment/
 Work_Projects/
