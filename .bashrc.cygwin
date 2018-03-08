@@ -48,12 +48,4 @@ alias downloads='cd "$USERPROFILE"/Downloads'
 alias workspace='cd "$USERPROFILE"/workspace'
 
 
-# setting GEM_HOME will alter 'INSTALLATION' and 'EXECUTABLE' directory.
-# However 'USER INSTALLATION DIRECTORY' is hard-coded to $HOME/.gem/ruby/<version>
-# To prevent Dropbox from syncing contents
-#   ln -s $USERPROFILE/.{gem,bundle,berkshelf}
-#
-# GEM_HOME="${LOCALAPPDATA:-$HOME}/.gem"
-
-
 # vim: set expandtab:ts=4:sw=4
