@@ -10,8 +10,8 @@ shopt -s nullglob
 
 [ ${#@} -gt 0 ] || { >&2 echo ' insufficient arguments'; exit 1; }
 
-case `uname -o` in
-    Cygwin*) 
+case ${OSTYPE:-`uname -o`} in
+    [cC]ygwin) 
         WHICH='\which --skip-functions --skip-alias'
 	;;
 esac
