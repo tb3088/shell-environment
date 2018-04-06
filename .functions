@@ -134,3 +134,32 @@ function __parse_options() {
     printf '%s\n' "${option/=*/=}"
 }
 
+function userinfo() {
+  # analogous to /bin/usermod
+  #while [ $# -gt 0 ] && [[ "$1" =~ -* ]]; do
+  [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
+  
+  case $flag in
+    l)  field=1 ;;&
+	u)  field=2 ;;&
+	g)  field=3 ;;&
+	d)  field=6 ;;&
+	L)  field=lock ;&
+	# TODO needs if/else
+	p)  getent shadow ${1:-`id -u`} | awk -F: -v field=$field '{ print $2 }' ;;
+	'') id -nu $1 ;;
+	*)  getent passwd ${1:-`id -u`}
+  esac
+  # login:x:uid:gid:gecos:home:shell
+#    -c, --comment COMMENT         new value of the GECOS field
+#  -d, --home HOME_DIR           new home directory for the user account
+#  -e, --expiredate EXPIRE_DATE  set account expiration date to EXPIRE_DATE
+#  -f, --inactive INACTIVE       set password inactive after expiration
+#  -g, --gid GROUP               force use GROUP as new primary group
+#  -G, --groups GROUPS           new list of supplementary GROUPS
+#  -l, --login NEW_LOGIN         new value of the login name
+#  -L, --lock                    lock the user account
+#  -p, --password PASSWORD       use encrypted password for the new password
+#  -s, --shell SHELL             new login shell for the user account
+#  -u, --uid UID                 new UID for the user account
+}
