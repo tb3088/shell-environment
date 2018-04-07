@@ -3,6 +3,7 @@
 #TODO handle Hash and Array
 function contains() {
     # 'delim' and 'method' passed as invocation arg
+    #TODO leverage IFS="$delim" 
     local source="$delim$1$delim" sub="$delim$2$delim"
 
     # empty string inside empty is valid
@@ -27,12 +28,18 @@ function contains() {
 #TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 function addPath() {
     local k v flag
-    [ -n "$1" ] || return
+    [ -n "$1" ] || return 0
 
-    [ $# -eq 1 ] && { k='PATH'; flag='-n'; } || { k="$1"; shift; }
+    if [ $# -eq 1 ]; then
+        k='PATH'; flag='-n'
+    else
+        k="$1"; shift
+    fi
+
     for v in "$@"; do
-        [[ "${OSTYPE:-`uname -o`}" == [cC]ygwin ]] && \
-            v=`path2unix $flag "$v"`
+        declare -f convert_path &>/dev/null &&
+            v=`convert_path $flag "$v"`
+
         delim=':' contains "${!k}" "$v" && continue
 
         # leading '-' means prepend

@@ -1,21 +1,39 @@
-[[ "${OSTYPE:-`uname -o`}" == [cC]ygwin ]] || return
+#
+[[ "${OSTYPE:=`uname -o`}" == [cC]ygwin ]] || return 0
 
 contains "${CYGWIN:-xxx}" "winsymlinks" || export CYGWIN+=" winsymlinks:native"
 
-function path2unix() {
-    local escape=1
+function convert_path() {
+    local escape=0 format= flags=
+
     # Cygwin automagically handle spaces on the $PATH and
     # must NOT have them escaped to work properly. But interactive
     # use on command-line needs to be inside quotes or escaped.
     #
     # Processing .bash_profile is Interactive so must be overridden
-    [ "$1" = '-n' ] && { escape=0; shift; }
-    [ -n "$1" ] || return
 
-    # interactive lends itself to cut/paste without having to enquote
-    [ $escape -eq 1 ] && \
-        cygpath -u -- "$1" 2>/dev/null | sed -e 's/ /\\ /g' || \
-            cygpath -u -- "$1" 2>/dev/null
+    while [ $# -ne 0 ]; do
+        case $1 in
+            '-e')   escape=1 ;;
+            '-n')   escape=0 ;;
+            dos|mixed|unix|windows)
+                    format="-t $1" ;;
+            '-'*)   flags+=" $1" ;;
+            *)      break
+        esac
+        shift
+    done
+
+    [ -n "$1" ] || return 0
+
+    case ${OSTYPE:-`uname`} in
+        cygwin|CYGWIN*)
+            [ $escape -eq 1 ] &&
+                eval cygpath $format $flags -- \"$1\" | sed -e 's/ /\\ /g' ||
+                eval cygpath $format $flags -- \"$1\"
+            ;;
+        *)  echo "$1"
+    esac
 }
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
