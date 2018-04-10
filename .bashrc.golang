@@ -11,7 +11,24 @@ which go &>/dev/null || { return 0
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
 
 : ${GOROOT:=`go env GOROOT`}
-[ -n "${GOPATH:-`go env GOPATH`}" ] || GOPATH=${LOCALAPPDATA:-$HOME}/.go
+
+[ -n "$GOPATH" ] || {
+    for _gop in "${LOCALAPPDATA}/go" "`go env GOPATH`"; do
+        [ -n "${_gop%/go}" ] || continue
+	GOPATH="`convert_path --windows $_gop`"
+	break
+    done
+}
+
+OLDIFS="$IFS"
+IFS="${PATHSEP:-:}"
+for dir in $GOPATH; do
+    addPath "`convert_path --unix "$dir"`/bin"
+done
+IFS="$OLDIFS"
 
 #GOBIN=$HOME/bin
+export ${!GO*}
 
+#NOTE 'go get' doesn't work if using Cygwin 'git'
+# if OSTYPE=cygwin or uname -k = windows, then git version | grep windows or issue WARN

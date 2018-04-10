@@ -65,5 +65,6 @@ which notepad++ &>/dev/null || {
 alias downloads='cd "$USERPROFILE"/Downloads'
 alias workspace='cd "$USERPROFILE"/workspace'
 
+export PATHSEP=';'
 
 # vim: set expandtab:ts=4:sw=4
