@@ -1,11 +1,13 @@
-which go &>/dev/null || { return 0
+which go &>/dev/null || {
+    _cygpath=`which cygpath 2>/dev/null`
 
-# look for Go in a few places
-# for d in $GOROOT "${PROGRAMFILES:-/opt}/golang${GO_VERSION}"}
-#for v in GOROOT; do
-#    [ -n "${!v}" ] || { unset $v; continue; }
-#    [ -d "${!v}/bin" ] && addPath "${!v}/bin"
-#done
+    # look for program in common places
+    for v in "$GOROOT" {"$SYSTEMDRIVE","$PROGRAMFILES","$LOCALAPPDATA"/programs,/opt,/usr/local/lib}/go{,lang}{,${GO_VERSION:+-$GO_VERSION}}; do
+        [ -n "$v" ] && { [ -n "$_cygpath" ] && v="`$_cygpath --unix -- "$v"`"; } || { unset v; continue; }
+        [ -x "$v/bin/go" ] && { addPath "$v/bin"; break; }
+    done
+    [ -n "$v" ] || return 0
+    unset _cygpath
 }
 
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
