@@ -1,15 +1,11 @@
 which ruby &>/dev/null && return
 
-#TODO system-wide Ruby, not the embedded ones that ship with Chef/Puppet
-if [ -d "$PUPPET_BASE/sys/ruby" ]; then
-    : ${RUBY_BASE:="$PUPPET_BASE/sys/ruby"}
-else
-    : ${RUBY_BASE:="${PROGRAMFILES:-/opt}/ruby${RUBY_VERSION}"}
-fi
-
-for v in RUBY_BASE; do
-    [ -n "${!v}" ] || { unset $v; continue; }
-    [ -d "${!v}/bin" ] && addPath "${!v}/bin"
+# do a simple search
+for v in "$RUBY_BASE" {"$PROGRAMFILES","$LOCALAPPDATA",/opt,/usr/local,"${PUPPET_BASE:+$PUPPET_BASE/sys}"}/ruby$RUBY_VERSION
+do
+    [ -n "$v" ] || continue
+    v=`convert_path "$v"`
+    [ -d "$v/bin" ] && { addPath "$v/bin"; break; }
 done
 
 # setting GEM_HOME will alter 'INSTALLATION' and 'EXECUTABLE' directory. see 
@@ -18,9 +14,6 @@ done
 # To prevent Dropbox from syncing contents and making a royal mess:
 #   ln -s $LOCALAPPDATA/.{gem,bundle,berkshelf} $HOME/
 
-export GEM_HOME="${LOCALAPPDATA:-$HOME}/.gem"
-# if Ruby is Windows Native (look at final field of `ruby --version' eg. not [x86_64-cygwin]) then
-#export GEM_HOME=`cygpath -w -- "${LOCALAPPDATA:-$HOME}/.gem"`
-
+export GEM_HOME=`convert_path "${LOCALAPPDATA:-$HOME}/.gem"`
 
 # vim: set expandtab:ts=4:sw=4
