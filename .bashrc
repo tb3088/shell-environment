@@ -123,6 +123,8 @@ for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
     [ -f "$f" ] && source "$f" || true
 done
 
+addPath -"$HOME"/bin
+
 ### Completion options
 # If this shell is interactive, turn on programmable completion enhancements.
 # Any completions you add in ~/.bash_completion are sourced last.
