@@ -1,6 +1,6 @@
 umask 022
 
-for f in "$HOME"/.{bash_profile.local,functions,bashrc.${OSTYPE:-`uname -o`}}; do
+for f in "$HOME"/.{bash_profile.local,functions,bashrc.${OSTYPE:=`uname`}}; do
     [ -f "$f" ] && source "$f" || true
 done
 

@@ -1,5 +1,6 @@
-[[ "${OSTYPE:-`uname -o`}" == darwin* ]] || return
+[[ "${OSTYPE:-`uname`}" == [dD]arwin* ]] || return 0
 
+alias ls='\ls -hAF -G'
 #alias subl='open -a "Sublime Text 2"'
 #alias bbe='open -a "TextWrangler"'
 #alias gvim='open -a "MacVim"'
