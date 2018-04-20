@@ -1,5 +1,7 @@
 # $Id$
 
+function convert_path() { echo "$@"; }
+
 #TODO handle Hash and Array
 function contains() {
     # 'delim' and 'method' passed as invocation arg
@@ -27,23 +29,20 @@ function contains() {
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 function addPath() {
-    local k v flag
     [ -n "$1" ] || return 0
 
-    if [ $# -eq 1 ]; then
-        k='PATH'; flag='-n'
-    else
-        k="$1"; shift
-    fi
+    local k v escape prepend delim=':'
+    [ $# -eq 1 ] && { k='PATH'; escape='-n'; } || { k="$1"; shift; }
 
     for v in "$@"; do
-        declare -f convert_path &>/dev/null &&
-            v=`convert_path $flag "$v"`
-
-        delim=':' contains "${!k}" "$v" && continue
-
+	prepend=0
         # leading '-' means prepend
-        [ "${v:0:1}" = '-' ] && eval $k="${v:1}:\$$k" || eval $k+=":\$v"
+        [ "${v:0:1}" = '-' ] && { prepend=1; v="${v:1}"; }
+
+        v=`convert_path $escape "$v"`
+        delim="$delim" contains "${!k}" "$v" && continue
+
+        [ $prepend -eq 1 ] && eval $k="$v$delim\$$k" || eval $k+="$delim\$v"
     done
 }
 

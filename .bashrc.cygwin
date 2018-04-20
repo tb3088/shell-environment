@@ -26,14 +26,9 @@ function convert_path() {
 
     [ -n "$1" ] || return 0
 
-    case ${OSTYPE:-`uname`} in
-        cygwin|CYGWIN*)
-            [ $escape -eq 1 ] &&
-                eval cygpath $format $flags -- \"$1\" | sed -e 's/ /\\ /g' ||
-                eval cygpath $format $flags -- \"$1\"
-            ;;
-        *)  echo "$1"
-    esac
+    [ $escape -eq 1 ] &&
+        eval cygpath $format $flags -- \"$1\" | sed -e 's/ /\\ /g' ||
+        eval cygpath $format $flags -- \"$1\"
 }
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
@@ -57,7 +52,7 @@ which notepad++ &>/dev/null || {
     bin='Notepad++/notepad++.exe'
     for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
       [ -x "${!dir}/$bin" ] && { alias npp="run \"\$$dir/$bin\""; break; }
-	# also works! npp="run `path2unix "${!dir}"`/`path2unix "$bin"`"
+	# also works! npp="run `convert_path "${!dir}"`/`convert_path "$bin"`"
     done
   }
 
