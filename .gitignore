@@ -1,4 +1,4 @@
-.aws/
+.aws
 .berkshelf/
 .bundle/
 .chef
@@ -36,3 +36,11 @@ Desktop/
 Library/
 workspace/
 go/
+.DS_Store
+.Trash/
+.bash_sessions/
+.skipbuddy
+Applications/
+Movies/
+Music/
+Pictures/
