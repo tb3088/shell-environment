@@ -10,13 +10,17 @@ shopt -s nullglob
 
 [ ${#@} -gt 0 ] || { >&2 echo ' insufficient arguments'; exit 1; }
 
-case ${OSTYPE:-`uname -o`} in
-    [cC]ygwin) 
+case ${OSTYPE:-`uname`} in
+    [cC]ygwin|CYGWIN*) 
         WHICH='\which --skip-functions --skip-alias'
 	;;
+    [dD]arwin*)
+        WHICH='\which -s'
+	;;
+    *)
+	WHICH='\which'
 esac
 
-: ${WHICH:=which}
 for p in SSH SCP SFTP SCREEN; do
     [ "${!p:0:1}" = '/' ] || eval $p=`$WHICH ${!p:-${p,,}} 2>/dev/null`
     [ -x "${!p}" -o "$p" = "SCREEN" ] || {
