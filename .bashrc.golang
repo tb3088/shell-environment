@@ -11,11 +11,12 @@ which go &>/dev/null || {
 : ${GOROOT:=`go env GOROOT`}
 
 [ -n "$GOPATH" ] || {
-    for _gop in "${LOCALAPPDATA}/go" "`go env GOPATH`"; do
-        [ -n "${_gop%/go}" ] || continue
-	GOPATH="`convert_path --windows $_gop`"
-	break
-    done
+  for _gop in "${LOCALAPPDATA}/go" "`go env GOPATH`" "$HOME/.go"; do
+    [ -n "${_gop%/go}" ] || continue
+
+    GOPATH="`convert_path --windows $_gop`"
+    break
+  done
 }
 
 OLDIFS="$IFS"
@@ -29,3 +30,5 @@ export ${!GO*}
 
 #NOTE 'go get' doesn't work if using Cygwin 'git'
 # if OSTYPE=cygwin or uname -k = windows, then git version | grep windows or issue WARN
+
+# vim: set expandtab:ts=4:sw=4
