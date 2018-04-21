@@ -7,7 +7,7 @@
 .gnupg/
 .packer.d/
 .rnd
-.ssh/
+.ssh
 .sudo_as_admin_successful
 .terraform.d/
 .vim/
@@ -44,3 +44,19 @@ Applications/
 Movies/
 Music/
 Pictures/
+AppData/
+Application Data
+Cookies
+Favorites/
+Links/
+Local Settings
+My Documents
+NTUSER.DAT*
+NetHood
+PrintHood
+Recent
+Searches/
+SendTo
+Start Menu
+Templates
+ntuser.*
