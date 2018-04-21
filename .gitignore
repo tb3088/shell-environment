@@ -1,4 +1,4 @@
-.aws
+.aws/
 .berkshelf/
 .bundle/
 .chef
@@ -30,5 +30,5 @@ Work_Projects/
 Forks-by-Matt/
 Public/
 Downloads
+Documents
 Dropbox
-workspace/
