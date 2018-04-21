@@ -22,7 +22,7 @@ which ssh-agent &>/dev/null && \
         eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+-s}}`
         trap "kill $SSH_AGENT_PID" 0
 
-        [[ $- == *i* ]] && /usr/bin/ssh-add
+        tty -s && /usr/bin/ssh-add
         alias ssh='ssh -A'
     fi
 
