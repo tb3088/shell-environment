@@ -8,6 +8,7 @@
 .packer.d/
 .rnd
 .ssh
+.ssh/*
 .sudo_as_admin_successful
 .terraform.d/
 .vim/
@@ -60,3 +61,8 @@ SendTo
 Start Menu
 Templates
 ntuser.*
+.gem
+.bundle
+.cache
+.local
+.config/*
