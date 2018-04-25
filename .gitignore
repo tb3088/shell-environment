@@ -46,3 +46,24 @@ Applications/
 Movies/
 Music/
 Pictures/
+AppData/
+Application Data
+Cookies
+Favorites/
+Links/
+Local Settings
+My Documents
+NTUSER.DAT*
+NetHood
+PrintHood
+Recent
+Searches/
+SendTo
+Start Menu
+Templates
+ntuser.*
+.gem
+.bundle
+.cache
+.local
+.config/*
