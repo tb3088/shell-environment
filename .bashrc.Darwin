@@ -1,4 +1,6 @@
 [[ "${OSTYPE:-`uname`}" == [dD]arwin* ]] || return 0
 
+export OPENSC_LIB=/usr/local/lib/opensc-pkcs11.so
+alias ssh-add='ssh-add ${OPENSC_LIB:+ -s $OPENSC_LIB}'
 
 # vim: set expandtab:ts=4:sw=4

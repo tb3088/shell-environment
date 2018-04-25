@@ -7,6 +7,7 @@
 .gnupg/
 .packer.d/
 .rnd
+.ssh
 .ssh/
 .sudo_as_admin_successful
 .terraform.d/
@@ -31,6 +32,7 @@ Forks-by-Matt/
 Public/
 Downloads
 Documents
+Dropbox
 Dropbox/
 Desktop/
 Library/
