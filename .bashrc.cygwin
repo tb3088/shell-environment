@@ -1,4 +1,8 @@
-[[ "${OSTYPE:-`uname`}" == cygwin* ]] || return 0
+case ${OSTYPE:-`uname`} in
+    cygwin|CYGWIN_*)
+        ;;
+    *)  return 0
+esac
 
 contains "${CYGWIN:-xxx}" "winsymlinks" || export CYGWIN+=" winsymlinks:native"
 

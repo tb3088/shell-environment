@@ -1,4 +1,8 @@
-[[ "${OSTYPE:-`uname`}" == [dD]arwin* ]] || return 0
+case ${OSTYPE:-`uname`} in
+    [dD]arwin*)
+        ;;
+    *)  return 0
+esac
 
 alias ls='\ls -hAF -G'
 #alias subl='open -a "Sublime Text 2"'

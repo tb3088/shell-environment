@@ -1,4 +1,8 @@
-[[ "${OSTYPE:-`uname`}" == cygwin* ]] || return 0
+case ${OSTYPE:-`uname`} in
+    cygwin|CYGWIN_*)
+        ;;
+    *)  return 0
+esac
 
 #FIXME this is a fn mess! get it consistent columns and formats (time) if possible
 which procps &>/dev/null &&
