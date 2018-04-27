@@ -22,6 +22,7 @@
 .lesshst
 .minttyrc
 *.rdp
+*.lnk
 .viminfo
 *~
 bin/
@@ -67,3 +68,6 @@ ntuser.*
 .cache
 .local
 .config/*
+Contacts/
+OpenVPN
+*_history
