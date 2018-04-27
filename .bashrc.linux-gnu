@@ -1,2 +1,5 @@
-export OPENSC_LIB=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
-alias ssh-add='ssh-add ${OPENSC_LIB:+ -s $OPENSC_LIB}'
+
+if [ -f ${OPENSC_LIB:=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so} ]; then
+    export OPENSC_LIB
+    alias ssh-add="ssh-add -s $OPENSC_LIB"
+fi
