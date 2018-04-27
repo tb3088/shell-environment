@@ -25,6 +25,7 @@
 *.lnk
 .viminfo
 *~
+bin
 bin/
 Bookmarks/
 Employment/

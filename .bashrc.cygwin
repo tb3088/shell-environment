@@ -4,7 +4,8 @@ case ${OSTYPE:-`uname`} in
     *)  return 0
 esac
 
-contains "${CYGWIN:-xxx}" "winsymlinks" || export CYGWIN+=" winsymlinks:native"
+#Ref: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
+contains "${CYGWIN:-xxx}" "winsymlinks" || export CYGWIN+=" winsymlinks:lnk"
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 
