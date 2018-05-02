@@ -22,9 +22,11 @@ which ssh-agent &>/dev/null && \
         eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+-s}}`
         trap "kill $SSH_AGENT_PID" 0
 
-        tty -s && /usr/bin/ssh-add
-        alias ssh='ssh -A'
+#        tty -s && /usr/bin/ssh-add
+#        alias ssh='ssh -A'
     fi
+
+[[ "$-" == *i* ]] && { ssh-add; alias ssh='ssh -A'; }
 
 source $HOME/.bashrc
 
