@@ -1,4 +1,3 @@
-
 if [ -f ${OPENSC_LIB:=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so} ]; then
     export OPENSC_LIB
     alias ssh-add="ssh-add -s $OPENSC_LIB"

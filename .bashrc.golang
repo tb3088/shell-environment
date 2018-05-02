@@ -1,6 +1,6 @@
 which go &>/dev/null || {
     # look for program in common places
-    for v in "$GOROOT" {"$SYSTEMDRIVE","$PROGRAMFILES","$LOCALAPPDATA",/opt,/usr/local/lib}/go{,lang}{,${GO_VERSION:+-$GO_VERSION}}; do
+    for v in "$GOROOT" {"$SYSTEMDRIVE","$PROGRAMFILES","$LOCALAPPDATA",/opt,/usr/local{,/lib}}/go{,lang}{${GO_VERSION:+-$GO_VERSION},}; do
         [ -n "$v" ] || { unset v; continue; }
         [ -x "$v/bin/go" ] && { addPath "$v/bin"; break; }
     done
