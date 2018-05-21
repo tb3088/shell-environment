@@ -72,3 +72,5 @@ ntuser.*
 Contacts/
 OpenVPN
 *_history
+logs/
+IntelGraphicsProfiles/
