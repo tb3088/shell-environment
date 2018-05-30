@@ -26,7 +26,7 @@ which ssh-agent &>/dev/null && \
 #        alias ssh='ssh -A'
     fi
 
-[[ "$-" == *i* ]] && { ssh-add; alias ssh='ssh -A'; }
+[[ "$-" == *i* ]] && { ssh-add; ssh-add ~/Dropbox/id_{r,d}sa 2>/dev/null; alias ssh='ssh -A'; }
 
 source $HOME/.bashrc
 
