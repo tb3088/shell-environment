@@ -11,6 +11,7 @@
 .ssh/
 .sudo_as_admin_successful
 .terraform.d/
+.terraformrc
 .vim/
 .bash_history
 .dropbox*
@@ -40,6 +41,7 @@ Desktop/
 Library/
 workspace/
 go/
+.go/
 .DS_Store
 .Trash/
 .bash_sessions/
@@ -74,3 +76,8 @@ OpenVPN
 *_history
 logs/
 IntelGraphicsProfiles/
+.dbus*
+.xsession-errors
+.ICEauthority
+.serverauth.*
+MicrosoftEdgeBackups/
