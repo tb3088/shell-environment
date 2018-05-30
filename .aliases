@@ -35,7 +35,4 @@ alias rsync="\rsync --cvs-exclude --exclude='.git*'"
 
 alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{time_starttransfer} Total time: %{time_total} ReturnCode: %{http_code} Download Size: %{size_download} Speed: %{speed_download} \n"'
 
-alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
-alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
-
 # vim: set expandtab:ts=4:sw=4
