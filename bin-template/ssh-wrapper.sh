@@ -71,8 +71,8 @@ function _ssh() {
   done
 
   if [ -z "$SSH_CONFIG" ]; then
-    # attempt a quick search - traversing CWD not advised.
-      for _conf in $HOME/{.ssh,.aws/$AWS_PROFILE}/{,$PROFILE{,/$AWS_REGION}/}config{,{.,-,_}$PROFILE} ; do
+      # attempt a quick search - traversing CWD not advised.
+      for _conf in $HOME/{.ssh,.aws${AWS_PROFILE:+/$AWS_PROFILE}}{${PROFILE:+/$PROFILE}{,${AWS_REGION:+/$AWS_REGION}},}/config{{.,-,_}$PROFILE,} ; do
           [ -f "$_conf" ] && {
               SSH_CONFIG="$_conf"
 # gratuitous output screws with 'rsync' etc.
