@@ -11,11 +11,15 @@ function convert_path() {
 
     while [ $# -ne 0 ]; do
         case $1 in
-            '-e')   escape=1 ;;
-            '-n')   escape=0 ;;
+            '-e')   escape=1
+                    ;;
+            '-n')   escape=0
+                    ;;
             dos|mixed|unix|windows)
-                    format="-t $1" ;;
-            '-'*)   flags+=" $1" ;;
+                    format="-t $1"
+		    ;;
+            '-'*)   flags+=" $1"
+                    ;;
             *)      break
         esac
         shift
