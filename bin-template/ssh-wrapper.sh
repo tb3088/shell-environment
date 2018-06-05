@@ -61,34 +61,38 @@ function _ssh() {
         ;;
   esac
 
-  for i in `seq ${DEBUG:-0} 2>/dev/null`; do
-      VERBOSE+=' -v'
-  done
+  case "$DEBUG" in
+    [0-9]|'') for i in `seq ${DEBUG:-1}`; do v+='v'; done
+	        VERBOSE+=" -${v}"
+            ;;
+    -*)	    VERBOSE+=" $DEBUG"
+            ;;
+  esac
 
+  # casting about for IDENTITY is risky, so don't do it!
   for v in IDENTITY SSH_CONFIG; do
       [ -n "${!v}" -a ! -f "${!v}" ] && {
-          >&2 echo "ERROR: $v file '${!v}' not found"; return 1; }
+          >&2 echo "ERROR: $v file (${!v}) not found"; return 1; }
   done
 
   if [ -z "$SSH_CONFIG" ]; then
       # attempt a quick search - traversing CWD not advised.
-      for _conf in $HOME/{.ssh,.aws${AWS_PROFILE:+/$AWS_PROFILE}}{${PROFILE:+/$PROFILE}{,${AWS_REGION:+/$AWS_REGION}},}/config{{.,-,_}$PROFILE,} ; do
-          [ -f "$_conf" ] && {
-              SSH_CONFIG="$_conf"
-# gratuitous output screws with 'rsync' etc.
-#	      >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
-              break
-	  }
+      for _conf in {${0%/bin/*},$HOME}/.{ssh,aws}{/$AWS_PROFILE,}{/$AWS_REGION,}{/$PROFILE,}/config{{.,-,_}$PROFILE,} ; do
+          # discard candidate without a hit on $PROFILE 
+          [[ "$_conf" =~ $PROFILE ]] || continue
+          [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
       done
-      [ -n "$SSH_CONFIG" ] || { 
-          >&2 echo "ERROR: no SSH_CONFIG found ${PROFILE+for PROFILE '$PROFILE'}"; return 1; }
+      : ${SSH_CONFIG:?"ERROR: no SSH_CONFIG found for SSH profile (${PROFILE:-none})"}
+# gratuitous output screws with 'rsync' etc.
+#      >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
   fi
 
   # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
-  : ${SSH_KNOWN_HOSTS:="${SSH_CONFIG%/*}/known_hosts"}
-
-# casting about for IDENTITY is risky, don't do it!
-#	{,${HOME:-\~}/{,.ssh,.aws/$AWS_PROFILE}/}{"$IDENTITY",id_rsa,$PROFILE}{,.pem}
+  if [ -z "$SSH_KNOWN_HOSTS" ]; then
+      [ -f "${SSH_CONFIG%/*}/known_hosts.$PROFILE" ] &&
+        SSH_KNOWN_HOSTS="${SSH_CONFIG%/*}/known_hosts.$PROFILE" ||
+        SSH_KNOWN_HOSTS="${SSH_CONFIG%/*}/known_hosts"
+  fi
 
   # propagate environment when running Screen
   _env=
@@ -118,7 +122,10 @@ fi
 
 # disable Screen
 for s in ${NO_SCREEN:-git rsync}; do
-    [ "${PROFILE##*.}" = "$s" ] && { unset SCREEN; break; }
+    [[ "$PROFILE" =~ .$s ]] && { unset SCREEN; break; }
 done
 
 _ssh "$@"
+
+
+# vim: set expandtab:ts=4:sw=4
