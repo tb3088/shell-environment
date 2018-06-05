@@ -1,8 +1,9 @@
-set nocompatible
+" system-wide VIMRC can interfere
+filetype off
 execute pathogen#infect()
-filetype plugin indent on
+
+set nocompatible | filetype indent plugin on | syntax enable
 colorscheme default
-syntax enable
 
 " highlight Normal ctermfg=lightgray ctermbg=black
 "highlight Comment ctermfg=lightblue guifg=lightblue
