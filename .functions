@@ -11,11 +11,15 @@ function convert_path() {
 
     while [ $# -ne 0 ]; do
         case $1 in
-            '-e')   escape=1 ;;
-            '-n')   escape=0 ;;
+            '-e')   escape=1
+                    ;;
+            '-n')   escape=0
+                    ;;
             dos|mixed|unix|windows)
-                    format="-t $1" ;;
-            '-'*)   flags+=" $1" ;;
+                    format="-t $1"
+		    ;;
+            '-'*)   flags+=" $1"
+                    ;;
             *)      break
         esac
         shift
@@ -102,7 +106,8 @@ function getcert() {
 
 function cdl() { cd "${1:-.}" && ls; }
 
-function myip() { nslookup myip.opendns.com resolver1.opendns.com; }
+function myip() { curl -sk https://diagnostic.opendns.com/myip; }
+#deprecated: nslookup myip.opendns.com resolver1.opendns.com; }
 
 function pause() {
   [ $# -ne 0 ] && read -p "$*" || read -p 'Press [ENTER] to continue ...'
