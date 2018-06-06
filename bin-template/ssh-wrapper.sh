@@ -77,7 +77,7 @@ function _ssh() {
 
   if [ -z "$SSH_CONFIG" ]; then
       # attempt a quick search - traversing CWD not advised.
-      for _conf in {${0%/bin/*},$HOME}/.{ssh,aws}{/$AWS_PROFILE,}{/$AWS_REGION,}{/$PROFILE,}/config{{.,-,_}$PROFILE,} ; do
+      for _conf in {${0%/bin/*},$HOME}/.{ssh{/$PROFILE,},aws{/$AWS_PROFILE,}{/$PROFILE,}{/$AWS_REGION,}}/config{{.,-,_}$PROFILE,} ; do
           # discard candidate without a hit on $PROFILE 
           [[ "$_conf" =~ $PROFILE ]] || continue
           [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
