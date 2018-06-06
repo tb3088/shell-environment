@@ -62,8 +62,8 @@ function _ssh() {
   esac
 
   case "$DEBUG" in
-    [0-9]|'') for i in `seq ${DEBUG:-1}`; do v+='v'; done
-	        VERBOSE+=" -${v}"
+    [0-9])  for i in `seq $DEBUG`; do v+='v'; done
+            VERBOSE+=" -${v}"
             ;;
     -*)	    VERBOSE+=" $DEBUG"
             ;;
