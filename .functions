@@ -106,9 +106,6 @@ function getcert() {
 
 function cdl() { cd "${1:-.}" && ls; }
 
-function myip() { curl -sk https://diagnostic.opendns.com/myip; }
-#deprecated: nslookup myip.opendns.com resolver1.opendns.com; }
-
 function pause() {
   [ $# -ne 0 ] && read -p "$*" || read -p 'Press [ENTER] to continue ...'
 }

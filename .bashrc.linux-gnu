@@ -2,3 +2,5 @@ if [ -f ${OPENSC_LIB:=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so} ]; then
     export OPENSC_LIB
     alias ssh-add="ssh-add -s $OPENSC_LIB"
 fi
+
+alias yumvars="python -c 'import yum, pprint; yb = yum.YumBase(); pprint.pprint(yb.conf.yumvar, width=1)'"
