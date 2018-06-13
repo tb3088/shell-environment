@@ -35,6 +35,7 @@
 *.rdp
 *.lnk
 *_history
+*log
 *~
 
 bin

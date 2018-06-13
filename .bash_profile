@@ -16,7 +16,7 @@ if [[ "$-" == *i* ]] || tty -s ; then
         eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
         trap "kill $SSH_AGENT_PID" 0
     fi
-    ssh-add
+    ssh-add -q -k
   }
 fi
 
