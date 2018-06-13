@@ -1,6 +1,6 @@
 umask 022
 
-source "$HOME"/.functions || true
+source "$HOME"/.functions
 
 #----------
 #TODO have a Hash that defines $bin, $bindir and search paths specific to OS
@@ -21,10 +21,10 @@ if [[ "$-" == *i* ]] || tty -s ; then
 fi
 
 for f in "$HOME"/.{bash_profile.local,bashrc.${OSTYPE:=`uname`}}; do
-    [ -f "$f" ] && source "$f" || true
+    [ -f "$f" ] && source "$f"
 done
 
 export EDITOR=`which "$EDITOR" vim vi nano pico emacs 2>/dev/null | head -n 1`
-source $HOME/.bashrc
+source "$HOME"/.bashrc
 
 # vim: set expandtab:ts=4:sw=4
