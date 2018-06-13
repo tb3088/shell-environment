@@ -72,7 +72,7 @@ function _ssh() {
   # casting about for IDENTITY is risky, so don't do it!
   for v in IDENTITY SSH_CONFIG; do
       [ -n "${!v}" -a ! -f "${!v}" ] && {
-          >&2 echo "ERROR: $v file (${!v}) not found"; return 1; }
+          >&2 echo "ERROR: $v file '${!v}' not found"; return 1; }
   done
 
   if [ -z "$SSH_CONFIG" ]; then
@@ -82,16 +82,16 @@ function _ssh() {
           [[ "$_conf" =~ $PROFILE ]] || continue
           [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
       done
-      : ${SSH_CONFIG:?"ERROR: no SSH_CONFIG found for SSH profile (${PROFILE:-none})"}
+      : ${SSH_CONFIG:?"ERROR: no SSH_CONFIG found for PROFILE '${PROFILE:-none}'"}
 # gratuitous output screws with 'rsync' etc.
 #      >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
   fi
 
   # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
   if [ -z "$SSH_KNOWN_HOSTS" ]; then
-      [ -f "${SSH_CONFIG%/*}/known_hosts.$PROFILE" ] &&
-        SSH_KNOWN_HOSTS="${SSH_CONFIG%/*}/known_hosts.$PROFILE" ||
-        SSH_KNOWN_HOSTS="${SSH_CONFIG%/*}/known_hosts"
+      for _known_hosts in "${SSH_CONFIG%/*}"/known_hosts{."$PROFILE",}; do
+          [ -f "$_known_hosts" ] && { SSH_KNOWN_HOSTS="$_known_hosts"; break; }
+      done
   fi
 
   # propagate environment when running Screen
@@ -101,7 +101,7 @@ function _ssh() {
       _env+=" $v='${!v}'"
   done
 
-  ${DEBUG:+runv} eval ${_screen:+$_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
+  ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
       ${_env:+ env $_env} \
       ${!_cmd} $VERBOSE \
       ${IDENTITY:+ -i "$IDENTITY"} \
