@@ -1,7 +1,7 @@
 case ${OSTYPE:-`uname`} in
-    cygwin|CYGWIN_*)
+  cygwin|CYGWIN_*)
         ;;
-    *)  return 0
+  *)    return 0
 esac
 
 #Ref: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html

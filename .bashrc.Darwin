@@ -4,12 +4,4 @@ case ${OSTYPE:-`uname`} in
     *)  return 0
 esac
 
-# CAC/PIF card support
-if [ -f ${OPENSC_LIB:=/usr/local/lib/opensc-pkcs11.so} ]; then
-    export OPENSC_LIB
-#    _ssh-add=`alias ssh-add 2>/dev/null`
-#    [ -n "$_ssh-add" ] && 
-    alias ssh-add="ssh-add -s $OPENSC_LIB"
-fi
-
 # vim: set expandtab:ts=4:sw=4

@@ -1,6 +1,10 @@
-if [ -f ${OPENSC_LIB:=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so} ]; then
-    export OPENSC_LIB
-    alias ssh-add="ssh-add -s $OPENSC_LIB"
-fi
+case ${OSTYPE:-`uname`} in
+  [lL]inux*)
+	;;
+  *)	return 0
+esac
 
-alias yumvars="python -c 'import yum, pprint; yb = yum.YumBase(); pprint.pprint(yb.conf.yumvar, width=1)'"
+which yum &>/dev/null &&
+    alias yumvars="python -c 'import yum, pprint; yb = yum.YumBase(); pprint.pprint(yb.conf.yumvar, width=1)'"
+
+# vim: set expandtab:ts=4:sw=4

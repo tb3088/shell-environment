@@ -1,0 +1,19 @@
+# CAC/PIF card support
+
+case ${OSTYPE:-`uname`} in
+  [lL]inux*)
+    : ${OPENSC_LIB:=/usr/lib/`uname -m`-linux-gnu/opensc-pkcs11.so}
+    ;;
+  cygwin|CYGWIN_*)
+    # MSI doesn't allow tailoring path
+    : ${OPENSC_LIB:="$PROGRAM_FILES/OpenSC\ Project/OpenSC/pkcs11/opensc-pkcs11.dll"}
+    ;;
+  [dD]arwin*)
+    : ${OPENSC_LIB:=/usr/local/lib/opensc-pkcs11.so}
+esac
+
+[ -f "$OPENSC_LIB" ] && {
+    export OPENSC_LIB
+    alias ssh-add="ssh-add -s $OPENSC_LIB"
+}
+
