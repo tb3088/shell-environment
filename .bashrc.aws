@@ -3,3 +3,24 @@ which ec2-version &>/dev/null || \
         [ -z "$d" -o -h "$d" ] && continue
         [ -d "$d/bin" ] && addPath "$d/bin"
     done
+#!/bin/bash
+
+function route53-export {
+  local zoneid=${1:?}
+
+  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zoneid" || \
+      zoneid=$(aws route53 list-hosted-zones --output=json | \
+        jq -r ".HostedZones[] | select(.Name == \"$1.\") | .Id" | \
+        cut -d'/' -f3)
+
+  for zone in $zoneid; do
+    echo "; $zone
+"
+    #TODO use printf() with width
+    aws route53 list-resource-record-sets --hosted-zone-id=${zone:?} --output=json | jq -jr '.ResourceRecordSets[] | "\(.Name) \t\(.TTL) \t\(.Type) \t\(.ResourceRecords[].Value)\n"'
+    echo "
+"
+  done
+}
+
+# vim: set expandtab:ts=4:sw=2
