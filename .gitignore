@@ -24,7 +24,6 @@
 .sudo_as_admin_successful
 .terraform.d/
 .terraformrc
-.vim
 .viminfo
 .wget-hsts
 .Xauthority
