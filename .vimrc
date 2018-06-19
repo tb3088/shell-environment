@@ -1,12 +1,13 @@
 " system-wide VIMRC can interfere
 filetype off
-execute pathogen#infect()
+runtime bundle/vim-pathogen/autoload/pathogen.vim
+" execute pathogen#infect()
 
 set nocompatible | filetype indent plugin on | syntax enable
 colorscheme default
 
 " highlight Normal ctermfg=lightgray ctermbg=black
-"highlight Comment ctermfg=lightblue guifg=lightblue
+highlight Comment ctermfg=lightblue guifg=gray
 " highlight LineNr ctermfg=gray guifg=gray
 highlight LineNr ctermfg=blue guifg=gray
 " highlight String 
