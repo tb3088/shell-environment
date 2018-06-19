@@ -3,3 +3,6 @@ Columns=132
 Rows=44
 ScrollbackLines=6000
 Term=xterm-256color
+Locale=en_US
+Charset=UTF-8
+FontHeight=8
