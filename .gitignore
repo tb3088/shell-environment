@@ -47,6 +47,7 @@ logs/
 OpenVPN/
 
 # Windows-specific
+3D\ Objects
 Amazon\ Drive
 AppData
 Application\ Data
@@ -67,6 +68,7 @@ My\ Documents
 NetHood
 ntuser.*
 NTUSER.DAT*
+OneDrive
 Pictures
 PrintHood
 Public
