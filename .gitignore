@@ -12,6 +12,7 @@
 .gitconfig
 .gnupg
 .go
+go
 .ICEauthority
 .lesshst
 .local
@@ -28,23 +29,25 @@
 .wget-hsts
 .Xauthority
 .xsession-errors
-*.txt
-*.ini
+*.bak
+*.orig
 *.kdb*
 *.local
-*.rdp
 *.lnk
+*.rdp
 *_history
 *log
 *~
+mercurial.ini
 
 bin
-go
-workspace
-Dropbox
-logs
-OpenVPN
+workspace/
+Dropbox/
+logs/
+OpenVPN/
 
+# Windows-specific
+Amazon\ Drive
 AppData
 Application\ Data
 Applications
@@ -68,14 +71,17 @@ Pictures
 PrintHood
 Public
 Recent
+Saved Games
 Searches
 SendTo
 Start\ Menu
 Templates
 Tracing
+Videos
 
-IntelGraphicsProfiles/
-MicrosoftEdgeBackups/
+IntelGraphicsProfiles
+MicrosoftEdgeBackups
 
-.DS_Store
+# MacOS-specific
+.DS_Store/
 .Trash/
