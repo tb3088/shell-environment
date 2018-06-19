@@ -1,4 +1,4 @@
-*	text eol=lf
+*	text eol=auto
 *.txt	text=auto
 *.sh	text eol=lf
 *.pl	text eol=lf
