@@ -42,7 +42,7 @@ function __prompt() {
 	$1 ~ /\?/ { unk++; }
 	$1 ~ /\!/ { ign++; }
 	END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
-    ' < <(git --no-pager status -b --porcelain 2>/dev/null)
+    ' < <(git --no-pager status -b --porcelain --ignore-submodules 2>/dev/null)
   # TODO handle .svn
   )
   if [ -n "$_branch" ]; then
