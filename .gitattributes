@@ -1,8 +1,91 @@
-*	text eol=auto
-*.txt	text=auto
-*.sh	text eol=lf
-*.pl	text eol=lf
-*.pp	text eol=lf
-*.py*	text eol=lf
-*.rb	text eol=lf
-*.tf	text eol=lf
+*       text=auto
+*.sh    text eol=lf
+*.csh   text eol=lf
+*.tcsh  text eol=lf
+
+# Perl
+*.pl    text eol=lf
+*.pm    text eol=lf
+
+# Ruby, Chef
+*.rb    text
+
+# Puppet, Terreform
+*.pp    text
+*.tf    text
+*.var   text
+
+Makefile text
+makefile text
+
+# Python
+*.pxd   text
+*.py 	text
+*.pyc 	text
+*.pyw 	text
+*.pyx  	text
+*.db	binary
+*.p 	binary
+*.pkl 	binary
+*.pyc 	binary
+*.pyd	binary
+*.pyo 	binary
+
+# Documents
+*.doc   diff=astextplain
+*.DOC   diff=astextplain
+*.docx  diff=astextplain
+*.DOCX  diff=astextplain
+*.dot   diff=astextplain
+*.DOT   diff=astextplain
+*.pdf   diff=astextplain
+*.PDF   diff=astextplain
+*.rtf   diff=astextplain
+*.RTF   diff=astextplain
+*.md    text
+*.adoc  text
+*.csv   text
+*.tab   text
+*.sql   text
+
+# Graphics
+*.png	binary
+*.jpg	binary
+*.jpeg	binary
+*.gif	binary
+*.tif	binary
+*.tiff	binary
+*.ico	binary
+*.svg	binary
+*.eps	binary
+
+*.css   text
+*.df    text
+*.htm   text
+*.html  text
+*.java  text
+*.js    text
+*.json  text
+*.jsp   text
+*.jspf  text
+*.jspx  text
+*.properties text
+*.sh    text
+*.tld   text
+*.txt   text
+*.tag   text
+*.tagx  text
+*.xml   text
+*.xhtml text
+*.yaml  text
+*.yml   text
+
+# JAVA
+*.class binary
+*.dll   binary
+*.ear   binary
+*.jar   binary
+*.so    binary
+*.war   binary
+
+# https://github.com/alexkaratarakis/gitattributes
