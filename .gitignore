@@ -17,6 +17,7 @@ go
 .lesshst
 .local
 .minttyrc
+.npm/
 .packer.d
 .rnd
 .serverauth.*
@@ -42,7 +43,7 @@ mercurial.ini
 
 bin
 workspace/
-Dropbox/
+Dropbox
 logs/
 OpenVPN/
 
