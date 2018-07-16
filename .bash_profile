@@ -25,6 +25,7 @@ for f in "$HOME"/.{bash_profile.local,bashrc.${OSTYPE:=`uname`}}; do
 done
 
 export EDITOR=`which "$EDITOR" vim vi nano pico emacs 2>/dev/null | head -n 1`
+export PAGER='less -RSF'
 source "$HOME"/.bashrc
 
 # vim: set expandtab:ts=4:sw=4

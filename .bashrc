@@ -28,6 +28,7 @@ function __prompt() {
   local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
   PROMPT="\n${FCYN}\u${RS}@${FGRN}\h${RS}"
 
+if [ -n "$GIT_PROMPT" ]; then
   eval $(
     set -e -o pipefail
     awk '
@@ -42,7 +43,7 @@ function __prompt() {
 	$1 ~ /\?/ { unk++; }
 	$1 ~ /\!/ { ign++; }
 	END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
-    ' < <(git --no-pager status -b --porcelain --ignore-submodules 2>/dev/null)
+    ' < <(git --no-pager --no-optional-locks status --untracked-files=all --ignore-submodules --porcelain --branch 2>/dev/null)
   # TODO handle .svn
   )
   if [ -n "$_branch" ]; then
@@ -56,17 +57,15 @@ function __prompt() {
 	    # _status=`echo -e '\u2713'`
 	    unset _status _delta
     esac
-    [[ $_mod == 0 ]] && unset _mod
-    [[ $_del == 0 ]] && unset _del
-    [[ $_add == 0 ]] && unset _add
-    [[ $_unk == 0 ]] && unset _unk
-    [[ $_ign == 0 ]] && unset _ign
-    [ $_tot -le 0 ] && unset _tot
+    for v in _mod _del _add _unk _ign _tot; do
+      [ ${!v} -le 0 ] && unset $v
+    done
 
     PROMPT+=" git:$_branch"
     _stat="${_status}${_delta}${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
     PROMPT+="${_stat:+|${FRED}${_stat## }${RS}|}"
   fi
+fi
 
   _aws="${AWS_PROFILE:+AWS:${AWS_PROFILE:--}/${AWS_REGION:--}}"
   [ "${#_aws}" -gt 8 ] && PROMPT+=" $_aws"
