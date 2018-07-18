@@ -67,7 +67,7 @@ if [ -n "$GIT_PROMPT" ]; then
   fi
 fi
 
-  _aws="${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}}"
+  _aws="${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}"
   [ "${#_aws}" -gt 3 ] && PROMPT+=" AWS:$_aws"
 
   PROMPT+=" ${FYEL}\w${RS}\n\!.\j"
