@@ -3,7 +3,7 @@
 shopt -s nullglob
 # Usage:
 #
-#   [VERBOSE=-v] [PROFILE=<profile>] [IDENTITY=<key>]
+#   [VERBOSE=-v] [PROFILE=<profile>] [IDENTITY=<key>] [SSH_CONFIG=<path_to>]
 #       ssh-wrapper.sh [cmd] <host> [args]
 #
 # just symlink to the wrapper to automatically set PROFILE
@@ -43,6 +43,8 @@ function _ssh() {
   local _screen _conf _ident _cmd _env
   local i v p
 
+  : ${PROFILE:?}
+
   if [ "${TERM%.*}" = "screen" ]; then
       _screen="$SCREEN";
       TERM=${TERM/screen./}
@@ -77,12 +79,13 @@ function _ssh() {
 
   if [ -z "$SSH_CONFIG" ]; then
       # attempt a quick search - traversing CWD not advised.
-      for _conf in {${0%/bin/*},$HOME}/.{ssh{/$PROFILE,},aws{/$AWS_PROFILE,}{/$PROFILE,}{/$AWS_REGION,}}/config{{.,-,_}$PROFILE,} ; do
-          # discard candidate without a hit on $PROFILE 
-          [[ "$_conf" =~ $PROFILE ]] || continue
+      for _conf in {${0%/bin/*},$HOME}/.{ssh{/$PROFILE,},aws/{$AWS_PROFILE/,}{$PROFILE{/,.}$AWS_DEFAULT_REGION/,}config{{.,-}$PROFILE,}} ; do
+          # discard match on '.aws/config' since that is reserved
+          egrep -q "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
+
           [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
       done
-      : ${SSH_CONFIG:?"ERROR: no SSH_CONFIG found for PROFILE '${PROFILE:-none}'"}
+      : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
 # gratuitous output screws with 'rsync' etc.
 #      >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
   fi
