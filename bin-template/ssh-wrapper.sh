@@ -40,7 +40,7 @@ function _ssh() {
   #   IDENTITY - path to identity file (-i)
 
   shopt -s extglob
-  local _screen _conf _ident _cmd _env
+  local _screen _conf _ident _cmd _env _aws
   local i v p
 
   : ${PROFILE:?}
@@ -79,10 +79,12 @@ function _ssh() {
 
   if [ -z "$SSH_CONFIG" ]; then
       # attempt a quick search - traversing CWD not advised.
-      for _conf in {${0%/bin/*},$HOME}/.{ssh{/$PROFILE,},aws/{$AWS_PROFILE/,}{$PROFILE{/,.}$AWS_DEFAULT_REGION/,}config{{.,-}$PROFILE,}} ; do
+      [ -n "$AWS_PROFILE" ] && _aws='.aws{/$AWS_PROFILE,}{/$PROFILE{{/,.}${AWS_DEFAULT_REGION:=us-east-1},},}'
+      for _conf in `eval echo "{${0%/bin/*},$HOME}/{${_aws:+$_aws,}.ssh{/$PROFILE,}}/config{{.,-}$PROFILE,}"`; do
           # discard match on '.aws/config' since that is reserved
           egrep -q "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
 
+          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying $_conf"
           [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
       done
       : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
