@@ -61,14 +61,13 @@ if [ -n "$GIT_PROMPT" ]; then
       [ ${!v} -le 0 ] && unset $v
     done
 
-    PROMPT+=" GIT=${_upstream:-$_branch}"
+    PROMPT+=" ${_upstream:-$_branch}"
     _stat="${_status}${_delta}${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
     PROMPT+="${_stat:+|${FRED}${_stat## }${RS}|}"
   fi
 fi
 
-  _aws="${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}"
-  [ "${#_aws}" -gt 3 ] && PROMPT+=" AWS=$_aws"
+  [ -n "$AWS_PROFILE" ] && PROMPT+=" $AWS_PROFILE/${AWS_DEFAULT_REGION:--}"
 
   PROMPT+=" ${FYEL}\w${RS}\n\!.\j"
 #  PROMPT+="${CHEF_ENV+ ${BMAG}${CHEF_ENV}${RS}}"
