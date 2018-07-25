@@ -90,7 +90,7 @@ function _ssh() {
           # discard match on '.aws/config' since that is reserved
           egrep -q "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
 
-          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying $_conf"
+          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying config $_conf"
           [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
       done
       : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
@@ -101,7 +101,7 @@ function _ssh() {
   # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
   [ -n "$SSH_KNOWN_HOSTS" ] ||
       for SSH_KNOWN_HOSTS in "${SSH_CONFIG%/*}"/known_hosts{."$PROFILE",}; do
-          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying $SSH_KNOWN_HOSTS"
+          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying known_host $SSH_KNOWN_HOSTS"
           [ -f "$SSH_KNOWN_HOSTS" ] && break
       done
 
