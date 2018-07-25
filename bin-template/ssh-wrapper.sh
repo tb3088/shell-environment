@@ -3,7 +3,7 @@
 shopt -s nullglob
 # Usage:
 #
-#   [VERBOSE=-v] [PROFILE=<profile>] [IDENTITY=<key>] [SSH_CONFIG=<path_to>]
+#   [VERBOSE=-v] [PROFILE=<profile>] [SSH_IDENTITY=<key>] [SSH_CONFIG=<path_to>]
 #       ssh-wrapper.sh [cmd] <host> [args]
 #
 # just symlink to the wrapper to automatically set PROFILE
@@ -34,10 +34,10 @@ function runv() {
 
 function _ssh() {
   # environment:
-  #   SCREEN   - if set but empty, disable use of screen
-  #   SSH_CONFIG - name of SSH configuration file (-F)
-  #   PROFILE  - stub used to compute SSH_CONFIG
-  #   IDENTITY - path to identity file (-i)
+  #   SCREEN        - if set but empty, disable use of screen
+  #   PROFILE       - stub used to compute SSH_CONFIG
+  #   SSH_CONFIG    - name of SSH configuration file (-F)
+  #   SSH_IDENTITY  - path to identity file (-i)
 
   shopt -s extglob
   local _screen _conf _ident _cmd _env _aws
@@ -71,13 +71,19 @@ function _ssh() {
             ;;
   esac
 
-  # casting about for IDENTITY is risky, so don't do it!
-  for v in IDENTITY SSH_CONFIG; do
+  for v in ${!SSH_*}; do
+      # skip not relevent items
+      case $v in
+        SSH_AGENT_PID|SSH_AUTH_SOCK)
+            continue
+            ;;
+      esac
+
       [ -n "${!v}" -a ! -f "${!v}" ] && {
-          >&2 echo "ERROR: $v file '${!v}' not found"; return 1; }
+          >&2 echo "ERROR: file $v='${!v}' not found"; return 1; }
   done
 
-  if [ -z "$SSH_CONFIG" ]; then
+  [ -n "$SSH_CONFIG" ] || {
       # attempt a quick search - traversing CWD not advised.
       [ -n "$AWS_PROFILE" ] && _aws='.aws{/$AWS_PROFILE,}{/$PROFILE{{/,.}${AWS_DEFAULT_REGION:=us-east-1},},}'
       for _conf in `eval echo "{${0%/bin/*},$HOME}/{${_aws:+$_aws,}.ssh{/$PROFILE,}}/config{{.,-}$PROFILE,}"`; do
@@ -90,18 +96,18 @@ function _ssh() {
       : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
 # gratuitous output screws with 'rsync' etc.
 #      >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
-  fi
+  }
 
   # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
-  if [ -z "$SSH_KNOWN_HOSTS" ]; then
-      for _known_hosts in "${SSH_CONFIG%/*}"/known_hosts{."$PROFILE",}; do
-          [ -f "$_known_hosts" ] && { SSH_KNOWN_HOSTS="$_known_hosts"; break; }
+  [ -n "$SSH_KNOWN_HOSTS" ] ||
+      for SSH_KNOWN_HOSTS in "${SSH_CONFIG%/*}"/known_hosts{."$PROFILE",}; do
+          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying $SSH_KNOWN_HOSTS"
+          [ -f "$SSH_KNOWN_HOSTS" ] && break
       done
-  fi
 
   # propagate environment when running Screen
   _env=
-  for v in SSH_CONFIG PROFILE IDENTITY ${!AWS_*} VERBOSE; do
+  for v in PROFILE ${!SSH_*} ${!AWS_*} VERBOSE; do
       [ -n "${!v}" ] || continue
       _env+=" $v='${!v}'"
   done
@@ -109,9 +115,9 @@ function _ssh() {
   ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
       ${_env:+ env $_env} \
       ${!_cmd} $VERBOSE \
-      ${IDENTITY:+ -i "$IDENTITY"} \
-      ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
+      ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
       ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
+      ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
       $SSH_OPTS \
       "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
 }
