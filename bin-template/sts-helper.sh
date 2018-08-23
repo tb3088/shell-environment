@@ -1,8 +1,15 @@
 #!/bin/bash
 
-# Usage:
+# Usage: MFA_ID=<mfa_device_id> $0 [ options ] <AWS_PROFILE> <MFA_CODE>
+#
+# most common use case is to set the AWS environment variables
+#
+#       $ eval `MFA_ID=... $0 ...`
+#
+# Author: Matthew Patton (mpatton@Enquizit.com)
+# License: BSD
 
-function runv() { echo >&2 "+ $*"; "$@"; }
+function runv() { echo >&2 "+ $*"; [ -n "${NOOP:+x}" ] || "$@"; }
 function cleanup() { exit 1; }
 
 which jq &>/dev/null || { echo >&2 "ERROR: command 'jq' not found on \$PATH"; exit 1; }
@@ -26,18 +33,20 @@ while getopts ":$options" opt; do
     c)	# modify .aws/credentials (potentially DANGEROUS!)
 	print2creds=1
 	;;
-    d)  DEBUG+=1; VERBOSE+=1 ;;
+
+    n)  NOOP=1 ;&
+    d)  DEBUG+=1 ;&
+    v)  VERBOSE+=1 ;;
+
     E)	# don't print out for environnment
 	unset print2env
 	;;
-    n)  NOOP=1 ;;
 #    q)	# no output
 #	;;
 #    r)	# assume role (automatic)
 #	;;
 #    s)	# get session (default)
 #	;;
-    v)  VERBOSE+=1 ;;
     :)	echo >&2 "ERROR! missing argument (-$OPTARG)"
 	exit 2
 	;;
