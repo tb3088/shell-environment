@@ -86,7 +86,7 @@ function _ssh() {
   [ -n "$SSH_CONFIG" ] || {
       # attempt a quick search - traversing CWD not advised.
       [ -n "$AWS_PROFILE" ] && _aws='.aws{/$AWS_PROFILE,}{/$PROFILE{{/,.}${AWS_DEFAULT_REGION:=us-east-1},},}'
-      for _conf in `eval echo "{${0%/bin/*},$HOME}/{${_aws:+$_aws,}.ssh{/$PROFILE,}}/config{{.,-}$PROFILE,}"`; do
+      for _conf in `eval echo "{${0%/bin/*},$HOME}/${_aws:+$_aws,}.ssh{/$PROFILE,}/config{{.,-}$PROFILE,}"`; do
           # discard match on '.aws/config' since that is reserved
           egrep -q "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
 
