@@ -84,13 +84,18 @@ function _ssh() {
   done
 
   [ -n "$SSH_CONFIG" ] || {
-      # attempt a quick search - traversing CWD not advised.
-      [ -n "$AWS_PROFILE" ] && _aws='.aws{/$AWS_PROFILE,}{/$PROFILE{{/,.}${AWS_DEFAULT_REGION:=us-east-1},},}'
-      for _conf in `eval echo "{${0%/bin/*},$HOME}/${_aws:+$_aws,}.ssh{/$PROFILE,}/config{{.,-}$PROFILE,}"`; do
+      # attempt a quick search
+      [ "${0%/bin/*}" = "$HOME" ] && _prefix="$HOME" || _prefix='{${0%/bin/*},$HOME}'
+      [ -n "$AWS_PROFILE" ] && 
+          _aws='.aws/$AWS_PROFILE/{$PROFILE{{/,.}$AWS_DEFAULT_REGION,},$AWS_DEFAULT_REGION}' ||
+          _aws='.ssh{/$PROFILE,}'
+
+      # can safely ignore duplicates when $0%/bin/* == $HOME
+      for _conf in `eval echo "$_prefix/$_aws/config{{.,-,_}$PROFILE,}"`; do
           # discard match on '.aws/config' since that is reserved
           egrep -q "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
 
-          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying config $_conf"
+          [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying config $_conf"
           [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
       done
       : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
