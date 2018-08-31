@@ -40,7 +40,7 @@ function _ssh() {
   #   SSH_IDENTITY  - path to identity file (-i)
 
   shopt -s extglob
-  local _screen _conf _ident _cmd _env _aws
+  local _screen _conf _ident _cmd _env _prefix _mid
   local i v p
 
   : ${PROFILE:?}
@@ -80,18 +80,18 @@ function _ssh() {
       esac
 
       [ -n "${!v}" -a ! -f "${!v}" ] && {
-          >&2 echo "ERROR: file $v='${!v}' not found"; return 1; }
+          echo >&2 "ERROR: file $v='${!v}' not found"; return 1; }
   done
 
   [ -n "$SSH_CONFIG" ] || {
       # attempt a quick search
       [ "${0%/bin/*}" = "$HOME" ] && _prefix="$HOME" || _prefix='{${0%/bin/*},$HOME}'
+      _mid=".ssh{/$PROFILE,}"
       [ -n "$AWS_PROFILE" ] && 
-          _aws='.aws/$AWS_PROFILE/{$PROFILE{{/,.}$AWS_DEFAULT_REGION,},$AWS_DEFAULT_REGION}' ||
-          _aws='.ssh{/$PROFILE,}'
+          _mid="{.aws/$AWS_PROFILE/{$PROFILE{{/,.}$AWS_DEFAULT_REGION,},$AWS_DEFAULT_REGION},$_mid}"
 
-      # can safely ignore duplicates when $0%/bin/* == $HOME
-      for _conf in `eval echo "$_prefix/$_aws/config{{.,-,_}$PROFILE,}"`; do
+      for _conf in `eval echo "$_prefix/$_mid/config{{.,-,_}$PROFILE,}"`; do
+
           # discard match on '.aws/config' since that is reserved
           egrep -q "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
 
@@ -100,13 +100,13 @@ function _ssh() {
       done
       : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
 # gratuitous output screws with 'rsync' etc.
-#      >&2 echo "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
+#      echo >&2 "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
   }
 
   # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
   [ -n "$SSH_KNOWN_HOSTS" ] ||
-      for SSH_KNOWN_HOSTS in "${SSH_CONFIG%/*}"/known_hosts{."$PROFILE",}; do
-          [ -n "${DEBUG:+x}" ] && echo "DEBUG: trying known_host $SSH_KNOWN_HOSTS"
+      for SSH_KNOWN_HOSTS in ${SSH_CONFIG%/*}/known_hosts{{.,-,_}$PROFILE,}; do
+          [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying known_host $SSH_KNOWN_HOSTS"
           [ -f "$SSH_KNOWN_HOSTS" ] && break
       done
 
