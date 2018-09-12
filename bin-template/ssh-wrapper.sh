@@ -8,29 +8,29 @@ shopt -s nullglob
 #
 # just symlink to the wrapper to automatically set PROFILE
 
-[ ${#@} -gt 0 ] || { >&2 echo ' insufficient arguments'; exit 1; }
+[ $# -gt 0 ] || { echo >&2 ' insufficient arguments'; exit 1; }
 
-case ${OSTYPE:-`uname`} in
+case "${OSTYPE:-`uname`}" in
     [cC]ygwin|CYGWIN*) 
         WHICH='\which --skip-functions --skip-alias'
 	;;
     [dD]arwin*)
         WHICH='\which -s'
 	;;
-    *)
-	WHICH='\which'
+    *)  WHICH='\which'
 esac
 
 for p in SSH SCP SFTP SCREEN; do
-    [ "${!p:0:1}" = '/' ] || eval $p=`$WHICH ${!p:-${p,,}} 2>/dev/null`
-    [ -x "${!p}" -o "$p" = "SCREEN" ] || {
-        >&2 echo -e "ERROR: missing $p binary '${!p}'"; exit 2; }
+    # skip variables set to anything, even '' to not clobber aliases
+    [ -n "${p+x}" ] || continue
+
+    eval $p=`$WHICH ${p,,} 2>/dev/null`
+    # screen not found is benign
+    [ -n "${!p}" -o "$p" = 'SCEEN' ] || {
+        echo >&2 -e "ERROR: missing $p binary"; exit 1; }
 done
 
-function runv() {
-    >&2 echo "+ $*"
-    "$@"
-}
+function runv() { echo >&2 "+ $*"; "$@"; }
 
 function _ssh() {
   # environment:
@@ -45,10 +45,10 @@ function _ssh() {
 
   : ${PROFILE:?}
 
-  if [ "${TERM%.*}" = "screen" ]; then
+  if [ "${TERM#screen}" != "$TERM" ]; then
       _screen="$SCREEN";
-      TERM=${TERM/screen./}
-      TERM=${TERM/screen/}
+      TERM=${TERM/#screen}
+      TERM=${TERM/#.}
   fi
 
   _cmd=SSH
@@ -65,80 +65,108 @@ function _ssh() {
 
   case "$DEBUG" in
     [0-9])  for i in `seq $DEBUG`; do v+='v'; done
-            VERBOSE+=" -${v}"
+            _verbose="-${v}"
             ;;
-    -*)	    VERBOSE+=" $DEBUG"
+    -*)	    _verbose="$DEBUG"
             ;;
   esac
+  grep -q -- "$_verbose" <<< "$VERBOSE" || VERBOSE+=" $_verbose"
 
   for v in ${!SSH_*}; do
-      # skip not relevent items
-      case $v in
+    # skip irrelevent items
+    case $v in
         SSH_AGENT_PID|SSH_AUTH_SOCK)
             continue
             ;;
-      esac
+    esac
 
-      [ -n "${!v}" -a ! -f "${!v}" ] && {
-          echo >&2 "ERROR: file $v='${!v}' not found"; return 1; }
+    [ -n "${!v}" -a ! -f "${!v}" ] && {
+        echo >&2 "ERROR: file $v='${!v}' not found"; return 1; }
   done
 
-  [ -n "$SSH_CONFIG" ] || {
-      # attempt a quick search
-      [ "${0%/bin/*}" = "$HOME" ] && _prefix="$HOME" || _prefix='{${0%/bin/*},$HOME}'
-      _mid=".ssh{/$PROFILE,}"
-      [ -n "$AWS_PROFILE" ] && 
-          _mid="{.aws/$AWS_PROFILE/{$PROFILE{{/,.}$AWS_DEFAULT_REGION,},$AWS_DEFAULT_REGION},$_mid}"
+  if [ -z "$SSH_CONFIG" ]; then
+    # attempt a quick search
+    [ "${BASH_SOURCE%/bin/*}" = "$HOME" ] && _prefix="$HOME" || _prefix='{${BASH_SOURCE%/bin/*},$HOME}'
+#    _prefix='{`dirname $BASH_SOURCE`,$HOME}'
+    _mid='.ssh{/$PROFILE,}'
+    [ -n "$AWS_PROFILE" ] && 
+        _mid="{.aws/$AWS_PROFILE/{$PROFILE{{/,.}$AWS_DEFAULT_REGION,},$AWS_DEFAULT_REGION},$_mid}"
 
-      for _conf in `eval echo "$_prefix/$_mid/config{{.,-,_}$PROFILE,}"`; do
+# search pattern
+#
+#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config.$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config-$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config_$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config
+#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config.$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config-$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config_$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config
+#   .aws/$AWS_PROFILE/$PROFILE/config.$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE/config-$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE/config_$PROFILE
+#   .aws/$AWS_PROFILE/$PROFILE/config
+#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config.$PROFILE
+#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config-$PROFILE
+#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config_$PROFILE
+#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config
+#   .ssh/$PROFILE/config.$PROFILE
+#   .ssh/$PROFILE/config-$PROFILE
+#   .ssh/$PROFILE/config_$PROFILE
+#   .ssh/$PROFILE/config
+#   .ssh/config.$PROFILE
+#   .ssh/config-$PROFILE
+#   .ssh/config_$PROFILE
+#   .ssh/config
 
-          # discard match on '.aws/config' since that is reserved
-          egrep -q "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
+    for _conf in `eval echo "$_prefix/$_mid/config{{.,-,_}$PROFILE,}"`; do
 
-          [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying config $_conf"
-          [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
-      done
-      : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
-# gratuitous output screws with 'rsync' etc.
-#      echo >&2 "INFO: found SSH_CONFIG '$SSH_CONFIG' ${PROFILE+for PROFILE '$PROFILE'}"
-  }
+        # discard match on '.aws/config' since that is reserved
+        grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
+
+        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_CONFIG $_conf"
+        [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
+    done
+    : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
+  fi
 
   # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
-  [ -n "$SSH_KNOWN_HOSTS" ] ||
-      for SSH_KNOWN_HOSTS in ${SSH_CONFIG%/*}/known_hosts{{.,-,_}$PROFILE,}; do
-          [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying known_host $SSH_KNOWN_HOSTS"
-          [ -f "$SSH_KNOWN_HOSTS" ] && break
-      done
+  if [ -z "$SSH_KNOWN_HOSTS" ]; then
+    for SSH_KNOWN_HOSTS in ${SSH_CONFIG%/*}/known_hosts{{.,-,_}$PROFILE,}; do
+        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_KNOWN_HOSTS $SSH_KNOWN_HOSTS"
+        [ -f "$SSH_KNOWN_HOSTS" ] && break
+    done
+  fi
 
   # propagate environment when running Screen
   _env=
-  for v in PROFILE ${!SSH_*} ${!AWS_*} VERBOSE; do
-      [ -n "${!v}" ] || continue
-      _env+=" $v='${!v}'"
+  for v in PROFILE ${!SSH_*} ${!AWS_*}; do
+    [ -n "${!v}" ] || continue
+    _env+=" $v='${!v}'"
   done
 
   ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
-      ${_env:+ env $_env} \
-      ${!_cmd} $VERBOSE \
-      ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
-      ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
-      ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
-      $SSH_OPTS \
-      "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
+    ${_env:+ env $_env} \
+    ${!_cmd} $VERBOSE \
+    ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
+    ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
+    ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
+    $SSH_OPTS \
+    "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
 }
 
 
 #--- main---
 if [ -z "$PROFILE" ]; then
-  # compute from wrapper filename
-    _origin=$( basename -s .sh `readlink "$0"`)
-    _prog=$( basename -s .sh "$0")
+    # compute from wrapper filename
+    _origin=$( basename -s .sh `readlink "$BASH_SOURCE"` )
+    _prog=$( basename -s .sh "$BASH_SOURCE" )
     [ "$_prog" != "$_origin" ] && PROFILE="$_prog"
 fi
 
 # disable Screen
 for s in ${NO_SCREEN:-git rsync}; do
-    [[ "$PROFILE" =~ .$s ]] && { unset SCREEN; break; }
+    [[ "$PROFILE" =~ .$s ]] && { SCREEN= ; break; }
 done
 
 _ssh "$@"
