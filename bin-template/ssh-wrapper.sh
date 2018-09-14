@@ -1,6 +1,7 @@
 #!/bin/bash
 
-shopt -s nullglob
+shopt -s nullglob extglob
+
 # Usage:
 #
 #   [VERBOSE=-v] [PROFILE=<profile>] [SSH_IDENTITY=<key>] [SSH_CONFIG=<path_to>]
@@ -32,6 +33,64 @@ done
 
 function runv() { echo >&2 "+ $*"; "$@"; }
 
+function genlist() {
+    # Example list
+    #
+    # AWS_PROFILE/REGION/PROFILE/config AWS_PROFILE_REGION_PROFILE/config
+    # AWS_PROFILE/PROFILE/REGION/config AWS_PROFILE_PROFILE_REGION/config
+    # AWS_PROFILE/REGION/config_PROFILE AWS_PROFILE/REGION/config
+    # AWS_PROFILE_REGION/config_PROFILE AWS_PROFILE_REGION/config
+    # AWS_PROFILE/PROFILE/config_REGION AWS_PROFILE/PROFILE/config
+    # AWS_PROFILE_PROFILE/config_REGION AWS_PROFILE_PROFILE/config
+    # AWS_PROFILE/config_REGION_PROFILE AWS_PROFILE/config_PROFILE_REGION
+    # AWS_PROFILE/config_REGION         AWS_PROFILE/config_PROFILE
+    # AWS_PROFILE/config
+
+    # REGION/PROFILE/config REGION_PROFILE/config
+    # PROFILE/REGION/config PROFILE_REGION/config
+    # REGION/config_PROFILE REGION/config
+    # PROFILE/config_REGION PROFILE/config
+    # config_REGION_PROFILE config_PROFILE_REGION
+    # config_REGION         config_PROFILE
+    # config
+
+  local prefix=${1-.ssh}
+  local file=${2-config}
+  local stub
+  local combo
+  declare -a delim=('/' '.' '_' '-')
+  declare -a list=()
+
+  for a in $AWS_PROFILE ''; do
+    for b in $AWS_DEFAULT_REGION $PROFILE ''; do
+        for c in $AWS_DEFAULT_REGION $PROFILE ''; do
+            [ -n "$b" -a \( "$c" = "$b" -o -z "$c" \) ] && continue
+
+            for d1 in "${delim[@]}"; do
+                stub="${a:+$a$d1}${b:+$b$d1}$c"
+                stub="${stub%$d1}"
+
+                for d3 in "${delim[@]}"; do
+                    [ "$d3" = '/' ] && continue
+                    combo=
+                    [ -z "$b$c" -a -n "$AWS_DEFAULT_REGION" ] &&
+                        combo="$AWS_DEFAULT_REGION$d3$PROFILE $PROFILE$d3$AWS_DEFAULT_REGION"
+
+                    for e in $combo $AWS_DEFAULT_REGION $PROFILE; do
+                        [ "$e" = "$b" -o "$e" = "$c" ] && continue
+                        list+=("$prefix${stub:+$stub/}${file}${d3}$e")
+                    done
+                done
+                list+=("$prefix${stub:+$stub/}${file}")
+                [ -z "$b$c" ] && break 3
+                [ -z "$a$b" ] && break
+            done
+        done
+    done
+  done
+  echo "${list[@]}"
+}
+
 function _ssh() {
   # environment:
   #   SCREEN        - if set but empty, disable use of screen
@@ -39,16 +98,15 @@ function _ssh() {
   #   SSH_CONFIG    - name of SSH configuration file (-F)
   #   SSH_IDENTITY  - path to identity file (-i)
 
-  shopt -s extglob
-  local _screen _conf _ident _cmd _env _prefix _mid
+  local _screen _conf _known_hosts _cmd _env _prefix
   local i v p
 
   : ${PROFILE:?}
 
   if [ "${TERM#screen}" != "$TERM" ]; then
-      _screen="$SCREEN";
-      TERM=${TERM/#screen}
-      TERM=${TERM/#.}
+    _screen="$SCREEN";
+    TERM=${TERM/#screen}
+    TERM=${TERM/#.}
   fi
 
   _cmd=SSH
@@ -80,62 +138,37 @@ function _ssh() {
             ;;
     esac
 
-    [ -n "${!v}" -a ! -f "${!v}" ] && {
-        echo >&2 "ERROR: file $v='${!v}' not found"; return 1; }
+    if [ -n "${!v}" -a ! -f "${!v}" ]; then
+        echo >&2 "ERROR: file $v = '${!v}' not found"; return 1
+    fi
   done
 
   if [ -z "$SSH_CONFIG" ]; then
-    # attempt a quick search
-    [ "${BASH_SOURCE%/bin/*}" = "$HOME" ] && _prefix="$HOME" || _prefix='{${BASH_SOURCE%/bin/*},$HOME}'
-#    _prefix='{`dirname $BASH_SOURCE`,$HOME}'
-    _mid='.ssh{/$PROFILE,}'
-    [ -n "$AWS_PROFILE" ] && 
-        _mid="{.aws/$AWS_PROFILE/{$PROFILE{{/,.}$AWS_DEFAULT_REGION,},$AWS_DEFAULT_REGION},$_mid}"
-
-# search pattern
-#
-#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config.$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config-$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config_$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE/$AWS_DEFAULT_REGION/config
-#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config.$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config-$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config_$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE.$AWS_DEFAULT_REGION/config
-#   .aws/$AWS_PROFILE/$PROFILE/config.$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE/config-$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE/config_$PROFILE
-#   .aws/$AWS_PROFILE/$PROFILE/config
-#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config.$PROFILE
-#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config-$PROFILE
-#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config_$PROFILE
-#   .aws/$AWS_PROFILE/$AWS_DEFAULT_REGION/config
-#   .ssh/$PROFILE/config.$PROFILE
-#   .ssh/$PROFILE/config-$PROFILE
-#   .ssh/$PROFILE/config_$PROFILE
-#   .ssh/$PROFILE/config
-#   .ssh/config.$PROFILE
-#   .ssh/config-$PROFILE
-#   .ssh/config_$PROFILE
-#   .ssh/config
-
-    for _conf in `eval echo "$_prefix/$_mid/config{{.,-,_}$PROFILE,}"`; do
+    # NOTICE: this level of search can take a while. Flavor to taste.
+    for _conf in `genlist $(dirname "$BASH_SOURCE")/` \
+          `[ -n "$AWS_PROFILE" ] && genlist "$HOME/.aws/"` \
+          `genlist "$HOME/.ssh/"`; do
 
         # discard match on '.aws/config' since that is reserved
         grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
 
-        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_CONFIG $_conf"
+        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_CONFIG = $_conf"
         [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
     done
-    : ${SSH_CONFIG:?ERROR: no SSH_CONFIG found for PROFILE=$PROFILE}
+    : ${SSH_CONFIG:?ERROR: no file for PROFILE ($PROFILE)}
   fi
 
-  # UserKnownHostFile shouldn't be hard-coded inside 'config' because brittle
+  # UserKnownHostFile shouldn't be defined inside 'config' because brittle
   if [ -z "$SSH_KNOWN_HOSTS" ]; then
-    for SSH_KNOWN_HOSTS in ${SSH_CONFIG%/*}/known_hosts{{.,-,_}$PROFILE,}; do
-        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_KNOWN_HOSTS $SSH_KNOWN_HOSTS"
-        [ -f "$SSH_KNOWN_HOSTS" ] && break
+    for _known_hosts in ${SSH_CONFIG/config/known_hosts} \
+          `genlist $(dirname "$BASH_SOURCE")/ known_hosts` \
+          `[ -n "$AWS_PROFILE" ] && genlist "$HOME/.aws/" known_hosts` \
+          `genlist "$HOME/.ssh/" known_hosts`; do
+
+        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_KNOWN_HOSTS = $_known_hosts"
+        [ -f "$_known_hosts" ] && { SSH_KNOWN_HOSTS="$_known_hosts"; break; }
     done
+    : ${SSH_KNOWN_HOSTS:?ERROR: no file for PROFILE ($PROFILE)}
   fi
 
   # propagate environment when running Screen
@@ -146,13 +179,13 @@ function _ssh() {
   done
 
   ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
-    ${_env:+ env $_env} \
-    ${!_cmd} $VERBOSE \
-    ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
-    ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
-    ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
-    $SSH_OPTS \
-    "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
+      ${_env:+ env $_env} \
+      ${!_cmd} $VERBOSE \
+      ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
+      ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
+      ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
+      $SSH_OPTS \
+      "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
 }
 
 
@@ -163,6 +196,7 @@ if [ -z "$PROFILE" ]; then
     _prog=$( basename -s .sh "$BASH_SOURCE" )
     [ "$_prog" != "$_origin" ] && PROFILE="$_prog"
 fi
+unset _origin _prog
 
 # disable Screen
 for s in ${NO_SCREEN:-git rsync}; do
