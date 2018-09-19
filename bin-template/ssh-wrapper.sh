@@ -67,7 +67,10 @@ function genlist() {
             [ -n "$b" -a \( "$c" = "$b" -o -z "$c" \) ] && continue
 
             for d1 in "${delim[@]}"; do
+#              for d2 in "${delim[@]}"; do
+#                stub="${a:+$a$d1}${b:+$b$d2}$c"
                 stub="${a:+$a$d1}${b:+$b$d1}$c"
+                # strip possible dangling delim
                 stub="${stub%$d1}"
 
                 for d3 in "${delim[@]}"; do
@@ -145,9 +148,9 @@ function _ssh() {
 
   if [ -z "$SSH_CONFIG" ]; then
     # NOTICE: this level of search can take a while. Flavor to taste.
-    for _conf in `genlist $(dirname "$BASH_SOURCE")/` \
-          `[ -n "$AWS_PROFILE" ] && genlist "$HOME/.aws/"` \
-          `genlist "$HOME/.ssh/"`; do
+    for _conf in `genlist "$BASEDIR"/` \
+          `[ -n "$AWS_PROFILE" ] && genlist "$HOME/.aws"/` \
+          `genlist "$HOME/.ssh"/`; do
 
         # discard match on '.aws/config' since that is reserved
         grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
@@ -189,7 +192,11 @@ function _ssh() {
 }
 
 
-#--- main---
+#--- main ---
+
+BASEDIR=`dirname "$BASH_SOURCE"`
+BASEDIR="${BASEDIR%/bin}"
+
 if [ -z "$PROFILE" ]; then
     # compute from wrapper filename
     _origin=$( basename -s .sh `readlink "$BASH_SOURCE"` )
