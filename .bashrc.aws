@@ -1,9 +1,11 @@
+# doesn't work! 
+#addPath \$HOME/.aws/\$AWS_PROFILE/bin
+
 which ec2-version &>/dev/null || \
     for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
         [ -z "$d" -o -h "$d" ] && continue
         [ -d "$d/bin" ] && addPath "$d/bin"
     done
-#!/bin/bash
 
 function route53-export {
   local zoneid=${1:?}
