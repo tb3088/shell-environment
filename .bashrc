@@ -67,7 +67,7 @@ if [ -n "$GIT_PROMPT" ]; then
   fi
 fi
 
-  [ -n "$AWS_PROFILE" ] && PROMPT+=" $AWS_PROFILE/${AWS_DEFAULT_REGION:--}"
+  [ -n "${AWS_PROFILE}${AWS_DEFAULT_REGION}" ] && PROMPT+=" ${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}"
 
   PROMPT+=" ${FYEL}\w${RS}\n\!.\j"
 #  PROMPT+="${CHEF_ENV+ ${BMAG}${CHEF_ENV}${RS}}"

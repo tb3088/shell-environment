@@ -1,5 +1,4 @@
-# doesn't work! 
-#addPath \$HOME/.aws/\$AWS_PROFILE/bin
+alias aws-addPath='addPath "$HOME/.aws/${AWS_PROFILE:?}/bin"'
 
 which ec2-version &>/dev/null || \
     for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
