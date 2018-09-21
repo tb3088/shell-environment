@@ -21,34 +21,14 @@ case "${OSTYPE:-`uname`}" in
     *)  WHICH='\which'
 esac
 
-[[ $DEBUG =~ [1-9] ]] && : ${VERBOSE:=$DEBUG}
-case "$VERBOSE" in
-    -*) ;;  # skip
-
-    # LOGMASK useful only if advanced logging (not implemented)
-    0)  unset LOGMASK ;;
-    1)  LOGMASK=NOTICE ;;&
-    2)  LOGMASK=INFO ;;&
-    [3-])
-        LOGMASK=DEBUG; VERBOSE=3 ;&
-    [1-])
-        eval printf -v VERBOSE '%.0sv' {1..$VERBOSE}
-        VERBOSE="-$VERBOSE"
-        ;;
-    # FIXME unhandled
-    # grep -q -- "$_verbose" <<< "$VERBOSE" || VERBOSE+=" $_verbose"
-esac
-[ -n "$DEBUG" ] && LOGMASK=DEBUG
-
-
 declare -f log >/dev/null ||
 function log() { echo "$*"; }
 
 declare -f debug >/dev/null ||
-function debug() { log "${FUNCNAME^^} $*"; }
+function debug() { [ -z "$DEBUG" ] || log "${FUNCNAME^^} $*"; }
 
 declare -f info >/dev/null ||
-function info() { log "${FUNCNAME^^} $*"; }
+function info() { [ -z "$VERBOSE" ] || log "${FUNCNAME^^} $*"; }
 
 declare -f error >/dev/null ||
 function error() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
@@ -79,7 +59,7 @@ function genlist() {
 #        D1="${prefix: -1}"; prefix="${prefix::-1}"
 #    }
 
-  for b in $REGION $PROFILE ''; do
+  for b in $PROFILE $REGION ''; do
     for c in $REGION $PROFILE ''; do
         [ -n "$b" -a \( "$c" = "$b" -o -z "$c" \) ] && continue
 
@@ -124,8 +104,6 @@ function _ssh() {
   local _screen _file _cmd _env _prefix _verbose
   local i v p
 
-  : ${PROFILE:?}
-
   if [ "${TERM#screen}" != "$TERM" ]; then
     _screen="$SCREEN";
     TERM=${TERM/#screen}
@@ -145,11 +123,11 @@ function _ssh() {
     # Ssh option or Host arg
   esac
 
-  # check SSH_* files exist
+  # check that SSH_* files exist
   for v in ${!SSH_*}; do
     # skip irrelevent
     case $v in
-        SSH_AGENT_PID|SSH_AUTH_SOCK) continue ;;
+        SSH_AGENT_PID|SSH_AUTH_SOCK|SSH_VERBOSE) continue ;;
     esac
 
     [ -n "${!v}" -a -f "${!v}" ] || error "file $v (${!v}) not found!"
@@ -157,8 +135,9 @@ function _ssh() {
 
   # TODO? convert to function since identical
 
-  if [ -z "$SSH_CONFIG" ]; then
-    [ -n "$DEBUG" ] && debug "looking for SSH_CONFIG"
+  [ -n "$SSH_CONFIG" ] || {
+    debug "looking for SSH_CONFIG"
+
     # NOTICE: this level of search can take a while. Flavor to taste.
     for _file in `prefix="$BASEDIR" genlist` \
           `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist` \
@@ -167,54 +146,67 @@ function _ssh() {
         # discard match on '.aws/config' since that is reserved
         grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_file" && continue
 
-        [ -n "$DEBUG" ] && debug "    $_file"
+        debug "    $_file"
         [ -f "$_file" ] && { SSH_CONFIG="$_file"; break; }
     done
-    : ${SSH_CONFIG:?not found for PROFILE ($PROFILE)}
-  fi
+    unset _file
+    : ${SSH_CONFIG:?not found}
+  }
 
   # UserKnownHostFile shouldn't be defined inside 'config' because brittle
-  if [ -z "$SSH_KNOWN_HOSTS" ]; then
-    [ -n "$DEBUG" ] && debug "looking for SSH_KNOWN_HOSTS"
+  [ -n "$SSH_KNOWN_HOSTS" ] || {
+    debug "looking for SSH_KNOWN_HOSTS"
+
     for _file in ${SSH_CONFIG/config/known_hosts} \
           `prefix="$BASEDIR" genlist 'known_hosts'` \
           `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist 'known_hosts'` \
           `prefix="$HOME/.ssh" genlist 'known_hosts'`; do
 
-        [ -n "$DEBUG" ] && debug "    $_file"
+        debug "    $_file"
         [ -f "$_file" ] && { SSH_KNOWN_HOSTS="$_file"; break; }
     done
-    : ${SSH_KNOWN_HOSTS:?not found for PROFILE ($PROFILE)}
-  fi
-  unset _file
-
-  [ -n "$VERBOSE" ] && {
-    for k in SSH_{CONFIG,KNOWN_HOSTS}; do
-        info "using $k=${!k}"
-    done
+    unset _file
+    : ${SSH_KNOWN_HOSTS:?not found}
   }
 
   # propagate environment when running Screen
   _env=
-  for v in ${!CLOUD*} REGION ${!SSH_*} ${!AWS_*}; do
+  for v in DEBUG VERBOSE REGION ${!CLOUD*} ${!SSH_*} ${!AWS_*}; do
     [ -n "${!v}" ] || continue
+
+    info "$v = ${!v}"
     _env+=" $v='${!v}'"
   done
 
   ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
-      ${_env:+ env $_env} \
-      ${!_cmd} $VERBOSE \
-      ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
-      ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
-      ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
-      $SSH_OPTS \
-      "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
+        ${_env:+ env $_env} \
+        ${!_cmd} ${SSH_VERBOSE- -q} \
+        ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
+        ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
+        ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
+        $SSH_OPTS \
+        "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
 }
 
 
 #--- main ---
 
 [ $# -gt 0 ] || RC=2 error 'insufficient arguments'
+
+case "${VERBOSE:-$DEBUG}" in
+    -*|'') ;;  # skip
+
+    # LOGMASK useful only if advanced logging (implemented separately)
+    [4-9]) VERBOSE=3 ;&
+    [1-3]) eval printf -v SSH_VERBOSE -- '%.0s-v\ ' {1..${VERBOSE:-$DEBUG} ;;&
+    3)  LOGMASK=DEBUG ;;
+    2)  LOGMASK=INFO ;;
+    1)  LOGMASK=NOTICE ;;
+    0)  unset LOGMASK ;;        # unlikely
+    *)  error "invalid value (${VERBOSE+VERBOSE=$VERBOSE}${DEBUG+DEBUG=$DEBUG})"
+esac
+# tone down verbosity 1 level unless DEBUG set
+[ -n "$DEBUG" ] && LOGMASK=DEBUG || SSH_VERBOSE=${SSH_VERBOSE/-v }
 
 for p in SSH SCP SFTP SCREEN; do
     # skip variables set to anything, even '' so as to not clobber aliases
@@ -227,14 +219,19 @@ done
 
 BASEDIR=`dirname "$BASH_SOURCE"`
 BASEDIR="${BASEDIR%/bin}"
+info "BASEDIR = $BASEDIR"
 
-if [ -z "$PROFILE" ]; then
+[ -n "${SSH_CONFIG:-$PROFILE}" ] || {
     # compute from wrapper filename
     _origin=$( basename -s .sh `readlink "$BASH_SOURCE"` )
     _prog=$( basename -s .sh "$BASH_SOURCE" )
-    [ "$_prog" != "$_origin" ] && PROFILE="$_prog"
-fi
+    debug "_origin = $_origin"
+    debug "_prog = $_prog"
+    [ "$_prog" = "$_origin" ] || PROFILE="$_prog"
+}
 unset _origin _prog
+
+[ -n "$SSH_CONFIG" ] && info "SSH_CONFIG = $SSH_CONFIG" || info "PROFILE = $PROFILE"
 
 # disable Screen
 for s in ${NO_SCREEN:-git rsync}; do
