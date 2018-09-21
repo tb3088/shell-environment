@@ -1,96 +1,116 @@
 #!/bin/bash
-
-shopt -s nullglob extglob
-
+#
 # Usage:
 #
-#   [VERBOSE=-v] [PROFILE=<profile>] [SSH_IDENTITY=<key>] [SSH_CONFIG=<path_to>]
+#   [DEBUG=<0-9>] [VERBOSE=<0-9>|-v ...] [PROFILE=<profile>] [SSH_IDENTITY=<key>] [SSH_CONFIG=<path_to>]
 #       ssh-wrapper.sh [cmd] <host> [args]
 #
-# just symlink to the wrapper to automatically set PROFILE
+# symlink to this wrapper will automatically set PROFILE
 
-[ $# -gt 0 ] || { echo >&2 ' insufficient arguments'; exit 1; }
+shopt -s nullglob extglob
+${ABORT:+set -e}
+${CONTINUE:+set +e}
 
 case "${OSTYPE:-`uname`}" in
     [cC]ygwin|CYGWIN*) 
         WHICH='\which --skip-functions --skip-alias'
-	;;
+        ;;
     [dD]arwin*)
         WHICH='\which -s'
-	;;
+        ;;
     *)  WHICH='\which'
 esac
 
-for p in SSH SCP SFTP SCREEN; do
-    # skip variables set to anything, even '' to not clobber aliases
-    [ -n "${p+x}" ] || continue
+[[ $DEBUG =~ [1-9] ]] && : ${VERBOSE:=$DEBUG}
+case "$VERBOSE" in
+    -*) ;;  # skip
 
-    eval $p=`$WHICH ${p,,} 2>/dev/null`
-    # screen not found is benign
-    [ -n "${!p}" -o "$p" = 'SCEEN' ] || {
-        echo >&2 -e "ERROR: missing $p binary"; exit 1; }
-done
+    # LOGMASK useful only if advanced logging (not implemented)
+    0)  unset LOGMASK ;;
+    1)  LOGMASK=NOTICE ;;&
+    2)  LOGMASK=INFO ;;&
+    [3-])
+        LOGMASK=DEBUG; VERBOSE=3 ;&
+    [1-])
+        eval printf -v VERBOSE '%.0sv' {1..$VERBOSE}
+        VERBOSE="-$VERBOSE"
+        ;;
+    # FIXME unhandled
+    # grep -q -- "$_verbose" <<< "$VERBOSE" || VERBOSE+=" $_verbose"
+esac
+[ -n "$DEBUG" ] && LOGMASK=DEBUG
 
-function runv() { echo >&2 "+ $*"; "$@"; }
+
+declare -f log >/dev/null ||
+function log() { echo "$*"; }
+
+declare -f debug >/dev/null ||
+function debug() { log "${FUNCNAME^^} $*"; }
+
+declare -f info >/dev/null ||
+function info() { log "${FUNCNAME^^} $*"; }
+
+declare -f error >/dev/null ||
+function error() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
+
+declare -f runv >/dev/null ||
+function runv() { >&2 echo "+ $*"; "$@"; }
 
 function genlist() {
-    # Example list
-    #
-    # AWS_PROFILE/REGION/PROFILE/config AWS_PROFILE_REGION_PROFILE/config
-    # AWS_PROFILE/PROFILE/REGION/config AWS_PROFILE_PROFILE_REGION/config
-    # AWS_PROFILE/REGION/config_PROFILE AWS_PROFILE/REGION/config
-    # AWS_PROFILE_REGION/config_PROFILE AWS_PROFILE_REGION/config
-    # AWS_PROFILE/PROFILE/config_REGION AWS_PROFILE/PROFILE/config
-    # AWS_PROFILE_PROFILE/config_REGION AWS_PROFILE_PROFILE/config
-    # AWS_PROFILE/config_REGION_PROFILE AWS_PROFILE/config_PROFILE_REGION
-    # AWS_PROFILE/config_REGION         AWS_PROFILE/config_PROFILE
-    # AWS_PROFILE/config
+  # Example list
+  #
+  # REGION/PROFILE/config REGION_PROFILE/config
+  # PROFILE/REGION/config PROFILE_REGION/config
+  # REGION/config_PROFILE REGION/config
+  # PROFILE/config_REGION PROFILE/config
+  # config_REGION_PROFILE config_PROFILE_REGION
+  # config_REGION         config_PROFILE
+  # config
 
-    # REGION/PROFILE/config REGION_PROFILE/config
-    # PROFILE/REGION/config PROFILE_REGION/config
-    # REGION/config_PROFILE REGION/config
-    # PROFILE/config_REGION PROFILE/config
-    # config_REGION_PROFILE config_PROFILE_REGION
-    # config_REGION         config_PROFILE
-    # config
-
-  local prefix=${1-.ssh}
-  local file=${2-config}
-  local stub
-  local combo
-  declare -a delim=('/' '.' '_' '-')
+  declare -a delim=('/' '.')    # '_' '-'
   declare -a list=()
 
-  for a in $AWS_PROFILE ''; do
-    for b in $AWS_DEFAULT_REGION $PROFILE ''; do
-        for c in $AWS_DEFAULT_REGION $PROFILE ''; do
-            [ -n "$b" -a \( "$c" = "$b" -o -z "$c" \) ] && continue
+  local prefix stub combo
+  local file="${1-config}"
+  local D1 D2 D3 d1 d2 d3
 
-            for d1 in "${delim[@]}"; do
-#              for d2 in "${delim[@]}"; do
-#                stub="${a:+$a$d1}${b:+$b$d2}$c"
-                stub="${a:+$a$d1}${b:+$b$d1}$c"
-                # strip possible dangling delim
-                stub="${stub%$d1}"
+  # TODO? if ${prefix: -1} overlaps $delim, single pass thru loop
+#  [[ -n "$prefix" && "${prefix: -1}" =~ [`printf '%s' "${delim[@]}"`] ]] && {
+#        D1="${prefix: -1}"; prefix="${prefix::-1}"
+#    }
 
-                for d3 in "${delim[@]}"; do
-                    [ "$d3" = '/' ] && continue
-                    combo=
-                    [ -z "$b$c" -a -n "$AWS_DEFAULT_REGION" ] &&
-                        combo="$AWS_DEFAULT_REGION$d3$PROFILE $PROFILE$d3$AWS_DEFAULT_REGION"
+  for b in $REGION $PROFILE ''; do
+    for c in $REGION $PROFILE ''; do
+        [ -n "$b" -a \( "$c" = "$b" -o -z "$c" \) ] && continue
 
-                    for e in $combo $AWS_DEFAULT_REGION $PROFILE; do
-                        [ "$e" = "$b" -o "$e" = "$c" ] && continue
-                        list+=("$prefix${stub:+$stub/}${file}${d3}$e")
+        # create combined suffix 'e' when b and c are empty
+        [ -z "$b$c" -a -n "$REGION" -a -n "$PROFILE"  ] &&
+            combo="${REGION}\${d3}${PROFILE} ${PROFILE}\${d3}${REGION}"
+
+        # NOTE if D# is Array, will only process 1st element
+        for d1 in "${D1:-${delim[@]}}"; do
+            for d2 in "${D2:-${delim[@]}}"; do
+                [ -n "$b" -a -n "$c" ] && stub="$b$d2$c" || stub="$b$c"
+
+                for e in $combo $REGION $PROFILE; do
+                    [ "$e" = "$b" -o "$e" = "$c" ] && continue
+
+                    for d3 in "${D3:-${delim[@]}}"; do
+                        # TODO does '$prefix.../config/*' have merit?
+                        # force '.../config*' format
+                        [ "$d3" = '/' ] && continue
+
+                        eval list+=("$prefix${stub:+$d1$stub}/${file}${d3}$e")
                     done
                 done
-                list+=("$prefix${stub:+$stub/}${file}")
-                [ -z "$b$c" ] && break 3
-                [ -z "$a$b" ] && break
+                list+=("$prefix${stub:+$d1$stub}/$file")
+                [ -z "$b$c" ] && break 2
+                [ -z "$b" ] && break
             done
         done
     done
   done
+
   echo "${list[@]}"
 }
 
@@ -101,7 +121,7 @@ function _ssh() {
   #   SSH_CONFIG    - name of SSH configuration file (-F)
   #   SSH_IDENTITY  - path to identity file (-i)
 
-  local _screen _conf _known_hosts _cmd _env _prefix
+  local _screen _file _cmd _env _prefix _verbose
   local i v p
 
   : ${PROFILE:?}
@@ -122,61 +142,61 @@ function _ssh() {
         # disable Screen where persistent command output is helpful
         unset _screen
         ;;
+    # Ssh option or Host arg
   esac
 
-  case "$DEBUG" in
-    [0-9])  for i in `seq $DEBUG`; do v+='v'; done
-            _verbose="-${v}"
-            ;;
-    -*)	    _verbose="$DEBUG"
-            ;;
-  esac
-  grep -q -- "$_verbose" <<< "$VERBOSE" || VERBOSE+=" $_verbose"
-
+  # check SSH_* files exist
   for v in ${!SSH_*}; do
-    # skip irrelevent items
+    # skip irrelevent
     case $v in
-        SSH_AGENT_PID|SSH_AUTH_SOCK)
-            continue
-            ;;
+        SSH_AGENT_PID|SSH_AUTH_SOCK) continue ;;
     esac
 
-    if [ -n "${!v}" -a ! -f "${!v}" ]; then
-        echo >&2 "ERROR: file $v = '${!v}' not found"; return 1
-    fi
+    [ -n "${!v}" -a -f "${!v}" ] || error "file $v (${!v}) not found!"
   done
 
+  # TODO? convert to function since identical
+
   if [ -z "$SSH_CONFIG" ]; then
+    [ -n "$DEBUG" ] && debug "looking for SSH_CONFIG"
     # NOTICE: this level of search can take a while. Flavor to taste.
-    for _conf in `genlist "$BASEDIR"/` \
-          `[ -n "$AWS_PROFILE" ] && genlist "$HOME/.aws"/` \
-          `genlist "$HOME/.ssh"/`; do
+    for _file in `prefix="$BASEDIR" genlist` \
+          `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist` \
+          `prefix="$HOME/.ssh" genlist`; do
 
         # discard match on '.aws/config' since that is reserved
-        grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_conf" && continue
+        grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_file" && continue
 
-        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_CONFIG = $_conf"
-        [ -f "$_conf" ] && { SSH_CONFIG="$_conf"; break; }
+        [ -n "$DEBUG" ] && debug "    $_file"
+        [ -f "$_file" ] && { SSH_CONFIG="$_file"; break; }
     done
-    : ${SSH_CONFIG:?ERROR: no file for PROFILE ($PROFILE)}
+    : ${SSH_CONFIG:?not found for PROFILE ($PROFILE)}
   fi
 
   # UserKnownHostFile shouldn't be defined inside 'config' because brittle
   if [ -z "$SSH_KNOWN_HOSTS" ]; then
-    for _known_hosts in ${SSH_CONFIG/config/known_hosts} \
-          `genlist $(dirname "$BASH_SOURCE")/ known_hosts` \
-          `[ -n "$AWS_PROFILE" ] && genlist "$HOME/.aws/" known_hosts` \
-          `genlist "$HOME/.ssh/" known_hosts`; do
+    [ -n "$DEBUG" ] && debug "looking for SSH_KNOWN_HOSTS"
+    for _file in ${SSH_CONFIG/config/known_hosts} \
+          `prefix="$BASEDIR" genlist 'known_hosts'` \
+          `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist 'known_hosts'` \
+          `prefix="$HOME/.ssh" genlist 'known_hosts'`; do
 
-        [ -n "${DEBUG:+x}" ] && echo >&2 "DEBUG: trying SSH_KNOWN_HOSTS = $_known_hosts"
-        [ -f "$_known_hosts" ] && { SSH_KNOWN_HOSTS="$_known_hosts"; break; }
+        [ -n "$DEBUG" ] && debug "    $_file"
+        [ -f "$_file" ] && { SSH_KNOWN_HOSTS="$_file"; break; }
     done
-    : ${SSH_KNOWN_HOSTS:?ERROR: no file for PROFILE ($PROFILE)}
+    : ${SSH_KNOWN_HOSTS:?not found for PROFILE ($PROFILE)}
   fi
+  unset _file
+
+  [ -n "$VERBOSE" ] && {
+    for k in SSH_{CONFIG,KNOWN_HOSTS}; do
+        info "using $k=${!k}"
+    done
+  }
 
   # propagate environment when running Screen
   _env=
-  for v in PROFILE ${!SSH_*} ${!AWS_*}; do
+  for v in ${!CLOUD*} REGION ${!SSH_*} ${!AWS_*}; do
     [ -n "${!v}" ] || continue
     _env+=" $v='${!v}'"
   done
@@ -194,6 +214,17 @@ function _ssh() {
 
 #--- main ---
 
+[ $# -gt 0 ] || RC=2 error 'insufficient arguments'
+
+for p in SSH SCP SFTP SCREEN; do
+    # skip variables set to anything, even '' so as to not clobber aliases
+    [ -n "${p+x}" ] || continue
+
+    eval $p=`$WHICH ${p,,} 2>/dev/null`
+    # screen not found is benign
+    [ -n "${!p}" -o "$p" = 'SCEEN' ] || error "missing $p binary"
+done
+
 BASEDIR=`dirname "$BASH_SOURCE"`
 BASEDIR="${BASEDIR%/bin}"
 
@@ -209,6 +240,10 @@ unset _origin _prog
 for s in ${NO_SCREEN:-git rsync}; do
     [[ "$PROFILE" =~ .$s ]] && { SCREEN= ; break; }
 done
+
+: ${CLOUD:=aws}
+: ${CLOUD_PROFILE:=$AWS_PROFILE}
+: ${REGION:=$AWS_DEFAULT_REGION}
 
 _ssh "$@"
 
