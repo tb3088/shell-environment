@@ -1,5 +1,7 @@
 # $Id$
 
+shopt -s extglob
+
 function convert_path() {
     local escape=0 format= flags=
 
@@ -60,9 +62,9 @@ function contains() {
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 function addPath() {
+    local k v escape prepend delim=':'
     [ -n "$1" ] || return 0
 
-    local k v escape prepend delim=':'
     [ $# -eq 1 ] && { k='PATH'; escape='-n'; } || { k="$1"; shift; }
 
     for v in "$@"; do
@@ -74,6 +76,17 @@ function addPath() {
         delim="$delim" contains "${!k}" "$v" && continue
 
         [ $prepend -eq 1 ] && eval $k="$v$delim\$$k" || eval $k+="$delim\$v"
+    done
+}
+
+function rmPath() {
+    local k delim=':'
+    [ -n "$1" ] || return 0
+
+    [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
+
+    for v in "$@"; do
+	eval $k=`sed -e "s|$delim\?$v$delim\?|$delim|" <<< "${!k}"`
     done
 }
 
@@ -116,8 +129,59 @@ function ask() {
   [ "${REPLY,,}" = 'y' ]
 }
 
+#TODO log_err log_out with suitable redirects
+# https://stackoverflow.com/questions/637827/redirect-stderr-and-stdout-in-bash
+
+function log() {
+  # reference https://code.woboq.org/gcc/include/sys/syslog.h.html
+#  declare -A facilities=auth|security authpriv cron daemon kern lpr mail news syslog user uucp local0-7
+
+# syslog.h as DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
+  declare -A levels=(
+    [EMERG]=0   [PANIC]=0
+    [ALERT]=1
+    [CRIT]=2    [CRITICAL]=2
+    [ERR]=3     [ERROR]=3
+    [WARN]=4    [WARNING]=4
+    [NOTICE]=5
+    [INFO]=6
+    [DEBUG]=7
+  )
+    # Java'ish extensions
+#    [TRACE]=8 [FINE]=8
+#    [FINEST]=9
+
+  local level format
+
+  : ${format:="${BASH_SOURCE##*/} %s %s\n"}
+  # sanity check
+  [ -n "${levels[${level:=INFO}]}" ] || level=INFO
+  [ -n "${levels[${LOGMASK:=WARN}]}" ] || LOGMASK=WARN
+
+  [ ${levels[$level]} -le ${levels[$LOGMASK]} ] || return 0
+
+  while [ $# -ne 0 ]; do
+    printf "$format" $level "$1"
+    [ -n "$LOGGER" ] && $LOGGER -p user.${level,,} "$1"    
+    shift
+  done
+}
+
+function debug() { level=${FUNCNAME^^} log "$@"; }
+function info() { level=${FUNCNAME^^} log "$@"; }
+function notice() { level=${FUNCNAME^^} log "$@"; }
+function warn() { level=${FUNCNAME^^} log "$@"; }
+function error() { level=${FUNCNAME^^} log "$@"; exit ${RC:-1}; }
+
+#TODO detect nesting levels, add '+'
 # mimic 'set -x'
-function runv() { >&2 echo "+ $*"; "$@"; }
+function runv() { 
+  local depth
+
+  eval printf -v depth '%.0s+' {1..$SHLVL}
+  >&2 echo "$depth $*"
+  "$@"
+}
 
 function join_string() {
     # escape whitespaces if no quote char. even delimiter is eligible (rare)
