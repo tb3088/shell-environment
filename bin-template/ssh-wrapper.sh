@@ -21,19 +21,19 @@ case "${OSTYPE:-`uname`}" in
     *)  WHICH='\which'
 esac
 
-declare -f log >/dev/null ||
+declare -F log >/dev/null ||
 function log() { echo "$*"; }
 
-declare -f debug >/dev/null ||
-function debug() { [ -z "$DEBUG" ] || log "${FUNCNAME^^} $*"; }
+declare -F debug >/dev/null ||
+function debug() { [ -z "${DEBUG+x}" ] || log "${FUNCNAME^^} $*"; }
 
-declare -f info >/dev/null ||
-function info() { [ -z "$VERBOSE" ] || log "${FUNCNAME^^} $*"; }
+declare -F info >/dev/null ||
+function info() { [ -z "${VERBOSE+x}${DEBUG+x}" ] || log "${FUNCNAME^^} $*"; }
 
-declare -f error >/dev/null ||
+declare -F error >/dev/null ||
 function error() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
 
-declare -f runv >/dev/null ||
+declare -F runv >/dev/null ||
 function runv() { >&2 echo "+ $*"; "$@"; }
 
 function genlist() {
@@ -47,7 +47,7 @@ function genlist() {
   # config_REGION         config_PROFILE
   # config
 
-  declare -a delim=('/' '.')    # '_' '-'
+  declare -a delim=('/' '.' '_')    # flavor to taste
   declare -a list=()
 
   local prefix stub combo
@@ -59,8 +59,11 @@ function genlist() {
 #        D1="${prefix: -1}"; prefix="${prefix::-1}"
 #    }
 
+  # bulk initialize
+  for i in D{1..3}; do eval "[ \${#$i[@]} -ne 0 ]" || declare -n $i=delim; done
+
   for b in $PROFILE $REGION ''; do
-    for c in $REGION $PROFILE ''; do
+    for c in $PROFILE $REGION ''; do
         [ -n "$b" -a \( "$c" = "$b" -o -z "$c" \) ] && continue
 
         # create combined suffix 'e' when b and c are empty
@@ -68,14 +71,14 @@ function genlist() {
             combo="${REGION}\${d3}${PROFILE} ${PROFILE}\${d3}${REGION}"
 
         # NOTE if D# is Array, will only process 1st element
-        for d1 in "${D1:-${delim[@]}}"; do
-            for d2 in "${D2:-${delim[@]}}"; do
+        for d1 in "${D1[@]}"; do
+            for d2 in "${D2[@]}"; do
                 [ -n "$b" -a -n "$c" ] && stub="$b$d2$c" || stub="$b$c"
 
                 for e in $combo $REGION $PROFILE; do
                     [ "$e" = "$b" -o "$e" = "$c" ] && continue
 
-                    for d3 in "${D3:-${delim[@]}}"; do
+                    for d3 in "${D3[@]}"; do
                         # TODO does '$prefix.../config/*' have merit?
                         # force '.../config*' format
                         [ "$d3" = '/' ] && continue
@@ -225,8 +228,6 @@ info "BASEDIR = $BASEDIR"
     # compute from wrapper filename
     _origin=$( basename -s .sh `readlink "$BASH_SOURCE"` )
     _prog=$( basename -s .sh "$BASH_SOURCE" )
-    debug "_origin = $_origin"
-    debug "_prog = $_prog"
     [ "$_prog" = "$_origin" ] || PROFILE="$_prog"
 }
 unset _origin _prog
@@ -242,7 +243,10 @@ done
 : ${CLOUD_PROFILE:=$AWS_PROFILE}
 : ${REGION:=$AWS_DEFAULT_REGION}
 
-_ssh "$@"
+# My personal definitions for D{1..3} delimiter sets.
+# One can also override via args to genlist() or change the defaults
+declare -a D2=( '/' '.' )
+D1='/' _ssh "$@"
 
 
 # vim: set expandtab:ts=4:sw=4
