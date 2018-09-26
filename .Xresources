@@ -1,16 +1,16 @@
-Xterm*utf8:             2
-Xterm*eightBitInput:    true
-Xterm*saveLines:        512
-Xterm*scrollKey:        true
-Xterm*scrollTtyOutput:  false
-Xterm*scrollBar:        true
-Xterm*rightScrollBar:   true
-Xterm*jumpScroll:       true
-Xterm*multiScroll:      true
-Xterm*toolBar:          false
-Xterm*reverseVideo:     on
-Xterm*faceSize:         12
-#Xterm*faceName:	BitStream Vera Sans Mono
+XTerm*utf8:         2
+XTerm*EightBitInput: true
+XTerm*SaveLines:    512
+XTerm*ScrollKey:    true
+XTerm*ScrollTtyOutput: false
+XTerm*ScrollBar:    true
+XTerm*RightScrollBar: true
+XTerm*JumpScroll:   true
+XTerm*MultiScroll:  true
+XTerm*ToolBar:      false
+XTerm*ReverseVideo: on
+XTerm*FaceSize:     10
+XTerm*FaceName:     BitStream Vera Sans Mono
 ! default is 80x25
-Xterm.vt100.geometry:   132x50
+XTerm*Geometry:     80x26
 
