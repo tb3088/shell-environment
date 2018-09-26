@@ -30,6 +30,9 @@ function debug() { [ -z "${DEBUG+x}" ] || log "${FUNCNAME^^} $*"; }
 declare -F info >/dev/null ||
 function info() { [ -z "${VERBOSE+x}${DEBUG+x}" ] || log "${FUNCNAME^^} $*"; }
 
+declare -F warn >/dev/null ||
+function warn() { log "${FUNCNAME^^} $*"; }
+
 declare -F error >/dev/null ||
 function error() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
 
@@ -222,7 +225,7 @@ done
 
 BASEDIR=`dirname "$BASH_SOURCE"`
 BASEDIR="${BASEDIR%/bin}"
-[ "$BASEDIR" = "$HOME" ] && unset BASEDIR || info "BASEDIR = $BASEDIR"
+[ "$BASEDIR" = "$HOME" ] && { warn "ignoring BASEDIR=HOME"; unset BASEDIR; } || info "BASEDIR = $BASEDIR"
 
 [ -n "${SSH_CONFIG:-$PROFILE}" ] || {
     # compute from wrapper filename
