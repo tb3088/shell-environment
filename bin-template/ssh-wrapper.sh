@@ -142,8 +142,8 @@ function _ssh() {
     debug "looking for SSH_CONFIG"
 
     # NOTICE: this level of search can take a while. Flavor to taste.
-    for _file in `prefix="$BASEDIR" genlist` \
-          `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist` \
+    for _file in `[ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist` \
+          `[ -d "$HOME/.$CLOUD/$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist` \
           `prefix="$HOME/.ssh" genlist`; do
 
         # discard match on '.aws/config' since that is reserved
@@ -161,8 +161,8 @@ function _ssh() {
     debug "looking for SSH_KNOWN_HOSTS"
 
     for _file in ${SSH_CONFIG/config/known_hosts} \
-          `prefix="$BASEDIR" genlist 'known_hosts'` \
-          `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist 'known_hosts'` \
+          `[ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist 'known_hosts'` \
+          `[ -d "$HOME/.$CLOUD/$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist 'known_hosts'` \
           `prefix="$HOME/.ssh" genlist 'known_hosts'`; do
 
         debug "    $_file"
@@ -222,7 +222,7 @@ done
 
 BASEDIR=`dirname "$BASH_SOURCE"`
 BASEDIR="${BASEDIR%/bin}"
-info "BASEDIR = $BASEDIR"
+[ "$BASEDIR" = "$HOME" ] && unset BASEDIR || info "BASEDIR = $BASEDIR"
 
 [ -n "${SSH_CONFIG:-$PROFILE}" ] || {
     # compute from wrapper filename
