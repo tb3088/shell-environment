@@ -1,16 +1,48 @@
+XTerm*Geometry:     132x45
 XTerm*utf8:         2
-XTerm*EightBitInput: true
-XTerm*SaveLines:    512
-XTerm*ScrollKey:    true
-XTerm*ScrollTtyOutput: false
-XTerm*ScrollBar:    true
-XTerm*RightScrollBar: true
-XTerm*JumpScroll:   true
-XTerm*MultiScroll:  true
-XTerm*ToolBar:      false
-XTerm*ReverseVideo: on
-XTerm*FaceSize:     10
-XTerm*FaceName:     BitStream Vera Sans Mono
-! default is 80x25
-XTerm*Geometry:     80x26
+XTerm*saveLines:    1024
+XTerm*scrollKey:    true
+XTerm*scrollTtyOutput: false
+XTerm*scrollBar:    true
+XTerm*rightScrollBar: true
+XTerm*jumpScroll:   true
+XTerm*multiScroll:  true
+XTerm*toolBar:      on
+XTerm*reverseWrap:  true
+XTerm*faceSize:     9
+XTerm*faceName:     Mono BitStream Vera Sans
 
+XTerm*background:   black
+XTerm*foreground:   white
+XTerm*reverseVideo: false
+
+XTerm*colorBDMode:  on
+XTerm*colorULMode:  on
+XTerm*eightBitInput: true
+XTerm*eightBitOutput: true
+XTerm*titeInhibit:  true
+ 
+XTerm*colorMode:    on
+!XTerm*dynamicColors: on
+ 
+XTerm*color0:       black
+XTerm*color1:       red3
+XTerm*color2:       green3
+XTerm*color3:       yellow3
+XTerm*color4:       blue3
+XTerm*color5:       magenta3
+XTerm*color6:       cyan3
+XTerm*color7:       gray90
+XTerm*color8:       gray30
+XTerm*color9:       red
+XTerm*color10:      green
+XTerm*color11:      yellow
+XTerm*color12:      blue
+XTerm*color13:      magenta
+XTerm*color14:      cyan
+XTerm*color15:      white
+XTerm*colorUL:      yellow
+XTerm*colorBD:      white
+
+*customization:     -color
+XTerm*fontWarnings: 0
