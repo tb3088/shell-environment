@@ -25,13 +25,13 @@ declare -F log >/dev/null ||
 function log() { echo "$*"; }
 
 declare -F debug >/dev/null ||
-function debug() { [ -z "${DEBUG+x}" ] || log "${FUNCNAME^^} $*"; }
+function debug() { [ -z "$DEBUG" ] || log "${FUNCNAME^^} $*"; }
 
 declare -F info >/dev/null ||
-function info() { [ -z "${VERBOSE+x}${DEBUG+x}" ] || log "${FUNCNAME^^} $*"; }
+function info()  { [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME^^} $*"; }
 
 declare -F warn >/dev/null ||
-function warn() { log "${FUNCNAME^^} $*"; }
+function warn()  { log "${FUNCNAME^^} $*"; }
 
 declare -F error >/dev/null ||
 function error() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
