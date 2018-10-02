@@ -162,15 +162,15 @@ function log() {
 
   while [ $# -ne 0 ]; do
     printf "$format" $level "$1"
-    [ -n "$LOGGER" ] && $LOGGER -p user.${level,,} "$1"    
+    [ -n "$SYSLOG" -a `which ${LOGGER:=logger}` ] && ${LOGGER} -p user.${level,,} "$1"    
     shift
   done
 }
 
 function debug() { level=${FUNCNAME^^} log "$@"; }
-function info() { level=${FUNCNAME^^} log "$@"; }
+function info()  { level=${FUNCNAME^^} log "$@"; }
 function notice() { level=${FUNCNAME^^} log "$@"; }
-function warn() { level=${FUNCNAME^^} log "$@"; }
+function warn()  { level=${FUNCNAME^^} log "$@"; }
 function error() { level=${FUNCNAME^^} log "$@"; exit ${RC:-1}; }
 
 #TODO detect nesting levels, add '+'
@@ -179,9 +179,11 @@ function runv() {
   local depth
 
   eval printf -v depth '%.0s+' {1..$SHLVL}
-  >&2 echo "$depth $*"
+  >&2 echo -e "\n$depth $*\n\n"
   "$@"
 }
+
+function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
 function join_string() {
     # escape whitespaces if no quote char. even delimiter is eligible (rare)
