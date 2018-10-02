@@ -28,7 +28,7 @@ go
 .terraformrc
 .viminfo
 .wget-hsts
-.Xauthority
+.Xauthority*
 .xsession-errors
 *.bak
 *.orig
