@@ -1,10 +1,28 @@
-alias aws-addPath='addPath "$HOME/.aws/${AWS_PROFILE:?}/bin"'
+which ec2-version &>/dev/null ||
+  for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
+      [ -z "$d" -o -h "$d" -o ! -d "$d/bin" ] && continue
+      addPath "$d/bin"
+  done
 
-which ec2-version &>/dev/null || \
-    for d in `\ls -d /usr/local/ec2-api-tools* 2>/dev/null`; do
-        [ -z "$d" -o -h "$d" ] && continue
-        [ -d "$d/bin" ] && addPath "$d/bin"
-    done
+_complete=`which aws_completer 2>/dev/null`
+[ -n "$_complete" ] && complete -C "$_complete" aws || unset _complete
+
+
+function aws-addPath {
+  local v
+
+  for v in "$@" ${AWS_CONFIG_FILE:+`dirname "$AWS_CONFIG_FILE"`} "$HOME/.aws/$AWS_PROFILE"; do
+    [ ! -d "$v" ] && continue
+    [ "$v" = '.' ] && v=`pwd`
+
+    # restore saved PATH
+    [ -n "$_PATH" ] && PATH="$_PATH"
+
+    [ -d "$v/bin" ] && addPath -"$v/bin" || addPath -"$v"
+    [ -n "$SSH_AUTH_SOCK" ] && ssh-add -k $v/*.pem 2>/dev/null
+    break
+  done
+}
 
 function route53-export {
   local zoneid=${1:?}
