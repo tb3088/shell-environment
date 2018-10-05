@@ -26,7 +26,7 @@ BWHT="\[\033[47m\]" # background white
 function __prompt() {
   RC=$?
   local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
-  PROMPT="\n${FCYN}\u${RS}@${FGRN}\h${RS}"
+  PROMPT="\n${FCYN}${USER}${RS}@${FGRN}\h${RS}"
 
 if [ -n "$GIT_PROMPT" ]; then
   eval $(
@@ -77,7 +77,7 @@ fi
   PS1="$PROMPT"
 }
 
-PS1="\n${FCYN}\u${RS}@${FGRN}\h ${FYEL}\w${RS}\n\!.\j \$ "
+PS1="\n${FCYN}${USER}${RS}@${FGRN}\h ${FYEL}\w${RS}\n\!.\j \$ "
 #if [[ ${EUID} == 0 ]]; 
 # put into ROOT's .bashrc
 #  PS1="\n${FRED}\u${RS}@${FGRN}\h ${FYEL}\w\n${BRED}\!;\j${RS} \$ "
@@ -118,7 +118,9 @@ HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 
 
 for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
-    [ -f "$f" ] && source "$f" || true
+  egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
+  [ -f "$f" ] || continue
+  source "$f"
 done
 
 # save PATH to minimize clutter when adding multiple AWS helpers
@@ -128,13 +130,13 @@ _PATH=$PATH
 # If this shell is interactive, turn on programmable completion enhancements.
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
-    *i*)
-#        for f in {,/usr/local}/etc/bash_completion{,.d/*} ~/.bash_completion; do
-#            [ -f "$f" ] && source "$f"
-#        done
+  *i*)
+        for f in {,/usr/local}/etc/bash_completion{,.d/*} ~/.bash_completion; do
+          [ -f "$f" ] || continue
+          source "$f" 
+        done
 	;;
-    *c*)
-	SSH_AGENT=""
+  *c*)  SSH_AGENT=
 esac
 
 # vim: set expandtab:ts=4:sw=4

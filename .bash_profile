@@ -21,7 +21,9 @@ if [[ "$-" == *i* ]] || tty -s ; then
 fi
 
 for f in "$HOME"/.{bash_profile.local,bashrc.${OSTYPE:=`uname`}}; do
-    [ -f "$f" ] && source "$f"
+  egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
+  [ -f "$f" ] || continue
+  source "$f"
 done
 
 : ${EDITOR:=`which "$EDITOR" vim vi nano pico emacs 2>/dev/null | head -n 1`}

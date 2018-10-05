@@ -9,9 +9,21 @@ contains "${CYGWIN:-xxx}" "winsymlinks" || export CYGWIN+=" winsymlinks:lnk"
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 
-#function su() {    # sorta works. 'uid' dosn't get updated
-#  eval `awk -v who=$1 -F: '$1 == who { printf("env USER=%s HOME=%s %s", who, $(NF-1), $NF) }' /etc/passwd` "$@"
-#}
+function sudo() {
+  while [ $# -gt 0 ]; do
+    [ "${1:0:1}" = '-' ] && shift || break
+    case $1 in
+      -l)   flags+=' -l' ;;
+      -u)   who=$1 ;;
+      -*)   ;;
+      *)    break
+    esac
+    shift
+  done
+
+  [ -n "$who" ] || { who=${1:?missing <user> argument}; shift; }
+  eval env `awk -v who=$who -F: '$1 == who { printf("USER=%s USERNAME=%s HOME=%s UID=%s %s", $1, $1, $(NF-1), $3, $NF) }' /etc/passwd` "$@"
+}
 
 export PATHSEP=';'
 

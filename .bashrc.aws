@@ -4,9 +4,8 @@ which ec2-version &>/dev/null ||
       addPath "$d/bin"
   done
 
-_complete=`which aws_completer 2>/dev/null`
-[ -n "$_complete" ] && complete -C "$_complete" aws || unset _complete
-
+[ -e /etc/bash_completion.d/aws_bash_completer ] ||
+    ln -s `which aws_bash_completer` /etc/bash_completion.d/
 
 function aws-addPath {
   local v
