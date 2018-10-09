@@ -1,82 +1,114 @@
-# $Id$
-
 shopt -s extglob
 
 function convert_path() {
-    local escape=0 format= flags=
+  local escape=1 path=1 {format,flags,noop}=
+  local delim= raw=() cooked=() IFS r p
+  local OPTIND opt      # IMPORTANT !!
 
-    # Cygwin automagically handle spaces on the $PATH and
-    # must NOT have them escaped to work properly. But interactive
-    # use on command-line needs to be inside quotes or escaped.
-    #
-    # Processing .bash_profile is Interactive so must be overridden
+  # Cygwin automagically handle spaces on the $PATH and
+  # must NOT have them escaped to work properly. But interactive
+  # use on command-line needs to be inside quotes or escaped.
 
-    while [ $# -ne 0 ]; do
-        case $1 in
-            '-e')   escape=1
-                    ;;
-            '-n')   escape=0
-                    ;;
-            dos|mixed|unix|windows)
-                    format="-t $1"
-		    ;;
-            '-'*)   flags+=" $1"
-                    ;;
-            *)      break
-        esac
-        shift
-    done
+  while getopts "D:eEnpPt:" opt; do
+    case $opt in
+      D)    delim=$OPTARG ;;
+      e)    escape=1 ;;
+      E)    escape=  ;;
+      n)    noop=1; ;;
+      p)    path=1; escape= ;;   # an optimization
+      P)    path= ;;
+      t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
+                format="-t $OPTARG" || {
+                    RC=2 log_ERROR "unknown format ($OPTARG)"
+                    return
+                }
+            ;;
+      :)    RC=2 log_ERROR "missing argument (-$OPTARG)"
+            return
+            ;;
+      \?)   flags+=" -$OPTARG"
+    esac
+  done
+  shift $((OPTIND-1))
 
-    [ -n "$1" ] || return 0
-    which cygpath &>/dev/null || { echo "$1"; return 0; }
+  which cygpath &>/dev/null || noop=1
 
-    [ $escape -eq 1 ] &&
-        cygpath $format $flags -- "$1" | sed -e 's/ /\\ /g' ||
-        cygpath $format $flags -- "$1"
+  while [ $# -ne 0 ]; do
+    [ -n "$1" ] || { shift; continue; }
+    [ -n "$noop" ] && { echo "$1"; shift; continue; }
+
+    if [ -n "$path" ]; then
+      p=`cygpath $format -p $flags -- "${1//\\ / }"`
+      [ -n "$escape" ] && echo "${p// /\\ }" || echo "$p"
+    else
+      cooked=()
+
+      # iterate thru line elements based on delim THEN remove escaped spaces 
+      eval ${delim:+IFS=$delim} read -a raw <<< "$1"; unset IFS
+      for r in "${raw[@]}"; do
+        log_DEBUG "raw input: $r"
+        p=`cygpath $format $flags -- "${r//\\ / }"`
+        log_DEBUG "cygpath output: $p"
+        [ -n "$escape" ] && cooked+=("${p// /\\ }") || cooked+=("$p")
+      done
+      eval ${delim:+IFS=$delim}; echo "${cooked[*]}"; unset IFS
+    fi
+    shift 
+  done
 }
+
 
 #TODO handle Hash and Array
 function contains() {
-    # 'delim' and 'method' passed as invocation arg
-    #TODO leverage IFS="$delim" 
-    local source="$delim$1$delim" sub="$delim$2$delim"
+  # 'delim' and 'method' passed as invocation arg
+  #TODO leverage IFS="$delim" 
+  local source="$delim${1}$delim" sub="$delim${2}$delim"
+  local method=
 
-    # empty string inside empty is valid
-    case "$method" in
-      'grep')
-            grep -q "$sub" <<< "$source" 2>/dev/null
+  # empty string inside empty is valid
+  case "$method" in
+    'grep') grep -q "$sub" <<< "$source"
             ;;
-      'pe')
-            [ "${source#*$sub}" != "$source" ]
+    'pe')   [ "${source#*$sub}" != "$source" ]
             ;;
-      'regex')  # must not quote RegEx
-            [[ "$source" =~ $sub ]]
+    'regex') [[ "$source" =~ $sub ]]    # must NOT quote RegEx
             ;;
 #      'insensitive')
 #            ;&
-        *)  [[ "$source" == *"$sub"* ]]
-    esac
+    *)      [[ "$source" == *"$sub"* ]]
+  esac
 }
+
 
 # pre-/post-pend [multiple] elements to an environment variable
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 function addPath() {
-    local k v escape prepend delim=':'
-    [ -n "$1" ] || return 0
+  local k v escape= prepend= delim=':'
 
-    [ $# -eq 1 ] && { k='PATH'; escape='-n'; } || { k="$1"; shift; }
+  [ -n "$1" ] || return 0
 
-    for v in "$@"; do
-	prepend=0
-        # leading '-' means prepend
-        [ "${v:0:1}" = '-' ] && { prepend=1; v="${v:1}"; }
+##FIXME this is wrong. invoke as '[ var=XYZ ] addPath [-]value'
+  [ $# -eq 1 ] && { k='PATH'; escape= ; } || { k="$1"; shift; }
 
-        v=`convert_path $escape "$v"`
-        delim="$delim" contains "${!k}" "$v" && continue
+  for v in "$@"; do
+    prepend=
+    # leading '-' means prepend
+    [ "${v:0:1}" = '-' ] && { prepend=1; v="${v:1}"; }
 
-        [ $prepend -eq 1 ] && eval $k="$v$delim\$$k" || eval $k+="$delim\$v"
-    done
+    v=`convert_path $escape "$v"`
+    # prevent duplicates
+    delim="$delim" contains "${!k}" "$v" && continue
+
+    # embedded spaces are a pain!
+    if [ -n "$prepend" ]; then
+      eval $k="$v$delim\$$k"
+    else 
+      eval $k+="$delim\$v"
+    fi
+# this causes appending if prepend 'eval' eperienced and error. WRONG!
+#[ -n "$prepend" ] && eval $k="$v$delim\$$k" || eval $k+="$delim\$v"
+  done
 }
 
 function rmPath() {
@@ -132,126 +164,148 @@ function ask() {
 #TODO log_err log_out with suitable redirects
 # https://stackoverflow.com/questions/637827/redirect-stderr-and-stdout-in-bash
 
-function log() {
-  # reference https://code.woboq.org/gcc/include/sys/syslog.h.html
+# reference https://code.woboq.org/gcc/include/sys/syslog.h.html
 #  declare -A facilities=auth|security authpriv cron daemon kern lpr mail news syslog user uucp local0-7
-
-# syslog.h as DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
-  declare -A levels=(
-    [EMERG]=0   [PANIC]=0
+#
+# syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
+[ -n "${log_levels[*]}" ] ||
+  declare -A -r log_levels=(
+    [EMERG]=0
+    [PANIC]=0
     [ALERT]=1
-    [CRIT]=2    [CRITICAL]=2
-    [ERR]=3     [ERROR]=3
-    [WARN]=4    [WARNING]=4
+    [CRIT]=2
+    [CRITICAL]=2
+    [ERR]=3
+    [ERROR]=3
+    [WARN]=4
+    [WARNING]=4
     [NOTICE]=5
     [INFO]=6
     [DEBUG]=7
-  )
     # Java'ish extensions
 #    [TRACE]=8 [FINE]=8
 #    [FINEST]=9
+  )
 
-  local level format
+for k in ${!log_levels[@]}; do
+  case ${log_levels[$k]} in
+    [0-3])  eval function log_$k '{ >&2 log "$@"; [ $SHLVL -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }'
+            ;;
+    4)      eval function log_$k '{ >&2 log "$@"; }' ;;
+    5|6)    eval function log_$k '{ log "$@"; }' ;;
+    7)      eval function log_$k '{ [ -n "$DEBUG" ] && log "$@"; }' ;;
+  esac
+done
+unset k
 
-  : ${format:="${BASH_SOURCE##*/} %s %s\n"}
+function log() {
+  local format='%s %s\n'
+  local {fn,level}=
+
+  local fo=1    # [0] will always be 'log()'
+  for fn in ${FUNCNAME[@]:1}; do
+    fn=${fn#log_}
+
+    [ -n "${log_levels[$fn]}" ] && level=$fn || break
+    : $((fo++))
+  done
+
   # sanity check
-  [ -n "${levels[${level:=INFO}]}" ] || level=INFO
-  [ -n "${levels[${LOGMASK:=WARN}]}" ] || LOGMASK=WARN
+  [ -n "${log_levels[${level:-x}]}" ] || level=INFO
+  [ -n "${log_levels[${LOGMASK:-x}]}" ] || unset LOGMASK
 
-  [ ${levels[$level]} -le ${levels[$LOGMASK]} ] || return 0
+  # squelch messages below LOGMASK
+  [ ${log_levels[$level]} -le ${log_levels[${LOGMASK:-$level}]} ] || return 0
 
   while [ $# -ne 0 ]; do
+    [ -n "${STACKTRACE}${DEBUG}" ] &&
+        format="${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}()    $format"
     printf "$format" $level "$1"
-    [ -n "$SYSLOG" -a `which ${LOGGER:=logger}` ] && ${LOGGER} -p user.${level,,} "$1"    
+    [ -n "$SYSLOG" ] && ${LOGGER:-logger} -p user.${level,,} "$1"    
     shift
   done
 }
 
-function debug() { level=${FUNCNAME^^} log "$@"; }
-function info()  { level=${FUNCNAME^^} log "$@"; }
-function notice() { level=${FUNCNAME^^} log "$@"; }
-function warn()  { level=${FUNCNAME^^} log "$@"; }
-function error() { level=${FUNCNAME^^} log "$@"; exit ${RC:-1}; }
-
-#TODO detect nesting levels, add '+'
 # mimic 'set -x'
 function runv() { 
   local depth
 
   eval printf -v depth '%.0s+' {1..$SHLVL}
-  >&2 echo -e "\n$depth $*\n\n"
+  >&2 echo -e "\n$depth $*\n"
   "$@"
 }
 
 function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
 function join_string() {
-    # escape whitespaces if no quote char. even delimiter is eligible (rare)
-    [ -n "$quote" ] || set -- "${@// /\\ }"
+  local quote=
 
-    delim="${1:?}"; shift
-    [ $# -ne 0 ] || return
+  # escape whitespaces if no quote char. even delimiter is eligible (rare)
+  [ -n "$quote" ] || set -- "${@// /\\ }"
 
-    printf "${quote}%s${quote}" "$1"; shift
-    printf "${delim}${quote}%s${quote}" "$@"
+  delim="${1:?}"; shift
+  [ $# -ne 0 ] || return
 
-    # or process all but last and tack it on with ${@:1:$# -1}?
-    # alternate implementation using just 'echo'
+  printf "${quote}%s${quote}" "$1"; shift
+  printf "${delim}${quote}%s${quote}" "$@"
+
+  # or process all but last and tack it on with ${@:1:$# -1}?
+  # alternate implementation using just 'echo'
 #    echo -n "${quote}$1${quote}"; shift
 #    for elem in "$@"; do
 #        echo -n "${delim}${quote}${elem}${quote}"
 #    done
-    echo
+  echo
 }
 
 function join_quote() { quote=\' join_string "$@"; }
 
 function __parse_options() {
-    local option option2 i IFS='
+    local option{,2}= i= IFS='
 ,/|';
-    option=
-    for i in $1; do
-        case $i in
-            ---*)   break
-                    ;;
-            --?*)   option=$i; break
-                    ;;
-            -?*)    [ -n "$option" ] || option=$i
-                    ;;
-            *)      break
-                    ;;
-        esac;
-    done
-    [ -n "$option" ] || return 0
-    IFS='
+
+  for i in $1; do
+    case $i in
+      ---*) break ;;
+      --?*) option="$i"; break ;;
+      -?*)  [ -n "$option" ] || option="$i" ;;
+      *)    break ;;
+    esac;
+  done
+  [ -n "$option" ] || return 0
+
+  IFS='
 ';
-    if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
-        option2=${option/"${BASH_REMATCH[1]}"/}
-        option2=${option2%%[<{().[]*}
-        printf '%s\n' "${option2/=*/=}"
-        option=${option/"${BASH_REMATCH[1]}"/"${BASH_REMATCH[2]}"}
-    fi;
-    option="${option%%[<{().[]*}"
-    printf '%s\n' "${option/=*/=}"
+
+  if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
+    option2=${option/"${BASH_REMATCH[1]}"/}
+    option2=${option2%%[<{().[]*}
+    printf '%s\n' "${option2/=*/=}"
+    option=${option/"${BASH_REMATCH[1]}"/"${BASH_REMATCH[2]}"}
+  fi
+  option="${option%%[<{().[]*}"
+  printf '%s\n' "${option/=*/=}"
 }
 
 function userinfo() {
   # analogous to /bin/usermod
   #while [ $# -gt 0 ] && [[ "$1" =~ -* ]]; do
+#  FIXME use getopts like a sane person!
   [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
-  
+ 
+#FIXME define a HASH for lookups instead of this crap
   case $flag in
     l)  field=1 ;;&
-	u)  field=2 ;;&
-	g)  field=3 ;;&
-	d)  field=6 ;;&
-	L)  field=lock ;&
-	# TODO needs if/else
-	p)  getent shadow ${1:-`id -u`} | awk -F: -v field=$field '{ print $2 }' ;;
-	'') id -nu $1 ;;
-	*)  getent passwd ${1:-`id -u`}
+    u)  field=2 ;;&
+    g)  field=3 ;;&
+    d)  field=6 ;;&
+    L)  field=lock ;&
+    # TODO needs if/else
+    p)  getent shadow ${1:-`id -u`} | awk -F: -v field=$field '{ print $2 }' ;;
+    '') id -nu $1 ;;
+    *)  getent passwd ${1:-`id -u`}
   esac
-  # login:x:uid:gid:gecos:home:shell
+#  # login:x:uid:gid:gecos:home:shell
 #    -c, --comment COMMENT         new value of the GECOS field
 #  -d, --home HOME_DIR           new home directory for the user account
 #  -e, --expiredate EXPIRE_DATE  set account expiration date to EXPIRE_DATE
@@ -264,3 +318,5 @@ function userinfo() {
 #  -s, --shell SHELL             new login shell for the user account
 #  -u, --uid UID                 new UID for the user account
 }
+
+# vim: set expandtab:ts=4:sw=4
