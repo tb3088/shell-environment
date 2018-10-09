@@ -12,8 +12,7 @@ case ${OSTYPE:-`uname`} in
     : ${OPENSC_LIB:=/usr/local/lib/opensc-pkcs11.so}
 esac
 
-[ -f "$OPENSC_LIB" ] && { export OPENSC_LIB; [ -n "$SSH_AUTH_SOCK" ] && ssh-add -s; }
+[ -f "$OPENSC_LIB" ] && { export OPENSC_LIB; [ -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB"; }
 
-return 0
-
+true
 # vim: set expandtab:ts=4:sw=4
