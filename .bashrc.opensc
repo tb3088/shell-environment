@@ -6,14 +6,14 @@ case ${OSTYPE:-`uname`} in
     ;;
   cygwin|CYGWIN_*)
     # MSI doesn't allow tailoring path
-    : ${OPENSC_LIB:="$PROGRAM_FILES/OpenSC\ Project/OpenSC/pkcs11/opensc-pkcs11.dll"}
+    : ${OPENSC_LIB:="`convert_path -p "$PROGRAMFILES"`/OpenSC Project/OpenSC/pkcs11/opensc-pkcs11.dll"}
     ;;
   [dD]arwin*)
     : ${OPENSC_LIB:=/usr/local/lib/opensc-pkcs11.so}
 esac
 
-[ -f "$OPENSC_LIB" ] && {
-    export OPENSC_LIB
-    alias ssh-add="ssh-add -s $OPENSC_LIB"
-}
+[ -f "$OPENSC_LIB" ] && { export OPENSC_LIB; [ -n "$SSH_AUTH_SOCK" ] && ssh-add -s; }
 
+return 0
+
+# vim: set expandtab:ts=4:sw=4
