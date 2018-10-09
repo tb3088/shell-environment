@@ -1,6 +1,7 @@
-return
+which chef &>/dev/null && return
 
-which chef &>/dev/null || return
+# Work-in-Progress
+return 0
 
 echo "processing .bashrc.chef top"
 

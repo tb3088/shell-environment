@@ -14,5 +14,5 @@ esac
 
 [ -f "$OPENSC_LIB" ] && { export OPENSC_LIB; [ -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB"; }
 
-true
+return 0
 # vim: set expandtab:ts=4:sw=4
