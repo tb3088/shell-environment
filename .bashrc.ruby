@@ -15,4 +15,5 @@ done
 
 export GEM_HOME="`convert_path "${LOCALAPPDATA:-$HOME}"`/.gem"
 
+true
 # vim: set expandtab:ts=4:sw=4
