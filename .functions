@@ -218,7 +218,7 @@ function log() {
   [ ${log_levels[$level]} -le ${log_levels[${LOGMASK:-$level}]} ] || return 0
 
   while [ $# -ne 0 ]; do
-    [ -n "${STACKTRACE}${DEBUG}" ] &&
+    [ -n "${STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
         format="${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}()    $format"
     printf "$format" $level "$1"
     [ -n "$SYSLOG" ] && ${LOGGER:-logger} -p user.${level,,} "$1"    
