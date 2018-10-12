@@ -24,9 +24,9 @@ BCYN="\[\033[46m\]" # background cyan
 BWHT="\[\033[47m\]" # background white
 
 function __prompt() {
-  RC=$?
+  local _rc=$?
   local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
-  PROMPT="\n${FCYN}${USER}${RS}@${FGRN}\h${RS}"
+  local _prompt=
 
 if [ -n "$GIT_PROMPT" ]; then
   eval $(
@@ -46,6 +46,7 @@ if [ -n "$GIT_PROMPT" ]; then
     ' < <(git --no-pager --no-optional-locks status --untracked-files=all --ignore-submodules --porcelain --branch 2>/dev/null)
   # TODO handle .svn
   )
+
   if [ -n "$_branch" ]; then
     # TODO handle both ahead AND behind
     case "$_status" in
@@ -61,23 +62,23 @@ if [ -n "$GIT_PROMPT" ]; then
       [ ${!v} -le 0 ] && unset $v
     done
 
-    PROMPT+=" ${_upstream:-$_branch}"
+    _prompt+=" ${_upstream:-$_branch}"
     _stat="${_status}${_delta}${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
-    PROMPT+="${_stat:+|${FRED}${_stat## }${RS}|}"
+    _prompt+="${_stat:+|${FRED}${_stat## }${RS}|}"
   fi
 fi
 
-  [ -n "${AWS_PROFILE}${AWS_DEFAULT_REGION}" ] && PROMPT+=" ${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}"
+  [ -n "${!AWS_*}" ] && _prompt+=" ${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}"
 
-  PROMPT+=" ${FYEL}\w${RS}\n\!.\j"
 #  PROMPT+="${CHEF_ENV+ ${BMAG}${CHEF_ENV}${RS}}"
 #  [[ $UID == 0 ]] && PROMPT+="${BRED}
-  [[ $RC != 0 ]] && PROMPT+="($RC)"
-  PROMPT+=" \$ "
-  PS1="$PROMPT"
+  [ $_rc -ne 0 ] || unset _rc
+  PS1="$PS_PREFIX ${_prompt}\n${PS_SUFFIX}${_rc:+($_rc)} \$ "
 }
 
-PS1="\n${FCYN}${USER}${RS}@${FGRN}\h ${FYEL}\w${RS}\n\!.\j \$ "
+PS_PREFIX="\n${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
+PS_SUFFIX='\!.\j'
+PS1="${PS_PREFIX}\n${PS_SUFFIX} \$ "
 #if [[ ${EUID} == 0 ]]; 
 # put into ROOT's .bashrc
 #  PS1="\n${FRED}\u${RS}@${FGRN}\h ${FYEL}\w\n${BRED}\!;\j${RS} \$ "
