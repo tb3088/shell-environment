@@ -24,17 +24,17 @@ esac
 declare -F log >/dev/null ||
 function log() { echo "$*"; }
 
-declare -F debug >/dev/null ||
+declare -F log_DEBUG >/dev/null ||
 function debug() { [ -z "$DEBUG" ] || log "${FUNCNAME^^} $*"; }
 
-declare -F info >/dev/null ||
-function info()  { [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME^^} $*"; }
+declare -F log_INFO >/dev/null ||
+function log_INFO()  { [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME^^} $*"; }
 
-declare -F warn >/dev/null ||
-function warn()  { log "${FUNCNAME^^} $*"; }
+declare -F log_WARN >/dev/null ||
+function log_WARN()  { log "${FUNCNAME^^} $*"; }
 
-declare -F error >/dev/null ||
-function error() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
+declare -F log_ERROR >/dev/null ||
+function log_ERROR() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
 
 declare -F runv >/dev/null ||
 function runv() { >&2 echo "+ $*"; "$@"; }
