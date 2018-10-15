@@ -25,16 +25,16 @@ declare -F log >/dev/null ||
 function log() { echo "$*"; }
 
 declare -F log_DEBUG >/dev/null ||
-function debug() { [ -z "$DEBUG" ] || log "${FUNCNAME^^} $*"; }
+function log_DEBUG() { [ -z "$DEBUG" ] || log "${FUNCNAME#log_}" "$@"; }
 
 declare -F log_INFO >/dev/null ||
-function log_INFO()  { [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME^^} $*"; }
+function log_INFO()  { [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME#log_}" "$@"; }
 
 declare -F log_WARN >/dev/null ||
-function log_WARN()  { log "${FUNCNAME^^} $*"; }
+function log_WARN()  { >&2 log "${FUNCNAME#log_}" "$@"; }
 
 declare -F log_ERROR >/dev/null ||
-function log_ERROR() { >&2 log "${FUNCNAME^^} $*"; exit ${RC:-1}; }
+function log_ERROR() { >&2 log "${FUNCNAME#log_}" "$@"; [ ${SHLVL:-1} -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }
 
 declare -F runv >/dev/null ||
 function runv() { >&2 echo "+ $*"; "$@"; }
@@ -136,13 +136,13 @@ function _ssh() {
         SSH_AGENT_PID|SSH_AUTH_SOCK|SSH_VERBOSE) continue ;;
     esac
 
-    [ -n "${!v}" -a -f "${!v}" ] || error "file $v (${!v}) not found!"
+    [ -n "${!v}" -a -f "${!v}" ] || log_ERROR "file $v (${!v}) not found!"
   done
 
   # TODO? convert to function since identical
 
   [ -n "$SSH_CONFIG" ] || {
-    debug "looking for SSH_CONFIG"
+    log_DEBUG "looking for SSH_CONFIG ..."
 
     # NOTICE: this level of search can take a while. Flavor to taste.
     for _file in `[ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist` \
@@ -152,7 +152,7 @@ function _ssh() {
         # discard match on '.aws/config' since that is reserved
         grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_file" && continue
 
-        debug "    $_file"
+        log_DEBUG "    $_file"
         [ -f "$_file" ] && { SSH_CONFIG="$_file"; break; }
     done
     unset _file
@@ -161,14 +161,14 @@ function _ssh() {
 
   # UserKnownHostFile shouldn't be defined inside 'config' because brittle
   [ -n "$SSH_KNOWN_HOSTS" ] || {
-    debug "looking for SSH_KNOWN_HOSTS"
+    log_DEBUG "looking for SSH_KNOWN_HOSTS ..."
 
     for _file in ${SSH_CONFIG/config/known_hosts} \
           `[ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist 'known_hosts'` \
           `[ -d "$HOME/.$CLOUD/$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist 'known_hosts'` \
           `prefix="$HOME/.ssh" genlist 'known_hosts'`; do
 
-        debug "    $_file"
+        log_DEBUG "    $_file"
         [ -f "$_file" ] && { SSH_KNOWN_HOSTS="$_file"; break; }
     done
     unset _file
@@ -180,7 +180,7 @@ function _ssh() {
   for v in DEBUG VERBOSE REGION ${!CLOUD*} ${!SSH_*} ${!AWS_*}; do
     [ -n "${!v}" ] || continue
 
-    info "$v = ${!v}"
+    log_INFO "$v = ${!v}"
     _env+=" $v='${!v}'"
   done
 
@@ -197,7 +197,7 @@ function _ssh() {
 
 #--- main ---
 
-[ $# -gt 0 ] || RC=2 error 'insufficient arguments'
+[ $# -gt 0 ] || RC=2 log_ERROR 'insufficient arguments'
 
 case "${VERBOSE:-$DEBUG}" in
     -*|'') ;;  # skip
@@ -209,7 +209,7 @@ case "${VERBOSE:-$DEBUG}" in
     2)  LOGMASK=INFO ;;
     1)  LOGMASK=NOTICE ;;
     0)  unset LOGMASK ;;        # unlikely
-    *)  error "invalid value (${VERBOSE+VERBOSE=$VERBOSE}${DEBUG+DEBUG=$DEBUG})"
+    *)  log_ERROR "invalid value (${VERBOSE+VERBOSE=$VERBOSE}${DEBUG+DEBUG=$DEBUG})"
 esac
 # tone down verbosity 1 level unless DEBUG set
 [ -n "$DEBUG" ] && LOGMASK=DEBUG || SSH_VERBOSE=${SSH_VERBOSE/-v }
@@ -220,12 +220,12 @@ for p in SSH SCP SFTP SCREEN; do
 
     eval $p=`$WHICH ${p,,} 2>/dev/null`
     # screen not found is benign
-    [ -n "${!p}" -o "$p" = 'SCEEN' ] || error "missing $p binary"
+    [ -n "${!p}" -o "$p" = 'SCEEN' ] || log_ERROR "missing $p binary"
 done
 
 BASEDIR=`dirname "$BASH_SOURCE"`
 BASEDIR="${BASEDIR%/bin}"
-[ "$BASEDIR" = "$HOME" ] && { warn "ignoring BASEDIR=HOME"; unset BASEDIR; } || info "BASEDIR = $BASEDIR"
+[ "$BASEDIR" = "$HOME" ] && { log_WARN "ignoring BASEDIR=HOME"; unset BASEDIR; } || log_INFO "BASEDIR = $BASEDIR"
 
 [ -n "${SSH_CONFIG:-$PROFILE}" ] || {
     # compute from wrapper filename
@@ -235,7 +235,7 @@ BASEDIR="${BASEDIR%/bin}"
 }
 unset _origin _prog
 
-[ -n "$SSH_CONFIG" ] && info "SSH_CONFIG = $SSH_CONFIG" || info "PROFILE = $PROFILE"
+[ -n "$SSH_CONFIG" ] && log_INFO "SSH_CONFIG = $SSH_CONFIG" || log_INFO "PROFILE = $PROFILE"
 
 # disable Screen
 for s in ${NO_SCREEN:-git rsync}; do
