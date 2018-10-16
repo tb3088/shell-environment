@@ -53,3 +53,6 @@
 	url = https://github.com/honza/vim-snippets.git
 	active = false
 	ignore = all
+[submodule "awscli-aliases"]
+	path = awscli-aliases
+	url = https://github.com/tb3088/awscli-aliases.git
