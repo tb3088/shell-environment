@@ -228,10 +228,7 @@ function log() {
 
 # mimic 'set -x'
 function runv() { 
-  local depth
-
-  eval printf -v depth '%.0s+' {1..$SHLVL}
-  >&2 echo -e "\n$depth $*\n"
+  >&2 printf "\n%s %s\n\n" `printf '%.0s+' {1..$SHLVL}` "$*"
   "$@"
 }
 

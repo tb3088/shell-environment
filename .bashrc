@@ -50,36 +50,35 @@ if [ -n "$GIT_PROMPT" ]; then
   if [ -n "$_branch" ]; then
     # TODO handle both ahead AND behind
     case "$_status" in
-	'ahead')  _status='>'
+	'ahead')  _status+=" $FGRN${_delta}$RS"
 	    ;;
-	'behind') _status='<'
+	'behind') _status=" $FRED${_delta}$RS"
 	    ;;
 	'up-to-date'|*)
 	    # _status=`echo -e '\u2713'`
 	    unset _status _delta
     esac
     for v in _mod _del _add _unk _ign _tot; do
-      [ ${!v} -le 0 ] && unset $v
+      [ ${!v} -eq 0 ] && unset $v
     done
 
-    _prompt+=" ${_upstream:-$_branch}"
-    _stat="${_status}${_delta}${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
-    _prompt+="${_stat:+|${FRED}${_stat## }${RS}|}"
+    _stat="${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
+    _prompt+="\nGIT: ${_upstream:-$_branch} ${_status:+[$_status]}${_stat:+ $FRED${_stat## }$RS}"
   fi
 fi
 
-  [ -n "${!AWS_*}" ] && _prompt+=" ${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}"
+  [ -n "${!AWS_*}" ] && _prompt+="\nAWS: $FMAG${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}$RS"
 
-#  PROMPT+="${CHEF_ENV+ ${BMAG}${CHEF_ENV}${RS}}"
-#  [[ $UID == 0 ]] && PROMPT+="${BRED}
+  PS1="$PS_PREFIX${_prompt}\n"
+  [ $EUID -eq 0 ] && PS1+="${BRED}"
+
   [ $_rc -ne 0 ] || unset _rc
-  PS1="$PS_PREFIX ${_prompt}\n${PS_SUFFIX}${_rc:+($_rc)} \$ "
+  PS1+="\!${_rc:+($_rc)} \$${RS} "
 }
 
 PS_PREFIX="\n${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
-PS_SUFFIX='\!.\j'
-PS1="${PS_PREFIX}\n${PS_SUFFIX} \$ "
-#if [[ ${EUID} == 0 ]]; 
+PS1="${PS_PREFIX}\n\! \$${RS} "
+
 # put into ROOT's .bashrc
 #  PS1="\n${FRED}\u${RS}@${FGRN}\h ${FYEL}\w\n${BRED}\!;\j${RS} \$ "
 
