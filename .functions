@@ -33,7 +33,8 @@ function convert_path() {
 
   which cygpath &>/dev/null || noop=1
 
-  while [ $# -ne 0 ]; do
+  while [ "${1+xxx}" ]; do
+    # deal with empty option, rare but possible
     [ -n "$1" ] || { shift; continue; }
     [ -n "$noop" ] && { echo "$1"; shift; continue; }
 
@@ -168,28 +169,30 @@ function ask() {
 #  declare -A facilities=auth|security authpriv cron daemon kern lpr mail news syslog user uucp local0-7
 #
 # syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
-[ -n "${log_levels[*]}" ] ||
-  declare -A -r log_levels=(
-    [EMERG]=0
-    [PANIC]=0
-    [ALERT]=1
-    [CRIT]=2
-    [CRITICAL]=2
-    [ERR]=3
-    [ERROR]=3
-    [WARN]=4
-    [WARNING]=4
-    [NOTICE]=5
-    [INFO]=6
-    [DEBUG]=7
-    # Java'ish extensions
-#    [TRACE]=8 [FINE]=8
-#    [FINEST]=9
+[ -n "${log_LEVELS[*]}" ] ||
+  declare -A -r log_LEVELS=(
+        [EMERG]=0
+        [PANIC]=0
+        [ALERT]=1
+        [CRIT]=2
+        [CRITICAL]=2
+        [ERR]=3
+        [ERROR]=3
+        [WARN]=4
+        [WARNING]=4
+        [NOTICE]=5
+        [INFO]=6
+        [DEBUG]=7
+        # Java'ish extensions
+#       [TRACE]=8 [FINE]=8
+#       [FINEST]=9
   )
 
-for k in ${!log_levels[@]}; do
-  case ${log_levels[$k]} in
+for k in ${!log_LEVELS[@]}; do
+  case ${log_LEVELS[$k]} in
     [0-3])  eval function log_$k '{ >&2 log "$@"; [ $SHLVL -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }'
+            # TODO backwards compat?
+            # 'debug' and 'DEBUG'
             ;;
     4)      eval function log_$k '{ >&2 log "$@"; }' ;;
     5|6)    eval function log_$k '{ log "$@"; }' ;;
@@ -205,19 +208,20 @@ function log() {
   local fo=1    # [0] will always be 'log()'
   for fn in ${FUNCNAME[@]:1}; do
     fn=${fn#log_}
+    fn=${fn^^}
 
-    [ -n "${log_levels[$fn]}" ] && level=$fn || break
+    [ -n "${log_LEVELS[$fn]}" ] && level=$fn || break
     : $((fo++))
   done
 
   # sanity check
-  [ -n "${log_levels[${level:-x}]}" ] || level=INFO
-  [ -n "${log_levels[${LOGMASK:-x}]}" ] || unset LOGMASK
+  [ -n "${log_LEVELS[${level:-x}]}" ] || level=INFO
+  [ -n "${log_LEVELS[${LOGMASK:-x}]}" ] || unset LOGMASK
 
   # squelch messages below LOGMASK
-  [ ${log_levels[$level]} -le ${log_levels[${LOGMASK:-$level}]} ] || return 0
+  [ ${log_LEVELS[$level]} -le ${log_LEVELS[${LOGMASK:-$level}]} ] || return 0
 
-  while [ $# -ne 0 ]; do
+  while [ "${1+xxx}" ]; do
     [ -n "${STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
         format="${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}()    $format"
     printf "$format" $level "$1"
@@ -286,7 +290,8 @@ function __parse_options() {
 
 function userinfo() {
   # analogous to /bin/usermod
-  #while [ $# -gt 0 ] && [[ "$1" =~ -* ]]; do
+  #while [ "${1+xxx}" ] && [[ "$1" =~ -* ]]; do
+  local OPTIND
 #  FIXME use getopts like a sane person!
   [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
  

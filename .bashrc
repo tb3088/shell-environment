@@ -131,9 +131,8 @@ _PATH=$PATH
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
   *i*)
-        for f in {,/usr/local}/etc/bash_completion{,.d/*} ~/.bash_completion; do
-          [ -f "$f" ] || continue
-          source "$f" 
+        for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} ~/.bash_completion; do
+          source "$f" 2>/dev/null
         done
 	;;
   *c*)  SSH_AGENT=
