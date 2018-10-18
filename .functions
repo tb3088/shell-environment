@@ -204,8 +204,8 @@ unset k
 function log() {
   local format='%s %s\n'
   local {fn,level}=
-
   local fo=1    # [0] will always be 'log()'
+
   for fn in ${FUNCNAME[@]:1}; do
     fn=${fn#log_}
     fn=${fn^^}
@@ -214,6 +214,9 @@ function log() {
     : $((fo++))
   done
 
+  # legacy support
+  [ -n "${log_LEVELS[${1^^}]}" ] && { : ${level:=${1^^}}; shift; }
+
   # sanity check
   [ -n "${log_LEVELS[${level:-x}]}" ] || level=INFO
   [ -n "${log_LEVELS[${LOGMASK:-x}]}" ] || unset LOGMASK
@@ -221,7 +224,7 @@ function log() {
   # squelch messages below LOGMASK
   [ ${log_LEVELS[$level]} -le ${log_LEVELS[${LOGMASK:-$level}]} ] || return 0
 
-  while [ "${1+xxx}" ]; do
+  while [ "${1+x}" ]; do
     [ -n "${STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
         format="${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}()    $format"
     printf "$format" $level "$1"
