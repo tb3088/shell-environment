@@ -253,11 +253,12 @@ function init_logs() {
 
 #--- main ---
 
-while getopts 'dvqF:i:' _opt; do
+while getopts ':dvqF:i:' _opt; do
   case "$_opt" in
     d)  : $((DEBUG++)) ;;
     v)  : $((VERBOSE++)) ;;
     q)  unset DEBUG VERBOSE ;;
+#    E)  SSH_LOGFILE="$OPTARG" ;;
     F)  SSH_CONFIG="$OPTARG" ;;
     i)  SSH_IDENTITY="$OPTARG" ;;
 #    \?)
