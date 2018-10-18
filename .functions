@@ -227,8 +227,10 @@ function log() {
   while [ "${1+x}" ]; do
     [ -n "${STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
         format="${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}()    $format"
-    printf "$format" $level "$1"
-    [ -n "$SYSLOG" ] && ${LOGGER:-logger} -p user.${level,,} "$1"    
+
+    printf "$format" $level "$1" | tee $LOGFILE
+    [ -n "$SYSLOG" ] && ${LOGGER:-logger} -p user.${level,,} "$1"
+
     shift
   done
 }
