@@ -190,7 +190,7 @@ function ask() {
 
 for k in ${!log_LEVELS[@]}; do
   case ${log_LEVELS[$k]} in
-    [0-3])  eval function log_$k '{ >&2 log "$@"; [ $SHLVL -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }'
+    [0-3])  eval function log_$k '{ >&2 log "$@"; [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] && return ${RC:-1} || exit ${RC:-1}; }'
             # TODO backwards compat?
             # 'debug' and 'DEBUG'
             ;;
