@@ -46,7 +46,7 @@ function sudo() {
 
 #FIXME this is a fn mess! get it consistent columns and formats (time) if possible
 which procps &>/dev/null &&
-    alias ps='\procps -o uid,pid,ppid,stime,etime,cmd' ||
+    alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}' ||
     alias ps='\ps -f'
 
 #which 7z &>/dev/null || {
