@@ -4,8 +4,11 @@ which ec2-version &>/dev/null ||
       addPath "$d/bin"
   done
 
-[ -e /etc/bash_completion.d/aws_bash_completer ] ||
-    ln -s `which aws_bash_completer` /etc/bash_completion.d/
+[ -e /etc/bash_completion.d/aws_bash_completer ] || {
+    link=`which aws_bash_completer`
+    [ -n "$link" ] && ln -s "$link" /etc/bash_completion.d/
+    unset link
+  }
 
 function aws-addPath {
   local v
@@ -15,7 +18,7 @@ function aws-addPath {
     [ "$v" = '.' ] && v=`pwd`
 
     # restore saved PATH
-    [ -n "$_PATH" ] && PATH="$_PATH"
+    [ -n "$SAVE_PATH" ] && PATH="$SAVE_PATH"
 
     [ -d "$v/bin" ] && addPath -"$v/bin" || addPath -"$v"
     [ -n "$SSH_AUTH_SOCK" ] && ssh-add -k $v/*.pem 2>/dev/null

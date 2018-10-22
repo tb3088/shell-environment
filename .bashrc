@@ -120,21 +120,20 @@ HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
-  source "$f"
+  source "$f" || echo "RC=$? in $f"
 done
 
-# save PATH to minimize clutter when adding multiple AWS helpers
-_PATH=$PATH
+SAVE_PATH="$PATH"
 
 ### Completion options
 # If this shell is interactive, turn on programmable completion enhancements.
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
-  *i*)
-        for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} ~/.bash_completion; do
-          source "$f" 2>/dev/null
+  *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} ~/.bash_completion; do
+          [ -f "$f" ] || continue
+          source "$f" || echo "RC=$? in $f"
         done
-	;;
+        ;;
   *c*)  SSH_AGENT=
 esac
 
