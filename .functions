@@ -13,9 +13,9 @@ function convert_path() {
     case $opt in
       D)    delim=$OPTARG ;;
       e)    escape=1 ;;
-      E)    escape=  ;;
+      E)    unset escape  ;;
       n)    noop=1; ;;
-      p)    path=1; escape= ;;   # an optimization
+      p)    path=1; unset escape ;;     # an optimization
       P)    path= ;;
       t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
                 format="-t $OPTARG" || {
@@ -59,21 +59,17 @@ function convert_path() {
 }
 
 
-#TODO handle Hash and Array
+#TODO handle Hash/Array, leverage IFS="$delim" 
 function contains() {
-  # 'delim' and 'method' passed as invocation arg
-  #TODO leverage IFS="$delim" 
-  local source="$delim${1}$delim" sub="$delim${2}$delim"
-  local method=
+  local delim method
+  local readonly source="${delim}${1}${delim}" 
+  local readonly sub="${delim}${2}${delim}"
 
   # empty string inside empty is valid
   case "$method" in
-    'grep') grep -q "$sub" <<< "$source"
-            ;;
-    'pe')   [ "${source#*$sub}" != "$source" ]
-            ;;
-    'regex') [[ "$source" =~ $sub ]]    # must NOT quote RegEx
-            ;;
+    grep)   grep -q "$sub" <<< "$source" ;;
+    pe)     [ "${source#*$sub}" != "$source" ] ;;
+    regex)  [[ "$source" =~ $sub ]] ;;
 #      'insensitive')
 #            ;&
     *)      [[ "$source" == *"$sub"* ]]
@@ -81,59 +77,64 @@ function contains() {
 }
 
 
-# pre-/post-pend [multiple] elements to an environment variable
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 function addPath() {
-  local k v escape= prepend= delim=':'
+  # pre-/post-pend [multiple] elements to an environment variable
 
-  [ -n "$1" ] || return 0
+  local k v flag prepend delim=':'
+  local _prepend=$prepend
 
-##FIXME this is wrong. invoke as '[ var=XYZ ] addPath [-]value'
-  [ $# -eq 1 ] && { k='PATH'; escape= ; } || { k="$1"; shift; }
+  [ $# -eq 1 ] && { k='PATH'; flag='-E'; }
+  [[ "$k" =~ ^[A-Za-z] ]] || return 2
 
   for v in "$@"; do
-    prepend=
+    [ -n "$v" ] || continue
+
+    prepend=$_prepend
     # leading '-' means prepend
     [ "${v:0:1}" = '-' ] && { prepend=1; v="${v:1}"; }
 
-    v=`convert_path $escape "$v"`
+    v=`convert_path $flag "$v"`
     # prevent duplicates
     delim="$delim" contains "${!k}" "$v" && continue
 
-    # embedded spaces are a pain!
     if [ -n "$prepend" ]; then
-      eval $k="$v$delim\$$k"
+      eval $k="$v${delim}\$$k"       # embedded spaces/special chars require lazy evaluation
     else 
-      eval $k+="$delim\$v"
+      eval $k+="${delim}\$v"
     fi
-# this causes appending if prepend 'eval' eperienced and error. WRONG!
-#[ -n "$prepend" ] && eval $k="$v$delim\$$k" || eval $k+="$delim\$v"
   done
 }
 
+
 function rmPath() {
-    local k delim=':'
-    [ -n "$1" ] || return 0
+  local k v delim=':'
 
-    [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
+  [ $# -eq 1 ] && k='PATH'
+  [[ "$k" =~ ^[A-Za-z] ]] || return 2
 
-    for v in "$@"; do
-	eval $k=`sed -e "s|$delim\?$v$delim\?|$delim|" <<< "${!k}"`
-    done
+  for v in "$@"; do
+#      eval $k=`sed -e "s|${delim}\?$v${delim}\?|${delim}|" <<< "${!k}"`
+    eval $k=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "${!k}"`
+  done
 }
 
-# Assign a HEREDOC to a variable. To preserve space/tab use '<<-'
-# contents will be expanded unless marker is quoted
-# Usage: define VAR <<_EOF ...
+
 function define() {
+  # Assign a HEREDOC to a variable. To preserve space/tab use '<<-'
+  # contents will be expanded unless marker is quoted
+  # Usage: define VAR <<_EOF ...
+
   IFS='\n' read -r -d '' $1 || true
 }
 
+
+#FIXME cygwin needs procps with -o, or suitable flags to simple 'ps'
 function pidof() {
-    #FIXME cygwin needs procps with -o, or suitable flags to simple 'ps'
     ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
+
 
 function getcert() {
   : ${1:?}
@@ -150,17 +151,21 @@ function getcert() {
   fi
 }
 
+
 function cdl() { cd "${1:-.}" && ls; }
+
 
 function pause() {
   [ $# -ne 0 ] && read -p "$*" || read -p 'Press [ENTER] to continue ...'
 }
+
 
 function ask() { 
   read -n 1 -t 30 -p 'Are you sure (y/N)? '
   echo
   [ "${REPLY,,}" = 'y' ]
 }
+
 
 # Does NOT support recursive since can fail easily or in unintended ways.
 # Using SED with BOL, EOL or whitespace detection isn't reliable either.
@@ -182,6 +187,7 @@ function copy_function() {
 function rename_function() {
   copy_function "${1:?}" "${2:?}" && unset -f "$1"
 }
+
 
 # reference https://code.woboq.org/gcc/include/sys/syslog.h.html
 # syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
@@ -228,6 +234,7 @@ for k in ${!log_LEVELS[@]}; do
 done
 unset k
 
+
 declare -F log >/dev/null ||    # squelch READONLY messages
 function log() {
   local readonly timestamp=`date +"%Y-%m-%d.%H:%M:%S"`
@@ -268,13 +275,17 @@ function log() {
 }
 readonly -f log
 
-# mimic 'set -x'
+
 function runv() { 
+  # mimic 'set -x'
+
   >&2 printf "\n%s %s\n\n" `printf '%.0s+' {1..$SHLVL}` "$*"
   "$@"
 }
 
+
 function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
+
 
 function join_string() {
   local quote=
@@ -297,7 +308,9 @@ function join_string() {
   echo
 }
 
+
 function join_quote() { quote=\' join_string "$@"; }
+
 
 function __parse_options() {
     local option{,2}= i= IFS='
@@ -325,6 +338,7 @@ function __parse_options() {
   option="${option%%[<{().[]*}"
   printf '%s\n' "${option/=*/=}"
 }
+
 
 function userinfo() {
   # analogous to /bin/usermod
