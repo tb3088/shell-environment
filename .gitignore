@@ -27,6 +27,7 @@ go
 .terraform.d/
 .terraformrc
 .viminfo
+.vim/.netrwhist
 .wget-hsts
 .Xauthority*
 .xsession-errors
