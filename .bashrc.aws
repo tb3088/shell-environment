@@ -33,7 +33,10 @@ function aws-addPath {
 
     [ -n "$delete" ] && k='PATH' rmPath "$v"{/bin,} || k='PATH' addPath \-"$v"/bin
 
-    [ -n "$SSH_AUTH_SOCK" ] && ssh-add ${DEBUG:- -q} ${delete:+ -d} "$v"/{id_?sa,*.pem} 2>/dev/null
+    [ -n "$SSH_AUTH_SOCK" ] && {
+      [ -n "$delete" ] && ssh-add ${DEBUG:- -q} -d "$v"/*.pub 2>/dev/null ||
+          ssh-add ${DEBUG:- -q} "$v"/{id_?sa$,*.pem} 2>/dev/null
+    }
     break
   done
 }
