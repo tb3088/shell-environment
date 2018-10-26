@@ -123,8 +123,6 @@ for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
   source "$f" || echo "RC=$? in $f"
 done
 
-SAVE_PATH="$PATH"
-
 ### Completion options
 # If this shell is interactive, turn on programmable completion enhancements.
 # Any completions you add in ~/.bash_completion are sourced last.

@@ -16,7 +16,7 @@ if [[ "$-" == *i* ]] || tty -s ; then
         eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
         trap "kill -9 $SSH_AGENT_PID" EXIT
     fi
-    [ -n "$SSH_AUTH_SOCK" ] && ssh-add $HOME/.ssh/{id_?sa,*.pem} 2>/dev/null
+    [ -n "$SSH_AUTH_SOCK" ] && ssh-add ${DEBUG:- -q} "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
 
     # CAC/PIF card support
     case ${OSTYPE:-`uname`} in
@@ -30,7 +30,7 @@ if [[ "$-" == *i* ]] || tty -s ; then
     esac
     if [ -f "$OPENSC_LIB" ]; then
       export OPENSC_LIB
-      [ -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB" 2>/dev/null
+      [ -n "$SSH_AUTH_SOCK" ] && ssh-add ${DEBUG:- -q} -s "$OPENSC_LIB"
     fi
   fi
 fi
