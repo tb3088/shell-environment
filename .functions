@@ -38,6 +38,7 @@ function convert_path() {
     [ -n "$1" ] || { shift; continue; }
     [ -n "$noop" ] && { echo "$1"; shift; continue; }
 
+    #FIXME escape both whitespace and '()'
     if [ -n "$path" ]; then
       p=`cygpath $format -p $flags -- "${1//\\ / }"`
       [ -n "$escape" ] && echo "${p// /\\ }" || echo "$p"
@@ -102,7 +103,7 @@ function addPath() {
     if [ -n "$prepend" ]; then
       eval $k="$v${delim}\$$k"       # embedded spaces/special chars require lazy evaluation
     else 
-      eval $k+="${delim}\$v"
+      eval $k+="${delim}$v"
     fi
   done
 }
@@ -115,9 +116,13 @@ function rmPath() {
   [[ "$k" =~ ^[A-Za-z] ]] || return 2
 
   for v in "$@"; do
-#      eval $k=`sed -e "s|${delim}\?$v${delim}\?|${delim}|" <<< "${!k}"`
-    eval $k=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "${!k}"`
+    # curse you embeddd whitespace!
+    eval $k=\"`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "${!k}"`\"
   done
+
+  # trim dangling $delim
+  eval $k=\"\${$k/#${delim}}\"
+  eval $k=\"\${$k/%${delim}}\"
 }
 
 
