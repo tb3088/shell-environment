@@ -11,6 +11,8 @@ shopt -s nullglob extglob
 ${ABORT:+set -e}
 ${CONTINUE:+set +e}
 
+source ~/.functions
+
 case "${OSTYPE:-`uname`}" in
     [cC]ygwin|CYGWIN*) 
         WHICH='\which --skip-functions --skip-alias'
