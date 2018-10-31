@@ -13,12 +13,12 @@ function convert_path() {
     case $opt in
       D)    delim=$OPTARG ;;
       e)    escape=1 ;;
-      E)    unset escape  ;;
+      E)    unset escape ;;
       n)    noop=1; ;;
       p)    path=1; unset escape ;;     # an optimization
       P)    path= ;;
       t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
-                format="-t $OPTARG" || {
+                format="$opt $OPTARG" || {
                     RC=2 log_ERROR "unknown format ($OPTARG)"
                     return
                 }
@@ -31,9 +31,10 @@ function convert_path() {
   done
   shift $((OPTIND-1))
 
-  which cygpath &>/dev/null || noop=1
+  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && which cygpath &>/dev/null || noop=1
 
-  while [ "${1+xxx}" ]; do
+
+  while [ "${1+x}" ]; do
     # deal with empty option, rare but possible
     [ -n "$1" ] || { shift; continue; }
     [ -n "$noop" ] && { echo "$1"; shift; continue; }
@@ -46,21 +47,27 @@ function convert_path() {
       cooked=()
 
       # iterate thru line elements based on delim THEN remove escaped spaces 
-      eval ${delim:+IFS=$delim} read -a raw <<< "$1"; unset IFS
+#      eval ${delim:+IFS=$delim} read -a raw <<< "$1"
+      IFS=$delim read -a raw <<< "$1"
+
       for r in "${raw[@]}"; do
         log_DEBUG "raw input: $r"
         p=`cygpath $format $flags -- "${r//\\ / }"`
         log_DEBUG "cygpath output: $p"
         [ -n "$escape" ] && cooked+=("${p// /\\ }") || cooked+=("$p")
       done
-      eval ${delim:+IFS=$delim}; echo "${cooked[*]}"; unset IFS
+
+#      eval ${delim:+IFS=$delim}; echo "${cooked[*]}"
+      IFS=$delim
+      echo "${cooked[*]}"
     fi
     shift 
   done
 }
 
 
-#TODO handle Hash/Array, leverage IFS="$delim" 
+#TODO handle Hash/Array, 
+#FIXME leverage IFS="$delim" 
 function contains() {
   local delim method
   local readonly source="${delim}${1}${delim}" 
@@ -111,12 +118,18 @@ function addPath() {
 
 function rmPath() {
   local k v delim=':'
+#  local IFS=${delim:=':'}
 
   [ $# -eq 1 ] && k='PATH'
   [[ "$k" =~ ^[A-Za-z] ]] || return 2
 
   for v in "$@"; do
     # curse you embeddd whitespace!
+    #FIXME this is stupid, use IFS=$delim to walk elements
+    #IFS=$delim
+    #for v in ${!k}; do newk+=($v); done
+    #eval $k="${newk[*]}" # IFS only works on arrays when '*'
+
     eval $k=\"`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "${!k}"`\"
   done
 

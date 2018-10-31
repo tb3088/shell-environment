@@ -1,5 +1,5 @@
-case ${OSTYPE:-`uname`} in
-  cygwin|CYGWIN_*)
+case ${OSTYPE:-`uname -o`} in
+  [cC]ygwin)
         ;;
   *)    return 0
 esac
