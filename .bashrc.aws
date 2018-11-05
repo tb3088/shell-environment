@@ -1,7 +1,9 @@
-which ec2-version &>/dev/null ||
-  for d in /usr/local/ec2-api-tools*; do
+which ec2-version &>/dev/null || {
+    for d in /usr/local/ec2-api-tools*; do
       [ -d "$d"/bin ] && addPath "$d"/bin
-  done
+    done
+    unset d
+  }
 
 [ -e /etc/bash_completion.d/aws_bash_completer ] || {
     link=`which aws_bash_completer`
@@ -25,7 +27,7 @@ function aws-profile {
   local readonly _profile=${1:?}
   local readonly _region=`aws configure get region --profile "$_profile" 2>/dev/null`
 
-  [ -n "$_region" ] || return       #log_ERROR "invalid argument ($_profile)"
+  [ -n "$_region" ] || { log_ERROR "invalid profile ($_profile)"; return 1; }
 
   aws-rmPath
   export AWS_PROFILE="$_profile"

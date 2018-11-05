@@ -8,3 +8,4 @@ Charset=UTF-8
 FontHeight=8
 CopyAsRTF=no
 RightClickAction=paste
+MiddleClickAction=extend
