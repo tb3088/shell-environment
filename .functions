@@ -257,8 +257,7 @@ declare -F log >/dev/null ||    # squelch READONLY messages
 function log() {
   local readonly timestamp=`date +"%Y-%m-%d.%H:%M:%S"`
   local format=('%5s' '%s\n')
-  local level
-  local fn fo=1                 # [0] will always be 'log()'
+  local level _line fn fo=1     # fo[0] will always be 'log()'
 
   for fn in "${FUNCNAME[@]:1}"; do
     fn=${fn#log_}
@@ -285,9 +284,10 @@ function log() {
 
   # empty arg is wierd but tolerated
   while [ "${1+x}" ]; do
-    printf "${format[*]}" ${log_TIMESTAMP:+$timestamp} $level "$1" | tee -a $LOGFILE
-    [ -n "$SYSLOG" ] && ${LOGGER:-logger} -p user.${level,,} "$1"
-
+    printf -v _line "${format[*]}" ${log_TIMESTAMP:+$timestamp} $level "$1"
+    _line=`echo -e "$_line"`    # process embedded (simple) formatting
+    tee -a $LOGFILE <<< "$_line"
+    [ -n "$SYSLOG" ] && ${LOGGER:-logger --priority user.${level,,}} -- "$_line"
     shift
   done
 }
