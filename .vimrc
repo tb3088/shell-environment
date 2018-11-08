@@ -4,8 +4,8 @@ runtime bundle/vim-pathogen/autoload/pathogen.vim
 " execute pathogen#infect()
 
 set nocompatible | filetype indent plugin on | syntax enable
-colorscheme default
 
+colorscheme default
 " highlight Normal ctermfg=lightgray ctermbg=black
 highlight Comment ctermfg=lightblue guifg=gray
 " highlight LineNr ctermfg=gray guifg=gray
@@ -29,7 +29,6 @@ au BufRead,BufNewFile *.c,*.h set formatoptions-=c formatoptions-=o formatoption
 " Ruby/Puppet - set expandtab tabstop=2 shiftwidth=2 softtabstop=2
 "au BufRead,BufNewFile *.ru,*.pp,*eml set filetype=ruby
 
-
 set modeline
 set noim
 set paste
@@ -51,3 +50,9 @@ set guioptions=egmrLt
 " squelch gratuitous noise
 set noerrorbells visualbell t_vb=
 autocmd GUIEnter * set visualbell t_vb=
+
+if $COLORSCHEME != ""
+  let base16colorspace=256
+  exec 'colorscheme '.$COLORSCHEME
+endif
+

@@ -18,6 +18,8 @@ termcapinfo xterm* cs
 # purpose???
 #termcapinfo xterm-*|rxvt*|kterm*|Eterm*|cygwin hs:ts=\E]0;:fs=\007:ds=\E]0;\007
 
+term screen-256color
+
 hardstatus alwayslastline "%{-b gk}%-w%{+b kg}%50>%n %t%{-b gk}%+w"
 #hardstatus alwayslastline "%?%{yk}%-Lw%?%{wb}%n*%f %t%?(%u)%?%?%{yk}%+Lw%?"
 #hardstatus alwayslastline "%-Lw%{= BW}%50>%n%f* %t%{-}%+Lw%<"

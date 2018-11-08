@@ -124,8 +124,16 @@ HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
+
   source "$f" || echo "RC=$? in $f"
 done
+
+# Base16 color themes
+COLORSCHEME=`readlink "$HOME"/.colorscheme`
+[ -n  "$COLORSCHEME" ] && {
+  source "$COLORSCHEME" || echo "RC=$? in $COLORSCHEME"
+  export COLORSCHEME=`basename $COLORSCHEME .sh`
+}
 
 ### Completion options
 # If this shell is interactive, turn on programmable completion enhancements.
