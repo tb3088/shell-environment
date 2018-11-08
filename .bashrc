@@ -25,7 +25,7 @@ BWHT="\[\033[47m\]" # background white
 
 function __prompt() {
   local _rc=$?
-  local _branch _upstream _status _delta _mod _del _add _unk _ign _tot
+  local _branch _upstream _stat{us,} _delta _mod _del _add _unk _ign _tot
   local _prompt=
 
 if [ -n "$GIT_PROMPT" ]; then
@@ -50,9 +50,9 @@ if [ -n "$GIT_PROMPT" ]; then
   if [ -n "$_branch" ]; then
     # TODO handle both ahead AND behind
     case "$_status" in
-	'ahead')  _status+=" $FGRN${_delta}$RS"
+	'ahead')  _status="[${FGRN}${_status}$RS $_delta]"
 	    ;;
-	'behind') _status=" $FRED${_delta}$RS"
+	'behind') _status="[${FRED}${_status}$RS $_delta]"
 	    ;;
 	'up-to-date'|*)
 	    # _status=`echo -e '\u2713'`
@@ -63,17 +63,16 @@ if [ -n "$GIT_PROMPT" ]; then
     done
 
     _stat="${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
-    _prompt+="\nGIT: ${_upstream:-$_branch} ${_status:+[$_status]}${_stat:+ $FRED${_stat## }$RS}"
+    _prompt+="\n  ${UL}Git:$RS  ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat## }$RS}"
   fi
 fi
 
-  [ -n "${!AWS_*}" ] && _prompt+="\nAWS: $FMAG${AWS_PROFILE:--}/${AWS_DEFAULT_REGION:--}$RS"
+  [ -n "${!AWS_*}" ] && _prompt+="\n  ${UL}AWS:$RS  ${FMAG}${AWS_PROFILE:--} ${FBLE}${HC}${AWS_DEFAULT_REGION:--}$RS"
 
   PS1="$PS_PREFIX${_prompt}\n"
   [ $EUID -eq 0 ] && PS1+="${BRED}"
-
-  [ $_rc -ne 0 ] || unset _rc
-  PS1+="\!${_rc:+($_rc)} \$${RS} "
+  [ $_rc -eq 0 ] && unset _rc
+  PS1+="\!${_rc:+($_rc)} \$$RS "
 }
 
 PS_PREFIX="\n${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
