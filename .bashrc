@@ -111,10 +111,9 @@ shopt -s cdspell
 ### History Options
 shopt -s histappend
 
-# Don't put duplicate lines in the history.
-export HISTCONTROL="erasedups ignorespace"
-HISTFILESIZE=300
-HISTSIZE=1000
+HISTCONTROL="erasedups ignorespace"
+HISTFILESIZE=100
+HISTSIZE=500
 HISTTIMEFORMAT="%H:%M "
 # Ignore some controlling instructions
 HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
