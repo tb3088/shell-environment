@@ -98,6 +98,10 @@ PROMPT_COMMAND=__prompt
 # Don't use ^D to exit
 set -o ignoreeof
 
+# use VI mode on command-line (else emacs)
+# http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
+set -o vi
+
 # case-insensitive filename globbing, '*' matches all files and zero or more directories
 shopt -s nocaseglob globstar
 

@@ -6,7 +6,6 @@
 .bundle
 .cache
 .chef
-.config
 .dbus*
 .gem
 .gitconfig
