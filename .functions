@@ -391,4 +391,30 @@ function userinfo() {
 #  -u, --uid UID                 new UID for the user account
 }
 
+
+function lstree() {
+  local OPTIND opt      # IMPORTANT !!
+  local filter= type= reverse=
+  
+  while getopts "dL:F:R" opt; do
+    case "$opt" in
+        d)  type='-type d' ;;
+        L)  limit=$OPTARG ;;
+	F)  filter= ;;
+	R)  reverse=1 ;;
+    esac
+  done
+  shift $((OPTIND-1))
+
+  local cmd=( "find ${1:-`pwd`} $type" )
+  [ -n "$filter" ] && cmd+=( "grep ${reverse:+ -v} '$filter'" )
+  [ ${limit:-0} -gt 0 ] && cmd+=( "head -n $limit" )
+  cmd+=( "sed -e '2,$ s/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|-\1/'" )
+
+  IFS='|'
+  eval "${cmd[*]}"
+
+  unset IFS
+}
+
 # vim: set expandtab:ts=4:sw=4

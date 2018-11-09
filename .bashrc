@@ -33,22 +33,30 @@ if [ -n "$GIT_PROMPT" ]; then
     set -e -o pipefail
     awk '
         NR==1 {
-	    gsub(/[\[\],]/, " "); sub(/\.{3,}/, " ")
-	    printf "_branch=%s _upstream=%s _status=%s _delta=%s ", $2, $3, $4, $5
-	    next
-	}
+            for (i=2; i<NF; i++)
+                if ($i ~ /[[:alnum:]].*\.{3,}[[:alnum:]].*/)
+                    break
+
+            gsub(/[\[\],]/, "", $(i+1))
+            printf "_branch='%s' _status='%s' _delta=%d ", $i, $(i+1), $(i+2)
+            next
+        }
         $1 ~ /M/ { mod++; } 
-	$1 ~ /D/ { del++; } 
-	$1 ~ /A/ { add++; }
-	$1 ~ /\?/ { unk++; }
-	$1 ~ /\!/ { ign++; }
-	END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
-    ' < <(git --no-pager --no-optional-locks status --untracked-files=all --ignore-submodules --porcelain --branch 2>/dev/null)
-  # TODO handle .svn
+        $1 ~ /D/ { del++; } 
+        $1 ~ /A/ { add++; }
+        $1 ~ /\?/ { unk++; }
+        $1 ~ /\!/ { ign++; }
+        END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
+    ' < <(git --no-pager --no-optional-locks status --untracked-files=all \
+            --ignore-submodules --porcelain --branch 2>/dev/null)
   )
 
   if [ -n "$_branch" ]; then
-    # TODO handle both ahead AND behind
+    _upstream=${_branch#*...}
+    _branch=${_branch%...*}
+    [ "$_upstream" != "$_branch" ] || unset _upstream
+
+    # TODO handle both ahead AND behind?
     case "$_status" in
 	'ahead')  _status="[${FGRN}${_status}$RS $_delta]"
 	    ;;
@@ -59,15 +67,16 @@ if [ -n "$GIT_PROMPT" ]; then
 	    unset _status _delta
     esac
     for v in _mod _del _add _unk _ign _tot; do
-      [ ${!v} -eq 0 ] && unset $v
+      [ ${!v} -ne 0 ] || unset $v
     done
 
-    _stat="${_mod+ M$_mod}${_del+ D$_del}${_add+ A$_add}${_unk+ U$_unk}${_ign+ I$_ign}"
-    _prompt+="\n  ${UL}Git:$RS  ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat## }$RS}"
+    _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
+    _prompt+="\n  ${UL}Git:$RS  ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
   fi
 fi
 
-  [ -n "${!AWS_*}" ] && _prompt+="\n  ${UL}AWS:$RS  ${FMAG}${AWS_PROFILE:--} ${FBLE}${HC}${AWS_DEFAULT_REGION:--}$RS"
+  [ -n "${!AWS_*}" ] && 
+        _prompt+="\n  ${UL}AWS:$RS  ${FMAG}${AWS_PROFILE:--} ${FBLE}${HC}${AWS_DEFAULT_REGION:--}$RS"
 
   PS1="$PS_PREFIX${_prompt}\n"
   [ $EUID -eq 0 ] && PS1+="${BRED}"
