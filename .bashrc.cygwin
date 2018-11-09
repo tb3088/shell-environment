@@ -42,9 +42,6 @@ function sudo() {
   ${DEBUG:+ runv} ${exec:+exec} env ${preserve:- -i} $env ${cmd:-$shell ${initial:+ -l}} $flags "$@"
 }
 
-
-
-#FIXME this is a fn mess! get it consistent columns and formats (time) if possible
 which procps &>/dev/null &&
     alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}' ||
     alias ps='\ps -f'

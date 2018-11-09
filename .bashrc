@@ -128,7 +128,7 @@ HISTTIMEFORMAT="%H:%M "
 HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 
 
-for f in "$HOME"/.{functions{,.*},bashrc.*,aliases{,.*}}; do
+for f in "$HOME"/.{functions{,.*},aliases{,.*},bashrc.*}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
 
