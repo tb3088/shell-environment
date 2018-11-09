@@ -4,8 +4,9 @@ which go &>/dev/null || {
         [ -n "$v" ] || { unset v; continue; }
         [ -x "$v/bin/go" ] && { addPath "$v/bin"; break; }
     done
-    [ -n "$v" ] || return 0
 }
+
+which go &>/dev/null || return 0
 
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
 : ${GOROOT:=`go env GOROOT`}
