@@ -16,7 +16,7 @@ alias ffs='eval sudo !!'
 alias free='\free -m'
 alias edit='eval `[ "${TERM%.*}" = "screen" ] && echo screen` ${EDITOR:?}'
 
-alias ps >/dev/null || alias ps='\ps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
+alias ps &>/dev/null || alias ps='\ps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
 
 # Some shortcuts for different directory listings
 alias ls='\ls -hAF --color=tty'
