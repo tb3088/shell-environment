@@ -35,7 +35,7 @@ if [[ "$-" == *i* ]] || tty -s ; then
   fi
 fi
 
-for f in "$HOME"/.{bash_profile.local,bashrc.${OSTYPE:=`uname`}}; do
+for f in "$HOME"/.{bash_profile.local,bashrc_${OSTYPE:=`uname`}}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
   source "$f"

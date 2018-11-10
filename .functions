@@ -170,9 +170,6 @@ function getcert() {
 }
 
 
-function cdl() { cd "${1:-.}" && ls; }
-
-
 function pause() {
   [ $# -ne 0 ] && read -p "$*" || read -p 'Press [ENTER] to continue ...'
 }
@@ -205,99 +202,6 @@ function copy_function() {
 function rename_function() {
   copy_function "${1:?}" "${2:?}" && unset -f "$1"
 }
-
-
-# reference https://code.woboq.org/gcc/include/sys/syslog.h.html
-# syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
-[ -n "${log_LEVELS[*]}" ] ||
-declare -A -rx log_LEVELS=(
-    [EMERG]=0   [PANIC]=0
-    [ALERT]=1
-    [CRIT]=2    [CRITICAL]=2
-    [ERR]=3     [ERROR]=3
-    [WARN]=4    [WARNING]=4
-    [NOTICE]=5
-    [INFO]=6
-    [DEBUG]=7
-    # Java'ish extensions
-#   [TRACE]=8 [FINE]=8
-#   [FINEST]=9
-)
-
-[ -n "$log_FACILITIES[*]}" ] ||
-declare -a -rx log_FACILITIES=(
-    auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
-)
-
-# add timestamp to output
-#log_TIMESTAMP=1
-
-function __log_exit() {
-  >&2 log "$@"
-  if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
-        [[ `/bin/ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
-    return ${RC:-1}
-  fi
-  exit ${RC:-1}
-}
-
-for k in ${!log_LEVELS[@]}; do
-  # squelch READONLY messages
-  declare -F "log_$k" >/dev/null && continue
-
-  case ${log_LEVELS[$k]} in
-    [0-3])  copy_function __log_exit "log_$k" ;;
-    4)      eval function log_$k '{ >&2 log "$@"; }' ;;
-    5|6)    eval function log_$k '{ log "$@"; }' ;;
-    7)      eval function log_$k '{ [ -n "$DEBUG" ] && log "$@"; }' ;;
-  esac
-  readonly -f "log_$k"
-  # legacy support
-  copy_function "log_$k" "log_${k,,}" "${k,,}"
-done
-unset k
-unset -f __log_exit
-
-
-declare -F log >/dev/null ||    # squelch READONLY messages
-function log() {
-  local readonly timestamp=`date +"%Y-%m-%d.%H:%M:%S"`
-  local format=('%5s' '%s\n')
-  local level _line fn fo=1     # fo[0] will always be 'log()'
-
-  for fn in "${FUNCNAME[@]:1}"; do
-    fn=${fn#log_}
-    fn=${fn^^}
-
-    [ -n "${log_LEVELS[$fn]}" ] && level="$fn" || break
-    : $((fo++))
-  done
-
-  # legacy support
-  [ -n "${log_LEVELS[${1^^}]}" ] && { level=${1^^}; shift; }
-
-  # sanity check
-  [ -n "${log_LEVELS[${level:-x}]}" ] || level='INFO'
-  [ -n "${log_LEVELS[${LOGMASK:-x}]}" ] || LOGMASK='WARNING'
-
-  # squelch messages below LOGMASK
-  [ ${log_LEVELS[$level]} -le ${log_LEVELS[${LOGMASK:-$level}]} ] || return 0
-
-  [ -n "${STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
-      format+=" ${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}"
-
-  [ -z "$log_TIMESTAMP" ] || format=('%s' "${format[@]}")
-
-  # empty arg is wierd but tolerated
-  while [ "${1+x}" ]; do
-    printf -v _line "${format[*]}" ${log_TIMESTAMP:+$timestamp} $level "$1"
-    _line=`echo -e "$_line"`    # process embedded (simple) formatting
-    tee -a $LOGFILE <<< "$_line"
-    [ -n "$SYSLOG" ] && ${LOGGER:-logger --priority user.${level,,}} -- "$_line"
-    shift
-  done
-}
-readonly -f log
 
 
 function runv() { 
@@ -432,5 +336,8 @@ _EOF
     [ "${1:+x}" ] && echo || break
   done
 }
+
+# not necessary
+#source `dirname $BASH_SOURCE`/.functions_logging
 
 # vim: expandtab:ts=4:sw=4

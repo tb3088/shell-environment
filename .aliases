@@ -24,7 +24,9 @@ alias ll='ls -lh'
 alias ld='ls -d'
 alias lt='ls -t'
 alias lS='ls -S'
+
 alias cdu='cd ..'
+alias cdl='cd ${1:-.}; shift; ls $@'
 
 alias sftp='\sftp -R 256 -B 262144'
 alias screen='\screen ${HOSTNAME:+-t ${HOSTNAME%%.*}}'
