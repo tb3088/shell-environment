@@ -136,7 +136,7 @@ for f in "$HOME"/.{functions{,.local,_*},aliases{,.local,_*},bashrc{.local,_*}};
 done
 
 # Base16 color themes
-COLORSCHEME=`readlink "$HOME"/.colorscheme`
+COLORSCHEME=`readlink -e "$HOME"/.colorscheme`
 [ -n  "$COLORSCHEME" ] && {
   source "$COLORSCHEME" || echo "RC=$? in $COLORSCHEME"
   export COLORSCHEME=`basename $COLORSCHEME .sh`

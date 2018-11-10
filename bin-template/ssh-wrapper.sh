@@ -276,7 +276,7 @@ BASEDIR="${_progdir%/bin}"
 
 [ -n "${SSH_CONFIG:-$PROFILE}" ] || {
     # compute from wrapper filename
-    _origin=$( basename -s .sh `readlink "$BASH_SOURCE"` )
+    _origin=$( basename -s .sh `readlink -e "$BASH_SOURCE"` )
     [ "$_prog" = "$_origin" ] || PROFILE="$_prog"
 }
 
