@@ -144,7 +144,7 @@ function _ssh() {
   #   SSH_IDENTITY  - path to identity file (-i)
   #   SSH_VERBOSE   - specific to SSH and not this script
 
-  local _{screen,file,cmd,env,prefix,verbose}
+  local _{screen,file} _cmd=SSH
   local i v p
 
   if [ "${TERM#screen}" != "$TERM" ]; then
@@ -153,7 +153,6 @@ function _ssh() {
     TERM=${TERM/#.}
   fi
 
-  _cmd=SSH
   case ${1^^} in
     SCP|SFTP)
         _cmd=${1^^}
@@ -163,7 +162,6 @@ function _ssh() {
         # disable Screen where persistent command output is helpful
         unset _screen
         ;;
-    # Ssh option or Host arg
   esac
 
   # check that SSH_* files exist
@@ -210,16 +208,16 @@ function _ssh() {
   }
 
   # propagate environment when running Screen
-  _env=
+  local _env=()
   for v in DEBUG VERBOSE REGION ${!CLOUD*} ${!SSH_*} ${!AWS_*}; do
     [ -n "${!v}" ] || continue
 
-    info "$v = ${!v}"
-    _env+=" $v='${!v}'"
+    info "$v=${!v}"
+    _env+=("$v=${!v}")
   done
 
   ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
-        ${_env:+ env $_env} \
+        env "${_env[@]}" \
         ${!_cmd} ${SSH_VERBOSE:- -q} \
         ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
         ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
@@ -227,6 +225,7 @@ function _ssh() {
         $SSH_OPTS \
         "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
 }
+
 
 function init_logs() {
   local _level=${VERBOSE:=$DEBUG}
@@ -253,55 +252,81 @@ function init_logs() {
 }
 
 
+
 #--- main ---
 
-while getopts ':dvqF:i:' _opt; do
+_prog="${BASH_SOURCE##*/}"
+_progdir=$( cd `dirname "$BASH_SOURCE"`; pwd )
+_PROG=`readlink -e "$BASH_SOURCE"` || {
+    # impossible error
+    >&2 echo "ERROR: $0 has broken link component"; exit 1
+}
+_PROGDIR="${_PROG%/*}"
+_PROG="${_PROG##*/}"
+[ "${_prog%.*}" = "${_PROG%.*}" ] || PROFILE="$_prog"
+
+BASEDIR="${_progdir%/bin}"          # rather arbitrary...
+debug "BASEDIR = $BASEDIR"
+
+_args=()
+
+while getopts ':dvqE:F:i:W:' _opt; do
   case "$_opt" in
     d)  : $((DEBUG++)) ;;
     v)  : $((VERBOSE++)) ;;
     q)  unset DEBUG VERBOSE ;;
-#    E)  SSH_LOGFILE="$OPTARG" ;;
-    F)  SSH_CONFIG="$OPTARG" ;;
+    E)  LOGFILE="${OPTARG}-wrapper"; _args+=(-E "$OPTARG") ;;
+    F)  SSH_CONFIG="$OPTARG"; unset PROFILE ;;
     i)  SSH_IDENTITY="$OPTARG" ;;
-#    \?)
+    W)  _args+=(-W "$OPTARG") ;;
+    \?) # unrecognized
+        _opt="${@:$OPTIND:1}"
+        case "$_opt" in
+#          -var)
+#                args+=('-var' "${@:$((++OPTIND)):1}")
+#                ;;
+#          -var-file=*)
+#                _save+=("${@:$((OPTIND++)):1}")
+#                ;;
+          --)   break ;;                # stop processing
+          -*)   # assume program option
+                _args+=("${@:$((OPTIND++)):1}")
+        esac
+        ;;
+    :)  RC=2 error "missing argument (-$OPTARG)" ;;
+    *)  RC=2 warn "unhandled option (-$sw)"
   esac
 done
-shift $((OPTIND - 1))
+shift $((OPTIND-1))
 
 [ -n "$1" ] || RC=2 error 'insufficient arguments'
 
-_prog=$( basename -s .sh "$BASH_SOURCE" )
-_progdir=$( cd `dirname "$BASH_SOURCE"`; pwd )
-BASEDIR="${_progdir%/bin}"
-
-[ -n "${SSH_CONFIG:-$PROFILE}" ] || {
-    # compute from wrapper filename
-    _origin=$( basename -s .sh `readlink -e "$BASH_SOURCE"` )
-    [ "$_prog" = "$_origin" ] || PROFILE="$_prog"
-}
-
-# MAGIC: disable SCREEN and script output when invoked with special suffix.
-# However SSH_VERBOSE functionality preserved by calling init_logs() first
 init_logs
-for s in ${NO_SCREEN:-.git .rsync}; do
-    [[ "$PROFILE" =~ $s$ || "$BASH_SOURCE" =~ $s$ ]] && {
-        unset SCREEN DEBUG VERBOSE
-        [ -n "$PROFILE" ] && PROFILE=${PROFILE/%$s}
-        break
-    }
+
+# There be DRAGONS!
+# disable SCREEN and script output when invoked with special suffix.
+# However SSH_VERBOSE functionality preserved by calling init_logs() first
+for s in ${NO_SCREEN:-git rsync}; do
+  if [[ "${SSH_CONFIG:-$PROFILE}" =~ \.$s$ ]]; then
+    unset SCREEN DEBUG VERBOSE
+    # highly unusual for SSH_CONFIG to use this
+    [ -n "$PROFILE" ] && PROFILE=${PROFILE/%.$s}
+    break
+  fi
 done
 
-debug "BASEDIR = $BASEDIR"
-[ -n "$SSH_CONFIG" ] && info "SSH_CONFIG = $SSH_CONFIG" || info "PROFILE = $PROFILE"
+[ -n "$SSH_CONFIG" ] && info "SSH_CONFIG=$SSH_CONFIG" || info "PROFILE=$PROFILE"
 
-: ${CLOUD:=aws}
-: ${CLOUD_PROFILE:=\$${CLOUD^^}_PROFILE}
+: ${CLOUD:='aws'}
+_cloud_profile="${CLOUD^^}_PROFILE"
+: ${CLOUD_PROFILE:=${!_cloud_profile}}
 : ${REGION:=$AWS_DEFAULT_REGION}
 
 # My personal definitions for D{1..3} delimiter sets.
 # One can also override via args to genlist() or change the defaults
-declare -a D2=('/' '.')
-D1='/' _ssh "$@"
+#FIXME use DELIM1..3 and arrays
+D1='/'
+D2=('/' '.')
+_ssh "${_args[@]}" "$@"
 
-unset ${!_*} BASEDIR ${!SSH_*} PROFILE D{1..3} ${!CLOUD*} REGION
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4
