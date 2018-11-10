@@ -198,7 +198,7 @@ function copy_function() {
     [ -n "$target" ] || continue
     declare -F "$target" >/dev/null && { [ -n "$overwrite" ] || continue; }
 
-    eval "${source/$1/$target}"     # or "function $target ${source#*\(\)}"
+    eval "${source/$1/$target}"     # alt: "function $target ${source#*\(\)}"
   done
 }
 
@@ -232,16 +232,21 @@ declare -a -rx log_FACILITIES=(
 # add timestamp to output
 #log_TIMESTAMP=1
 
+function __log_exit() {
+  >&2 log "$@"
+  if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
+        [[ `/bin/ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
+    return ${RC:-1}
+  fi
+  exit ${RC:-1}
+}
+
 for k in ${!log_LEVELS[@]}; do
   # squelch READONLY messages
   declare -F "log_$k" >/dev/null && continue
 
   case ${log_LEVELS[$k]} in
-    [0-3])  eval function "log_$k" '{ 
-                >&2 log "$@"; [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] &&
-                return ${RC:-1} || exit ${RC:-1}
-            }'
-            ;;
+    [0-3])  copy_function __log_exit "log_$k" ;;
     4)      eval function log_$k '{ >&2 log "$@"; }' ;;
     5|6)    eval function log_$k '{ log "$@"; }' ;;
     7)      eval function log_$k '{ [ -n "$DEBUG" ] && log "$@"; }' ;;
@@ -251,6 +256,7 @@ for k in ${!log_LEVELS[@]}; do
   copy_function "log_$k" "log_${k,,}" "${k,,}"
 done
 unset k
+unset -f __log_exit
 
 
 declare -F log >/dev/null ||    # squelch READONLY messages
@@ -378,7 +384,7 @@ function userinfo() {
     *)  getent passwd ${1:-`id -u`}
   esac
 #  # login:x:uid:gid:gecos:home:shell
-#    -c, --comment COMMENT         new value of the GECOS field
+#  -c, --comment COMMENT         new value of the GECOS field
 #  -d, --home HOME_DIR           new home directory for the user account
 #  -e, --expiredate EXPIRE_DATE  set account expiration date to EXPIRE_DATE
 #  -f, --inactive INACTIVE       set password inactive after expiration
@@ -394,28 +400,37 @@ function userinfo() {
 
 function lstree() {
   local OPTIND opt      # IMPORTANT !!
-  local filter= type= reverse= flags=() cmd=()
+  local filter= type= reverse= flags=()
   local _find="find"    # alt: 'ls -R'
 
-  while getopts "dlL:P:x" opt; do
+  while getopts ":hdlL:P:x" opt; do
     case "$opt" in
-        d)  flags+=('-type d') ;;
-        l)  _find+=" -L" ;;
-        L)  flags+=("-maxdepth $OPTARG") ;;
-        P)  flags+=("-name '$OPTARG'") ;;
-        x)  flags+=('-xdev') ;;
+      d)    flags+=('-type d') ;;
+      l)    _find+=" -L" ;;
+      L)    flags+=("-maxdepth $OPTARG") ;;
+      P)    flags+=("-name $OPTARG") ;;
+      x)    flags+=('-xdev') ;;
+
+      h|*)  >&2 cat <<_EOF
+Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
+  A simple imitation of tree(1) - http://mama.indstate.edu/users/ice/tree/tree.1.html
+
+  -d            list Directories only
+  -l            follow symbolic links
+  -L <level>    maximum traverse depth
+  -P <pattern>  must escape any wildcards
+  -x            stay on single filesystem
+_EOF
+            return 2
     esac
   done
   shift $((OPTIND-1))
 
-  cmd=( "$_find ${1:-`pwd`} ${flags[@]}" )
-  [ ${limit:-0} -gt 0 ] && cmd+=( "head -n $limit" )
-  cmd+=( "sed -e '2,$ s/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|-\1/'" )
-
-  IFS='|'
-  ${DEBUG:+ runv} eval "${cmd[*]}"
-
-  unset IFS
+  while true; do
+    ${DEBUG:+ runv} $_find ${1:-`pwd`} ${flags[@]} | sed -e '2,$ s/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|-\1/'
+    shift
+    [ "${1:+x}" ] && echo || break
+  done
 }
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4
