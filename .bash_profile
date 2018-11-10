@@ -7,7 +7,7 @@ source "$HOME"/.functions
 #     and reduce this to a nested FOR loop (see bashrc.$prog)
 #----------
 
-addPath -"$HOME"/{.local/,}bin
+addPath PATH -"$HOME"/{.local/,}bin
 export PATH MANPATH
 
 if [[ "$-" == *i* ]] || tty -s ; then

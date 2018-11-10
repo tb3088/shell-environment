@@ -1,6 +1,6 @@
 which ec2-version &>/dev/null || {
     for d in /usr/local/ec2-api-tools*; do
-      [ -d "$d"/bin ] && addPath "$d"/bin
+      [ -d "$d/bin" ] && addPath "$d/bin"
     done
     unset d
   }
@@ -44,7 +44,7 @@ function aws-addPath {
     [ -n "$v" -a -d "$v" ] || continue
     [ "$v" = '.' ] && v=`pwd`
 
-    [ -n "$delete" ] && k='PATH' rmPath "$v"{/bin,} || k='PATH' addPath \-"$v"/bin
+    [ -n "$delete" ] && rmPath PATH "$v"{/bin,} || addPath -"$v"/bin
 
     [ -n "$SSH_AUTH_SOCK" ] && {
       [ -n "$delete" ] && ssh-add ${DEBUG:- -q} -d "$v"/*.pub 2>/dev/null ||

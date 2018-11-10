@@ -85,21 +85,23 @@ function contains() {
 }
 
 
-#TODO use join_string() to handle arbitrary delimiters and whitespace
-#TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
 
+#TODO use join_string() to handle arbitrary delimiters and whitespace
+#TODO rewrite callers as PATH=`join_string $1 $2 $delim`
+
   local k v flag prepend delim=':'
-  local _prepend=$prepend
+  local _save_prepend=$prepend          # save state if passed in
 
   [ $# -eq 1 ] && { k='PATH'; flag='-E'; }
+  [ -n "$k" ] || { k="$1"; shift; }
   [[ "$k" =~ ^[A-Za-z] ]] || return 2
 
   for v in "$@"; do
     [ -n "$v" ] || continue
+    prepend=$_save_prepend              # restore state
 
-    prepend=$_prepend
     # leading '-' means prepend
     [ "${v:0:1}" = '-' ] && { prepend=1; v="${v:1}"; }
 
@@ -107,11 +109,8 @@ function addPath() {
     # prevent duplicates
     delim="$delim" contains "${!k}" "$v" && continue
 
-    if [ -n "$prepend" ]; then
-      eval $k="$v${delim}\$$k"       # embedded spaces/special chars require lazy evaluation
-    else 
-      eval $k+="${delim}$v"
-    fi
+    # embedded spaces/special chars require lazy evaluation
+    [ -n "$prepend" ] && { eval $k="$v${delim}\$$k"; } || eval $k+="${delim}$v"
   done
 }
 
@@ -121,6 +120,7 @@ function rmPath() {
 #  local IFS=${delim:=':'}
 
   [ $# -eq 1 ] && k='PATH'
+  [ -n "$k" ] || { k="$1"; shift; }
   [[ "$k" =~ ^[A-Za-z] ]] || return 2
 
   for v in "$@"; do
