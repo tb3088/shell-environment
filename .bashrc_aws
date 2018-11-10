@@ -24,15 +24,23 @@ which ec2-version &>/dev/null || {
 #}
 
 function aws-profile {
-  local readonly _profile=${1:?}
-  local readonly _region=`aws configure get region --profile "$_profile" 2>/dev/null`
+  # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
 
-  [ -n "$_region" ] || { log_ERROR "invalid profile ($_profile)"; return 1; }
+  local readonly _cmd="aws configure get region"
+  local readonly _profile="$1"
+  local _region=`$_cmd --profile "$_profile" 2>/dev/null`
 
-  aws-rmPath
-  export AWS_PROFILE="$_profile"
-  export AWS_DEFAULT_REGION="$_region"
+  if [ -n "$_region" ]; then
+    AWS_CONFIG_FILE= aws-rmPath
+  else
+    log_ERROR "AWS config profile ($_profile) not found"
+    return 1
+  fi
+
+  AWS_PROFILE="$_profile"
+  AWS_DEFAULT_REGION="$_region"
   aws-addPath
+  export ${!AWS_*}
 }
 
 
