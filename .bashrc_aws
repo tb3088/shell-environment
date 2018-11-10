@@ -27,25 +27,31 @@ function aws-profile {
   # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
 
   local readonly _cmd="aws configure get region"
-  local readonly _profile="$1"
-  local _region=`$_cmd --profile "$_profile" 2>/dev/null`
+  local readonly _profile="${1:?}"
+  local _region
 
-  if [ -n "$_region" ]; then
-    AWS_CONFIG_FILE= aws-rmPath
-  else
-    log_ERROR "AWS config profile ($_profile) not found"
-    return 1
-  fi
+  [ "$_profile" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
+
+  for _aws_config in "$AWS_CONFIG_FILE" ''; do
+    _region=`AWS_CONFIG_FILE="$_aws_config"; $_cmd --profile "$_profile" 2>/dev/null`
+    [ -n "$_region" ] && break
+  done
+
+  [ -n "$_region" ] || { log_ERROR "AWS config profile ($_profile) not found"; return 1; }
+
+  aws-rmPath
+  [ -n "$_aws_config" ] || unset AWS_CONFIG_FILE
 
   AWS_PROFILE="$_profile"
   AWS_DEFAULT_REGION="$_region"
   aws-addPath
+
   export ${!AWS_*}
 }
 
 
 function aws-addPath {
-  local v delete
+  local v f delete
 
   for v in "$@" ${AWS_CONFIG_FILE:+`dirname "$AWS_CONFIG_FILE"`} \
         "$HOME"/.{aws,ssh}/"${AWS_PROFILE:-default}"; do
@@ -54,10 +60,12 @@ function aws-addPath {
 
     [ -n "$delete" ] && rmPath PATH "$v"{/bin,} || addPath -"$v"/bin
 
-    [ -n "$SSH_AUTH_SOCK" ] && {
-      [ -n "$delete" ] && ssh-add ${DEBUG:- -q} -d "$v"/*.pub 2>/dev/null ||
-          ssh-add ${DEBUG:- -q} "$v"/{id_?sa$,*.pem} 2>/dev/null
-    }
+    if [ -n "$SSH_AUTH_SOCK" ]; then
+      for f in "$v"/*; do
+        ssh-add ${DEBUG:- -q} ${delete:+ -d} "$f" &>/dev/null
+      done
+      ${VERBOSE:+ echo; ssh-add -l}
+    fi
     break
   done
 }
