@@ -55,4 +55,4 @@ alias kds='knife data bag show'
 alias kde='knife data bag edit'
 
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4

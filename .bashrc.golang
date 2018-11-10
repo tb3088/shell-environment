@@ -32,4 +32,4 @@ export ${!GO*}
 #NOTE 'go get' doesn't work if using Cygwin 'git'
 # if OSTYPE=cygwin or uname -k = windows, then git version | grep windows or issue WARN
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4

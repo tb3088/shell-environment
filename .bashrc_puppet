@@ -11,4 +11,4 @@ for v in PUPPET_BASE; do
     [ -d "${!v}/bin" ] && addPath "${!v}/bin"
 done
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4

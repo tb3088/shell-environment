@@ -46,4 +46,4 @@ done
 export EDITOR PAGER
 source "$HOME"/.bashrc
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4

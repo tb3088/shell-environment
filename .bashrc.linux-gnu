@@ -9,4 +9,4 @@ which yum &>/dev/null &&
     alias yumvars="python -c 'import yum, pprint; yb = yum.YumBase(); pprint.pprint(yb.conf.yumvar, width=1)'"
 
 return 0
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4

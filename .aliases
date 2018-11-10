@@ -36,4 +36,4 @@ alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{t
 
 alias myip='curl -sk https://diagnostic.opendns.com/myip'
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4

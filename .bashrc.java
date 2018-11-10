@@ -5,4 +5,4 @@ for v in "$JAVA_HOME" "${PROGRAMFILES:-/opt}/java${JAVA_VERSION}"; do
 done
 unset v
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4
