@@ -90,7 +90,8 @@ function genlist() {
   declare -a delim=('/' '.' '_')    # flavor to taste
 
   local prefix stub combo
-  local file=config
+  local file
+  : ${file:=config}
   local b c {d,D}{1..3} e
   local item1=${1:-$PROFILE} item2=${2:-$REGION}
 
@@ -123,7 +124,8 @@ function genlist() {
                         # force '.../config*' format
                         [ "$d3" = '/' ] && continue
 
-                        echo "$prefix${stub:+$d1$stub}/${file}${d3}$e"
+                        # unroll embedded $d3 inside $combo
+                        eval echo "$prefix${stub:+$d1$stub}/${file}${d3}$e"
                     done
                 done
                 echo "$prefix${stub:+$d1$stub}/$file"
@@ -194,12 +196,12 @@ function _ssh() {
 
   # UserKnownHostFile shouldn't be defined inside 'config' because brittle
   [ -n "$SSH_KNOWN_HOSTS" ] || {
-    debug "looking for SSH_KNOWN_HOSTS"
+    debug "assuming SSH_KNOWN_HOSTS co-located with SSH_CONFIG"
 
-    for _file in ${SSH_CONFIG/config/known_hosts} \
-          `[ -n "$BASEDIR" ] && prefix="$BASEDIR" file='known_hosts' genlist` \
-          `[ -n "${!CLOUD*}" ] && prefix="$HOME/${CLOUD:+.$CLOUD/}$CLOUD_PROFILE" file='known_hosts' genlist` \
-          `prefix="$HOME/.ssh" file='known_hosts' genlist`; do
+    for _file in ${SSH_CONFIG/config/known_hosts}; do
+#          `[ -n "$BASEDIR" ] && prefix="$BASEDIR" file='known_hosts' genlist` \
+#          `[ -n "${!CLOUD*}" ] && prefix="$HOME/${CLOUD:+.$CLOUD/}$CLOUD_PROFILE" file='known_hosts' genlist` \
+#          `prefix="$HOME/.ssh" file='known_hosts' genlist`; do
 
         debug "    $_file"
         [ -f "$_file" ] && { SSH_KNOWN_HOSTS="$_file"; break; }
@@ -238,7 +240,7 @@ function init_logs() {
         [ -n "$SSH_VERBOSE" ] || {
             # tone down SSH verbosity 1 level unless DEBUG set
             [ -n "$DEBUG" ] || : $((_level--))
-            [ $_level -eq 0 ] || eval printf -v SSH_VERBOSE -- '%.0s-v\ ' {1..$_level}
+            [ $_level -eq 0 ] || SSH_VERBOSE="-`printf -- '%.0sv' {1..$_level}`"
         }
         ;;&
     # IFF advanced logging (implemented separately)
