@@ -24,6 +24,8 @@ which ec2-version &>/dev/null || {
 #}
 
 function aws-profile {
+  # WARN! 'aws configure get region' is RETARDED! it does NOT follow source_profile = XXX
+  # nor fall-thru to 'default'.
   # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
 
   local readonly _cmd="aws configure get region"
@@ -58,11 +60,11 @@ function aws-addPath {
     [ -n "$v" -a -d "$v" ] || continue
     [ "$v" = '.' ] && v=`pwd`
 
-    [ -n "$delete" ] && rmPath PATH "$v"{/bin,} || addPath -"$v"/bin
+    [ -n "$delete" ] && rmPath 'PATH' "$v"{/bin,} || addPath 'PATH' -"$v"/{,${AWS_PROFILE:-default}/}bin
 
     if [ -n "$SSH_AUTH_SOCK" ]; then
-      for f in "$v"/*; do
-        ssh-add ${DEBUG:- -q} ${delete:+ -d} "$f" &>/dev/null
+      for f in "$v"/{${AWS_PROFILE:-default}/,}{id_*,*.pem,*.pub}; do
+        ${DEBUG:+ runv} ssh-add ${delete:+ -d} "$f" &>/dev/null
       done
       ${VERBOSE:+ echo; ssh-add -l}
     fi
