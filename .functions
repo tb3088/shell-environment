@@ -80,7 +80,7 @@ function contains() {
     regex)  [[ "$source" =~ $sub ]] ;;
 #      'insensitive')
 #            ;&
-    *)      [[ "$source" == *"$sub"* ]]
+    *)      [[ "$source" == *$sub* ]]
   esac
 }
 
@@ -92,7 +92,7 @@ function addPath() {
 #TODO rewrite callers as PATH=`join_string $1 $2 $delim`
 
   local k v flag prepend delim=':'
-  local _save_prepend=$prepend          # save state if passed in
+  local readonly _save_prepend=$prepend # save state if passed in
 
   [ $# -eq 1 ] && { k='PATH'; flag='-E'; }
   [ -n "$k" ] || { k="$1"; shift; }
