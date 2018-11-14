@@ -33,6 +33,7 @@ if [ -n "$GIT_PROMPT" ]; then
     set -e -o pipefail
     awk '
         NR==1 {
+            sub(/\(no branch\)/, "")
             for (i=2; i<NF; i++)
                 if ($i ~ /[[:alnum:]].*\.{3,}[[:alnum:]].*/)
                     break
