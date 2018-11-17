@@ -1,6 +1,8 @@
 # make life easy for WSL. otherwise symlink WSL' ~/.Xauthority to Cygwin's
 xhost +localhost
 
+xmodmap ~/.Xmodmap
+#setxkbmap -option “ctrl:nocaps
 xrdb -merge ~/.Xresources
 xterm -geometry 80x25-30+0 -name login &
 
