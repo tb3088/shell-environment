@@ -207,7 +207,7 @@ function rename_function() {
 function runv() { 
   # mimic 'set -x'
 
-  >&2 printf "\n%s %s\n\n" `printf '%.0s+' {1..$SHLVL}` "$*"
+  >&2 printf "%s %s\n" `printf '%.0s+' {1..$SHLVL}` "$*"
   "$@"
 }
 
@@ -337,7 +337,19 @@ _EOF
   done
 }
 
-# not necessary
-#source `dirname $BASH_SOURCE`/.functions_logging
+
+function min() {
+  local flag
+
+  [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
+  printf "%s\n" "$@" | sort $flag | head -n 1
+}
+
+function max() {
+  local flag
+
+  [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
+  printf "%s\n" "$@" | sort $flag | tail -n 1
+}
 
 # vim: expandtab:ts=4:sw=4

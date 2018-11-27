@@ -149,11 +149,7 @@ function _ssh() {
   local _{screen,file} _cmd=SSH
   local i v p
 
-  if [ "${TERM#screen}" != "$TERM" ]; then
-    _screen="$SCREEN";
-    TERM=${TERM/#screen}
-    TERM=${TERM/#.}
-  fi
+  [[ "$TERM" =~ ^screen ]] && { _screen="$SCREEN"; TERM=vt100; }
 
   case ${1^^} in
     SCP|SFTP)
