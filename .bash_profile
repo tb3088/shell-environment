@@ -9,7 +9,7 @@ source "$HOME"/.functions
 
 addPath PATH -"$HOME"/{.local/,}bin
 export PATH MANPATH
-export LANG=$(locale -uU)
+export LANG='en_US.utf8'
 
 if [[ "$-" == *i* ]] || tty -s ; then
   if which ssh-agent &>/dev/null; then
