@@ -72,12 +72,12 @@ if [ -n "$GIT_PROMPT" ]; then
     done
 
     _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
-    _prompt+="\n  ${UL}Git:$RS  ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
+    _prompt+="\n  ${UL}Git:$RS ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
   fi
 fi
 
   [ -n "${!AWS_*}" ] && 
-        _prompt+="\n  ${UL}AWS:$RS  ${FMAG}${AWS_PROFILE:--} ${FBLE}${HC}${AWS_DEFAULT_REGION:--}$RS"
+        _prompt+="\n  ${UL}AWS:$RS ${FMAG}${AWS_PROFILE:--}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:--}$RS"
 
   PS1="$PS_PREFIX${_prompt}\n"
   [ $EUID -eq 0 ] && PS1+="${BRED}"

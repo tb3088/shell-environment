@@ -43,10 +43,12 @@ go
 mercurial.ini
 
 bin
+workspace
 workspace/
 Dropbox
 logs/
 OpenVPN/
+.WINHOME
 
 # Windows-specific
 3D\ Objects
