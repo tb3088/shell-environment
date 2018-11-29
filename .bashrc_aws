@@ -5,11 +5,15 @@ which ec2-version &>/dev/null || {
     unset d
   }
 
-[ -e /etc/bash_completion.d/aws_bash_completer ] || {
-    link=`which aws_bash_completer`
-    [ -n "$link" ] && ln -s "$link" /etc/bash_completion.d/
-    unset link
-  }
+link=`which aws_bash_completer 2>/dev/null`
+[ -n "$link" ] &&
+    for bc in /etc "$HOME"; do
+      [ -e "$bc/bash_completion.d/aws_bash_completer" ] && break
+      [ "$bc" = "/etc" ] && : ${SUDO:=`which sudo 2>/dev/null`}
+
+      $SUDO ln -s "$link" "$bc/bash_completion.d/"
+    done
+unset link
 
 #curl -s 'http://169.254.169.254/' && {
 #METADATA_URL='http://169.254.169.254/'
