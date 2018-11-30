@@ -13,12 +13,18 @@
 #    [no_proxy]=`printf "%d," {0..9}`           # is dangling ',' benign?
 
 
-# quick-set
+# reset datatype with math
+declare -i _verbose=$(( VERBOSE + 0 ))
+declare -i _debug=$(( DEBUG + 0 ))
+declare -i _noop=$(( NOOP + 0 ))
+
+# quick-set Hash
 eval declare -A spec=(`echo  [{ht,f}tp{,s}_proxy]='http://proxy:3128'` [no_proxy]='' )
 
-while [ $# -gt 0 ]; do
+while [ -n "${1+x}" ]; do
   k=${1%%=}; k=${k,,}
 
+#FIXME use getopt
   case $k in
     -d) : ${DEBUG:=1} ;;
     -n) : ${VERBOSE:=1}
