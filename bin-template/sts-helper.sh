@@ -9,17 +9,20 @@
 # Author: Matthew Patton (mpatton@Enquizit.com)
 # License: BSD
 
-function runv() { echo >&2 "+ $*"; [ -n "${NOOP:+x}" ] || "$@"; }
-function cleanup() { exit 1; }
+function runv() {
+  [ -z "${_DEBUG}${_VERBOSE}" ] || echo >&2 "+ $*"
+  "$@"
+}
+
+#TODO hook functions if defined, compute -vvv, -ddd and add if applicable to awscli commands
+#FIXME also check BASH_SOURCE
+function cleanup() { [ $SHLVL -gt 1 ] && exit 1 || return 1; }
 
 which jq &>/dev/null || { echo >&2 "ERROR: command 'jq' not found on \$PATH"; exit 1; }
 
-: {$VERBOSE:=0}
-: {$DEBUG:=0}
 stscmd='get-session-token'
 role=''
-print2env=1
-print2creds=0
+write2creds=0
 declare -A fields=(
     [AccessKeyId]=aws_access_key_id 
     [SecretAccessKey]=aws_secret_access_key 
@@ -27,26 +30,24 @@ declare -A fields=(
     [Expiration]=aws_session_expire
 )
 
-options='cdEnv'
-while getopts ":$options" opt; do
+declare -i _VERBOSE=$(( VERBOSE + 0 ))
+declare -i _DEBUG=$(( DEBUG + 0 ))
+
+options='A:dnvw'
+while getopts "$options" opt; do
   case "$opt" in
-    c)	# modify .aws/credentials (potentially DANGEROUS!)
-	print2creds=1
-	;;
-
-    n)  NOOP=1 ;&
-    d)  DEBUG+=1 ;&
-    v)  VERBOSE+=1 ;;
-
-    E)	# don't print out for environnment
-	unset print2env
-	;;
-#    q)	# no output
-#	;;
+    d)  _DEBUG+=1   ;;
+    n)  write2creds=0 ;;
+    v)  _VERBOSE+=1 ;;
+    A)  declare -i _duration=$(( OPTARG + 0 ))
+        ;;
 #    r)	# assume role (automatic)
 #	;;
 #    s)	# get session (default)
 #	;;
+    w)	# modify .aws/credentials (potentially DANGEROUS!)
+	write2creds=1
+	;;
     :)	echo >&2 "ERROR! missing argument (-$OPTARG)"
 	exit 2
 	;;
@@ -57,22 +58,25 @@ while getopts ":$options" opt; do
 	exit 255
   esac
 done
-shift "$((OPTIND-1))"
+shift $((OPTIND-1))
 
-# alternatively ...
-#set -- "`getopt "$@"`"
-#while [ ${#@} -gt 0 ]; do
-#  case $1 in
-#   e)  ...; shift [2]
-#  esac
-#done
+# unset/clear variables for simplified logic
+for v in _{DEBUG,VERBOSE}; do
+  [ -n "${!v}" -a ${!v} -ne 0 ] || unset $v
+done
 
 
 # ------- MAIN --------
 
 profile="${1:-${AWS_PROFILE:?}}"
+# FIXME assumes 'master.trusting' AWS profile naming pattern where
+# the 'master' defines IAM principals that the 'trusting' will accept - NO!
+# '/' as delimiter also makes sense
+[ "${profile%.*}" == "${AWS_PROFILE%.*}" ] || unset ${!AWS_*}
+AWS_PROFILE=$profile
+unset profile
 
-case "$profile" in
+case "$AWS_PROFILE" in
   nyu|nyu.*)
         account_id=120017232434
         mfa="arn:aws:iam::$account_id:mfa/${MFA_ID:?}"
@@ -90,39 +94,34 @@ case "$profile" in
 	exit 255
 esac
 
+#FIXME params belong in properly filled out ~/.aws/config or AWS_CONFIG_FILE. This form should only be
+# used if -a, -r, -p have been specified but really shouldn't be used.
 [ -n "$role" ] && 
     stscmd="assume-role --role-arn arn:aws:iam::${account_id:?}:role/$role --role-session-name RSN-$profile-$$"
 
-
-# assumes 'master.trusting' AWS profile naming pattern where
-# the 'master' defines IAM principals that the 'trusting' will accept
-
-[ "${profile%.*}" == "${AWS_PROFILE%.*}" ] || unset ${!AWS_*}
-AWS_PROFILE=$profile
-unset profile
-
-
 if [ -n "$mfa" -o \( -z "$AWS_SESSION_TOKEN"  -o \
-	-z "`aws configure get aws_session_token --profile $AWS_PROFILE`" \) -o \
+	-z `aws configure get aws_session_token --profile $AWS_PROFILE` \) -o \
     false ]; then
   # TODO replace 'false' with check for expired
 
   set -euo pipefail
   trap cleanup SIGHUP SIGTERM SIGINT ERR
 
-  output=`${DEBUG:+ runv} aws sts $stscmd ${mfa:+ --serial-number $mfa --token-code $2} \
-	${DURATION:+ --duration-seconds $DURATION} --profile ${AWS_PROFILE%.*}`
+  output=`${_DEBUG:+ runv} aws sts $stscmd ${mfa:+ --serial-number $mfa --token-code $2} \
+	${_duration:+ --duration-seconds $_duration} --profile "$AWS_PROFILE"`
 
-  [ ${VERBOSE:-0} -gt 0 ] && jq -MS <<< "$output"
+  [ -z "${_VERBOSE}${_DEBUG}" ] || jq -MS <<< "$output"
 
+  declare -u V
   for key in "${!fields[@]}"; do
-    val="${fields[$key]}"
-    [ -n "$val" ] || continue
+    V="${fields[$key]}"
+    [ -n "$V" ] || continue
 
-    eval ${val^^}=`jq -r .Credentials.$key <<< "$output"`
-    if [ ${print2creds:-0} = '1' ]; then
-	${DEBUG:+ runv} eval aws configure set $val \$${val^^} --profile $AWS_PROFILE 
-    fi
+    declare -n nref=$V
+    nref=`jq -r .Credentials.$key <<< "$output"`
+
+    [ ${write2creds:-0} -eq 1 ] &&
+        ${_DEBUG:+ runv} aws configure set "${V,,}" "${!V}" --profile "$AWS_PROFILE"
   done
 fi
 
@@ -130,10 +129,7 @@ fi
 # ------- OUTPUT -------
 set +e
 
-if [ ${print2env:-0} = '1' ]; then
-  echo
-  for v in ${!AWS_*}; do echo "$v='${!v}'"; done
-  echo "export ${!AWS_*}"
-fi
+for v in ${!AWS_*}; do echo "$v='${!v}'"; done
+echo "export ${!AWS_*}"
 
-# vim: set expandtab:ts=4:sw=4
+# vim: expandtab:ts=4:sw=4
