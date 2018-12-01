@@ -46,20 +46,15 @@ which procps &>/dev/null &&
     alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}' ||
     alias ps='\ps -f'
 
-#which 7z &>/dev/null || {
-#    bin='7-Zip/7z.exe'
+
+# Example of a semi-smart search, but probably best to define in .aliases.local
+#which 'notepad++' &>/dev/null || {
+#    bin='Notepad++/notepad++.exe'
 #    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
-#      [ -x "${!dir}/$bin" ] && { alias 7z="run \"\$$dir/$bin\""; break; }
+#      dir=`convert_path -p "${!dir}"`
+#      [ -x "$dir/$bin" ] && { alias npp="run \"$dir/$bin\""; break; }
 #    done
 #  }
-
-which 'notepad++' &>/dev/null || {
-    bin='Notepad++/notepad++.exe'
-    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
-      dir=`convert_path -p "${!dir}"`
-      [ -x "$dir/$bin" ] && { alias npp="run \"$dir/$bin\""; break; }
-    done
-  }
 
 # single-quotes for lazy evaluation
 alias downloads='cd "$USERPROFILE"/Downloads'
