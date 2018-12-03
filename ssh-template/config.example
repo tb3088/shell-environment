@@ -5,45 +5,45 @@ host admin.us-east-1a relay.us-east-1*
   Hostname A.B.C.D
 
 host admin.*
+  # OpenVPN Access Server
   User openvpnas
   LocalForward 1943 0.0.0.0:1943
 
 host gateway.* admin.*
   ProxyCommand none
-  IdentityFile ~/.aws/<AWS_PROFILE>/master.pem
+  IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/master.pem
+  IdentitiesOnly yes
   # 'yes' is more secure but requires pre-populating
   StrictHostKeyChecking ask
-  IdentitiesOnly yes
+
+host !relay* *.bastion
+  ProxyCommand ssh-wrapper.sh -W %h:%p relay${REGION:+.$REGION}.via-bastion
+
+host relay*.via-bastion
+  # OpenVPN Access Server and client
+  LocalForward 2943 0.0.0.0:1943
+  LocalForward 2443 0.0.0.0:443
+
+host *.via-bastion
+  # reset both variables
+  ProxyCommand env SSH_KNOWN_HOSTS= SSH_CONFIG= PROFILE=bastion ssh-wrapper.sh -W %h:%p relay${REGION:+.$REGION}
 
 host relay relay.*
   User relay
+  IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/personal.pem
+  IdentitiesOnly yes
   StrictHostKeyChecking yes
 
 host *.direct
   ProxyCommand none
 
-host !relay* *.bastion
-  ProxyCommand ssh-wrapper.sh -W %h:%p relay${AWS_REGION:+.$AWS_REGION}.via-bastion
-
-host relay*.via-bastion
-  LocalForward 2943 0.0.0.0:1943
-  LocalForward 1443 0.0.0.0:443
-
-host *.via-bastion
-  # must reset both variables
-  ProxyCommand env SSH_KNOWN_HOSTS= SSH_CONFIG="$HOME/.aws/${AWS_PROFILE:?}/bastion/${AWS_REGION:?}/config" ssh-wrapper.sh -W %h:%p relay${AWS_REGION:+.$AWS_REGION}
-
-# catch-all
-host relay*
-  ProxyCommand none
-
 #---------------
 
-host i-056eb708 apps apps.*
-  Hostname 172.16.x.y
-  HostKeyAlias apps
+#host i-056eb708 apps apps.*
+#  Hostname 172.16.x.y
+#  HostKeyAlias apps
 
-#match OriginalHost *.${AWS_REGION}
+#match OriginalHost *.$REGION
 #  Include ~/.aws/<AWS_PROFILE>/<PROFILE>/${AWS_REGION}/a.conf
 
 #match OriginalHost "?,??,???"
@@ -53,12 +53,12 @@ host i-056eb708 apps apps.*
 
 #---------------
 
-match User !ec2-user,!ubuntu,!openvpnas,*
+match User !ec2-user,!ubuntu,!centos,!openvpnas,*
   IdentityFile ~/.ssh/id_rsa
 
 host *
   user ec2-user
-  IdentityFile ~/.aws/<AWS_PROFILE>/lab.pem
+  IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/lab.pem
   ForwardAgent no
   GatewayPorts no
   # since AWS hosts auto-scale/relaunch 'no' is permissible.
@@ -67,5 +67,4 @@ host *
   ServerAliveInterval 90
   ServerAliveCountMax 3
 #TODO rewrite '%h' to key off VPC subnet applicable to AZ
-  ProxyCommand ssh-wrapper.sh -W %h:%p relay${AWS_REGION:+.$AWS_REGION}.direct
-
+  ProxyCommand ssh-wrapper.sh -W %h:%p relay${REGION:+.$REGION}.direct
