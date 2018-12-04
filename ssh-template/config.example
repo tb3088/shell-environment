@@ -3,6 +3,7 @@
 
 host admin.us-east-1a relay.us-east-1*
   Hostname A.B.C.D
+  HostKeyAlias admin.us-east-1a
 
 host admin.*
   # OpenVPN Access Server
@@ -56,15 +57,27 @@ host *.direct
 match User !ec2-user,!ubuntu,!centos,!openvpnas,*
   IdentityFile ~/.ssh/id_rsa
 
+host github.com
+  KexAlgorithms +diffie-hellman-group-exchange-sha1
+
 host *
   user ec2-user
   IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/lab.pem
   ForwardAgent no
   GatewayPorts no
-  # since AWS hosts auto-scale/relaunch 'no' is permissible.
-  # recommend use of HostKeyAlias though
-  StrictHostKeyChecking no
+  HashKnownHosts yes
+
+  # since AWS hosts auto-scale/relaunch, 'no' is permissible
+  # though use of HostKeyAlias is strongly suggested
+#  StrictHostKeyChecking no
+#  CheckHostIP no
+
+#  Include crypto.conf
+#  Include nist.conf
+
   ServerAliveInterval 90
   ServerAliveCountMax 3
+
 #TODO rewrite '%h' to key off VPC subnet applicable to AZ
   ProxyCommand ssh-wrapper.sh -W %h:%p relay${REGION:+.$REGION}.direct
+
