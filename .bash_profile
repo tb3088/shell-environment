@@ -37,7 +37,6 @@ if [[ "$-" == *i* ]] || tty -s ; then
 fi
 
 for f in "$HOME"/.{bash_profile.local,bashrc_${OSTYPE:=`uname`}}; do
-  egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
   source "$f"
 done
@@ -45,6 +44,7 @@ done
 : ${EDITOR:=`which "$EDITOR" vim vi nano pico emacs 2>/dev/null | head -n 1`}
 : ${PAGER:='less -RSF'}
 export EDITOR PAGER
+
 source "$HOME"/.bashrc
 
 # vim: expandtab:ts=4:sw=4

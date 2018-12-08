@@ -1,35 +1,40 @@
+declare -n v
+
 which go &>/dev/null || {
     # look for program in common places
-    for v in "$GOROOT" {"$SYSTEMDRIVE","$PROGRAMFILES","$LOCALAPPDATA",/opt,/usr/local{,/lib}}/go{,lang}{${GO_VERSION:+-$GO_VERSION},}; do
-        [ -n "$v" ] || { unset v; continue; }
-        [ -x "$v/bin/go" ] && { addPath "$v/bin"; break; }
+    for v in GOROOT SYSTEMDRIVE PROGRAMFILES LOCALAPPDATA; do
+        [ -n "$v" ] || continue
+        for p in go{,lang}${GO_VERSION:+-$GO_VERSION}; do
+#            p="`cygpath -- $v`/$p"
+            [ -x "$p/bin/go" ] && { addPath "$p/bin"; break; }
+        done
     done
+    which go &>/dev/null || return 0
 }
-
-which go &>/dev/null || return 0
 
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
 : ${GOROOT:=`go env GOROOT`}
 
-[ -n "${GOPATH:=`go env GOPATH`}" ] || {
-    for v in "$USERPROFILE/go" "$LOCALAPPDATA/go" "$HOME/.go"; do
-      [ ${#v} -gt 4 ] || continue
+[ -d "${GOPATH:=`go env GOPATH`}" ] || {
+    # Windows:  %USERPROFILE%/go
+    # Unix:     $HOME/go
+    mkdir -p "$GOPATH"
 
-      #FIXME iff Windows binary
-#      GOPATH=`convert_path -t windows "$v"`
-      break
-    done
+    # Personally I prefer %LOCALAPPDATA%/go and $HOME/.go
+# if `is_windows go` then mkdir "$LOCALAPPDATA/go" and GOPATH=`convert_path -t windows ...`
+# else mkdir $HOME/.go and GOPATH=$HOME/.go; 
   }
 
-IFS="${PATHSEP:-:}"
-for dir in $GOPATH; do      # can NOT quote 'GOPATH'
-    [ -d "$dir/bin" ] && addPath "$dir/bin"
-done
+# walk elements of GOPATH and add to $PATH
+#IFS="${PATHSEP:-:}"
+#for v in GOPATH; do
+#    [ -d "$v/bin" ] && addPath "$v/bin"
+#done
 
-unset v dir IFS
+unset v p IFS
 export ${!GO*}
 
-#NOTE 'go get' doesn't work if using Cygwin 'git'
+#NOTE Windows 'go get' doesn't work if using Cygwin 'git'
 # if OSTYPE=cygwin or uname -k = windows, then git version | grep windows or issue WARN
 
 # vim: expandtab:ts=4:sw=4
