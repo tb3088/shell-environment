@@ -21,4 +21,8 @@ a simple `git clone` will not work. The following sequence is best way forward.
 [automount]
 enabled = true
 options = "metadata,umask=22,fmask=11"
+
+[interop]
+enabled = false
+appendWindowsPath = false
 ```
