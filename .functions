@@ -1,24 +1,45 @@
 shopt -s extglob
+[[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && PATHSEP=';' || PATHSEP=':'
+
+function is_windows() {
+  # detects if path or binary is Cygwin or native Windows
+  [ "${1:0:1}" = '/' ] && return [[ "$1" =~ ^/cygdrive ]]
+
+  bin=`which "${1:?}" 2>/dev/null` || return 2
+  [ "$bin" != "${bin#/cygdrive}" ]
+}
+
 
 function convert_path() {
-  local escape=1 path=1 {format,flags,noop}=
-  local delim= raw=() cooked=() IFS r p
-  local OPTIND opt      # IMPORTANT !!
+  # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
+  # This *magical* behavior does NOT extend to other PATH-like variables!
+  #     eg. GOPATH, RUBYPATH, RUBYLIB, PUPPET_MODULE_PATH
+  #
+  # However, interactive use of paths must be inside quotes or escaped
+  # since the $SHELL parser is not so gifted.
+  #
+  # Also, cygpath only modifies the first occurance of /cygdrive or [A-Z]:
+  # on any input argument and does not detect ';:' or any other delimiter.
+  #
+  # Option '-p' assumes PATH and overrides delim=':' and unset escape.
 
-  # Cygwin automagically handle spaces on the $PATH and
-  # must NOT have them escaped to work properly. But interactive
-  # use on command-line needs to be inside quotes or escaped.
+# any quoted '\ ' is not modified by cygpath forward or reverse
+# so if string starts with /cygdrive we need to remove any '\ ' first when going DOS/Win
 
-  while getopts "D:eEnpPt:" opt; do
+  local escape=1 path format flags noop delim=$PATHSEP
+  local raw=() cooked=()
+  local IFS OPTIND      # IMPORTANT !!
+
+  while getopts ":D:eEnpPt:" opt; do
     case $opt in
-      D)    delim=$OPTARG ;;
+      D)    delim="$OPTARG" ;;
       e)    escape=1 ;;
       E)    unset escape ;;
-      n)    noop=1; ;;
-      p)    path=1; unset escape ;;     # an optimization
-      P)    path= ;;
+      n)    noop=1 ;;
+      p)    path=1 ;;
+      P)    unset path ;;
       t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
-                format="$opt $OPTARG" || {
+                format="-t $OPTARG" || {
                     RC=2 log_ERROR "unknown format ($OPTARG)"
                     return
                 }
@@ -31,43 +52,64 @@ function convert_path() {
   done
   shift $((OPTIND-1))
 
-  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && which cygpath &>/dev/null || noop=1
+  [ -z "$path" ] || { delim=':'; unset escape; }
 
+#FIXME preserve some functionality even in real Unix?
+  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && which cygpath &>/dev/null || noop=1
 
   while [ "${1+x}" ]; do
     # deal with empty option, rare but possible
     [ -n "$1" ] || { shift; continue; }
-    [ -n "$noop" ] && { echo "$1"; shift; continue; }
+    [ -z "$noop" ] || { echo "$1"; shift; continue; }
 
-    #FIXME escape both whitespace and '()'
-    if [ -n "$path" ]; then
-      p=`cygpath $format -p $flags -- "${1//\\ / }"`
-      [ -n "$escape" ] && echo "${p// /\\ }" || echo "$p"
-    else
-      cooked=()
+    cooked=()
 
-      # iterate thru line elements based on delim THEN remove escaped spaces 
-#      eval ${delim:+IFS=$delim} read -a raw <<< "$1"
-      IFS=$delim read -a raw <<< "$1"
-
-      for r in "${raw[@]}"; do
-        log_DEBUG "raw input: $r"
+    # iterate thru line elements based on delim THEN remove escaped spaces 
+    IFS=$delim read -a raw <<< "$1"
+    for r in "${raw[@]}"; do
+        log_DEBUG "input: $r"
         p=`cygpath $format $flags -- "${r//\\ / }"`
-        log_DEBUG "cygpath output: $p"
-        [ -n "$escape" ] && cooked+=("${p// /\\ }") || cooked+=("$p")
-      done
+        log_DEBUG "output: $p"
+        [ -z "$escape" ] || { p="${p// /\\ }"; log_DEBUG "escaped: $p"; }
+        cooked+=("$p")
+    done
+    IFS=$delim
+    echo "${cooked[*]}"
 
-#      eval ${delim:+IFS=$delim}; echo "${cooked[*]}"
-      IFS=$delim
-      echo "${cooked[*]}"
-    fi
+#    #TODO escape both whitespace and '()'
+#    if [ -n "$path" ]; then
+#      p=`cygpath $format -p $flags -- "${1//\\ / }"`
+#      [ -n "$escape" ] && echo "${p// /\\ }" || echo "$p"
+###    else
+#      cooked=()
+#
+#      # iterate thru line elements based on delim THEN remove escaped spaces 
+#      IFS=$delim read -a raw <<< "$1"
+## 
+#      for r in "${raw[@]}"; do
+#        log_DEBUG "input: $r"
+#        p=`cygpath $format $flags -- "${r//\\ / }"`
+#        log_DEBUG "output: $p"
+#        [ -n "$escape" ] && { p="${p// /\\ }"; log_DEBUG "escaped: $p"; }
+#        cooked+=("$p")
+#      done
+#
+#      IFS=$delim; echo "${cooked[*]}"
+#    fi
     shift 
   done
+  unset r p
 }
 
 
 #TODO handle Hash/Array, 
-#FIXME leverage IFS="$delim" 
+#FIXME leverage IFS="$delim" read <<< "$1"
+# note IFS only considers a single char, you can't have compound IFS
+# see https://unix.stackexchange.com/questions/7904/can-ifs-internal-field-separator-function-as-a-single-seperator-for-multiple-c
+# for a neat trick. but if say delim='::' you can't just collapse into a single-char unless
+# you can correctly guess something not in the data stream (eg. high-order non-printing char?)
+# otherwise have to feed it to AWK/SED for magic
+
 function contains() {
   local delim method
   local readonly source="${delim}${1}${delim}" 
@@ -89,18 +131,19 @@ function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
 
 #TODO use join_string() to handle arbitrary delimiters and whitespace
-#TODO rewrite callers as PATH=`join_string $1 $2 $delim`
+#TODO? rewrite callers as PATH=`join_string $1 $2 $delim`
 
-  local k v flag prepend delim=':'
-  local readonly _save_prepend=$prepend # save state if passed in
+  local k v flag prepend delim=$PATHSEP
+  local readonly _prepend=$prepend
 
-  [ $# -eq 1 ] && { k='PATH'; flag='-E'; }
-  [ -n "$k" ] || { k="$1"; shift; }
+  [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
   [[ "$k" =~ ^[A-Za-z] ]] || return 2
+
+  [ "$k" = 'PATH' ] && { delim=':'; flag="-p"; }
 
   for v in "$@"; do
     [ -n "$v" ] || continue
-    prepend=$_save_prepend              # restore state
+    prepend=$_prepend              # restore state
 
     # leading '-' means prepend
     [ "${v:0:1}" = '-' ] && { prepend=1; v="${v:1}"; }
@@ -326,6 +369,7 @@ Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
   -x            stay on single filesystem
 _EOF
             return 2
+            ;;
     esac
   done
   shift $((OPTIND-1))
@@ -351,5 +395,11 @@ function max() {
   [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
   printf "%s\n" "$@" | sort $flag | tail -n 1
 }
+
+
+#TODO
+# array functions; push, pop, delete, replace, truncate
+
+source ${BASH_SOURCE}_logging
 
 # vim: expandtab:ts=4:sw=4
