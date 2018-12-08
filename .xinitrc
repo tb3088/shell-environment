@@ -7,7 +7,7 @@ xrdb -merge ~/.Xresources
 xterm -geometry 80x25-30+0 -name login &
 
 declare -a list=()
-for wm in {open,flux}box {fv,t}wm; do
+for wm in {open,flux}box wmaker {fv,t}wm; do
   which $wm &>/dev/null && list+=($wm)
 done
 

@@ -30,6 +30,7 @@ go
 .vim/.netrwhist
 .wget-hsts
 .Xauthority*
+.xfce4-session.*
 .xsession-errors
 *.bak
 *.orig

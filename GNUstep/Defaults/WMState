@@ -1,0 +1,71 @@
+{
+  Dock = {
+    AutoRaiseLower = No;
+    Applications = (
+      {
+        Forced = No;
+        Name = Logo.WMDock;
+        BuggyApplication = No;
+        AutoLaunch = No;
+        Position = "0,0";
+        Lock = Yes;
+        Command = "/usr/bin/WPrefs";
+      },
+      {
+        Forced = No;
+        Name = xterm.XTerm;
+        BuggyApplication = No;
+        AutoLaunch = No;
+        Position = "0,1";
+        Lock = No;
+        Command = xterm;
+      }
+    );
+    Applications861 = (
+      {
+        Forced = No;
+        Name = Logo.WMDock;
+        BuggyApplication = No;
+        AutoLaunch = No;
+        Position = "0,0";
+        Lock = Yes;
+        Command = "/usr/bin/WPrefs";
+      },
+      {
+        Forced = No;
+        Name = xterm.XTerm;
+        BuggyApplication = No;
+        AutoLaunch = No;
+        Position = "0,1";
+        Lock = No;
+        Command = xterm;
+      }
+    );
+    Lowered = No;
+    Position = "-64,0";
+  };
+  Clip = {
+    Forced = No;
+    Name = Logo.WMClip;
+    DropCommand = "wmsetbg -u -t %d";
+    BuggyApplication = No;
+    AutoLaunch = No;
+    Position = "0,0";
+    Lock = No;
+    Command = "-";
+  };
+  Drawers = ();
+  Workspaces = (
+    {
+      Clip = {
+        AutoRaiseLower = No;
+        AutoCollapse = No;
+        Applications = ();
+        Collapsed = No;
+        AutoAttractIcons = No;
+        Lowered = Yes;
+      };
+      Name = Main;
+    }
+  );
+}
