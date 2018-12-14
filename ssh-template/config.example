@@ -1,9 +1,8 @@
 #ControlMaster auto
-#ControlPath ~/.ssh/sock/alab-%h_%p-%r
+#ControlPath ~/.ssh/sock/$PROFILE-%h_%p-%r
 
-host admin.us-east-1a relay.us-east-1*
-  Hostname A.B.C.D
-  HostKeyAlias admin.us-east-1a
+host *.direct
+  ProxyCommand none
 
 host admin.*
   # OpenVPN Access Server
@@ -13,9 +12,12 @@ host admin.*
 host gateway.* admin.*
   ProxyCommand none
   IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/master.pem
+
+host gateway.* admin.* relay relay.*
   IdentitiesOnly yes
-  # 'yes' is more secure but requires pre-populating
-  StrictHostKeyChecking ask
+  StrictHostKeyChecking yes
+  CheckHostIP yes
+
 
 host !relay* *.bastion
   ProxyCommand ssh-wrapper.sh -W %h:%p relay${REGION:+.$REGION}.via-bastion
@@ -31,46 +33,47 @@ host *.via-bastion
 
 host relay relay.*
   User relay
-  IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/personal.pem
-  IdentitiesOnly yes
-  StrictHostKeyChecking yes
-
-host *.direct
-  ProxyCommand none
+#  IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/personal.pem
 
 #---------------
 
-#host i-056eb708 apps apps.*
+host admin.us-east-1a relay.us-east-1*
+  Hostname A.B.C.D
+  HostKeyAlias admin.us-east-1a
+
+#host i-056eb70x apps apps.*
 #  Hostname 172.16.x.y
-#  HostKeyAlias apps
+#  HostKeyAlias i-056eb70x
 
 #match OriginalHost *.$REGION
 #  Include ~/.aws/<AWS_PROFILE>/<PROFILE>/${AWS_REGION}/a.conf
 
 #match OriginalHost "?,??,???"
-# NOTICE '%n' is not supported, documentation not-withstanding
+# NOTE '%n' is not supported, the docs not-withstanding
 # consult cloudformation map for region
 #  Hostname 172.16.0.%h
 
 #---------------
 
-match User !ec2-user,!ubuntu,!centos,!openvpnas,*
-  IdentityFile ~/.ssh/id_rsa
+match User ec2-user,ubuntu,centos,openvpnas
+#  IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/<key>.pem
+  IdentitiesOnly yes
+
+#match User !ec2-user,!ubuntu,!centos,!openvpnas,*
 
 host github.com
   KexAlgorithms +diffie-hellman-group-exchange-sha1
 
+
 host *
-  user ec2-user
-  IdentityFile ~/<.ssh|.aws/AWS_PROFILE>/lab.pem
+  IdentityFile ~/.ssh/id_rsa
   ForwardAgent no
   GatewayPorts no
   HashKnownHosts yes
 
   # since AWS hosts auto-scale/relaunch, 'no' is permissible
   # though use of HostKeyAlias is strongly suggested
-#  StrictHostKeyChecking no
-#  CheckHostIP no
+  StrictHostKeyChecking ask
 
 #  Include crypto.conf
 #  Include nist.conf

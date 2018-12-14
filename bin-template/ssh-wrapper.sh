@@ -178,7 +178,7 @@ function _ssh() {
 
     # NOTICE: This level of search can take a while, flavor to taste.
     for _file in `[ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist` \
-          `[ -n "${!CLOUD*}" ] && prefix="$HOME/${CLOUD:+.$CLOUD/}$CLOUD_PROFILE" genlist` \
+          `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist` \
           `prefix="$HOME/.ssh" genlist`; do
 
         # discard match on '.aws/config' since that is reserved
@@ -194,15 +194,9 @@ function _ssh() {
   [ -n "$SSH_KNOWN_HOSTS" ] || {
     debug "assuming SSH_KNOWN_HOSTS co-located with SSH_CONFIG"
 
-    for _file in ${SSH_CONFIG/config/known_hosts}; do
-#          `[ -n "$BASEDIR" ] && prefix="$BASEDIR" file='known_hosts' genlist` \
-#          `[ -n "${!CLOUD*}" ] && prefix="$HOME/${CLOUD:+.$CLOUD/}$CLOUD_PROFILE" file='known_hosts' genlist` \
-#          `prefix="$HOME/.ssh" file='known_hosts' genlist`; do
-
-        debug "    $_file"
-        [ -f "$_file" ] && { SSH_KNOWN_HOSTS="$_file"; break; }
-    done
-    : ${SSH_KNOWN_HOSTS:?not found}
+    _file="${SSH_CONFIG/config/known_hosts}"
+    debug "    $_file"
+    [ -f "$_file" ] && SSH_KNOWN_HOSTS="$_file" || : ${SSH_KNOWN_HOSTS:?not found}
   }
 
   # propagate environment when running Screen
@@ -316,9 +310,8 @@ done
 [ -n "$SSH_CONFIG" ] && info "SSH_CONFIG=$SSH_CONFIG" || info "PROFILE=$PROFILE"
 
 : ${CLOUD:='aws'}
-_cloud_profile="${CLOUD^^}_PROFILE"
-: ${CLOUD_PROFILE:=${!_cloud_profile}}
-: ${REGION:=$AWS_DEFAULT_REGION}
+declare -n CLOUD_PROFILE=${CLOUD^^}_PROFILE
+declare -n REGION=${CLOUD}_DEFAULT_REGION
 
 # My personal definitions for D{1..3} delimiter sets.
 # One can also override via args to genlist() or change the defaults
