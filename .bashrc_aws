@@ -33,7 +33,7 @@ function aws-profile {
   # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
   local readonly _cmd="aws configure get region"
   local readonly _profile="${1:?}"
-  local _region
+  local _region _creds
 
   [ "$_profile" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
 
@@ -44,6 +44,9 @@ function aws-profile {
     }
 
   aws-rmPath
+
+  [ -n "$AWS_CONFIG_FILE" ] && _creds="${AWS_CONFIG_FILE%/*}/credentials"
+  [ -f "$_creds" ] && AWS_SHARED_CREDENTIALS_FILE="$_creds"
 
   AWS_PROFILE="$_profile"
   : ${AWS_DEFAULT_REGION:="$_region"}
