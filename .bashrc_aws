@@ -28,28 +28,25 @@ unset link
 #}
 
 function aws-profile {
-  # WARN! 'aws configure get region' is RETARDED! it does NOT follow source_profile = XXX
-  # nor fall-thru to 'default'.
-  # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
+  # NOTE: 'get *' does NOT follow source_profile nor fall-thru to 'default'.
 
+  # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
   local readonly _cmd="aws configure get region"
   local readonly _profile="${1:?}"
   local _region
 
   [ "$_profile" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
 
-  for _aws_config in "$AWS_CONFIG_FILE" ''; do
-    _region=`AWS_CONFIG_FILE="$_aws_config"; $_cmd --profile "$_profile" 2>/dev/null`
-    [ -n "$_region" ] && break
-  done
-
-  [ -n "$_region" ] || { log_ERROR "AWS config profile ($_profile) not found"; return 1; }
+  _region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE $_cmd --profile "$_profile" 2>/dev/null`
+  [ $? -eq 255 ] && {
+        log_ERROR "unknown profile ($_profile)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
+        return 255
+    }
 
   aws-rmPath
-  [ -n "$_aws_config" ] || unset AWS_CONFIG_FILE
 
   AWS_PROFILE="$_profile"
-  AWS_DEFAULT_REGION="$_region"
+  : ${AWS_DEFAULT_REGION:="$_region"}
   aws-addPath
 
   export ${!AWS_*}

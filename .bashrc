@@ -26,7 +26,7 @@ BWHT="\[\033[47m\]" # background white
 function __prompt() {
   local _rc=$?
   local _branch _upstream _stat{us,} _delta _mod _del _add _unk _ign _tot
-  local _prompt=
+  local _prompt= _config
 
 if [ -n "$GIT_PROMPT" ]; then
   eval $(
@@ -76,8 +76,10 @@ if [ -n "$GIT_PROMPT" ]; then
   fi
 fi
 
-  [ -n "${!AWS_*}" ] && 
-        _prompt+="\n  ${UL}AWS:$RS ${FMAG}${AWS_PROFILE:--}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:--}$RS"
+  [ -n "${!AWS_*}" ] && {
+        _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config%/*}; _config=${_config#.aws/}
+        _prompt+="\n  ${UL}AWS:$RS ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}$RS"
+    }
 
   PS1="$PS_PREFIX${_prompt}\n"
   [ $EUID -eq 0 ] && PS1+="${BRED}"
