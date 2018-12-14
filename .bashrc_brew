@@ -1,6 +1,7 @@
 which brew &>/dev/null || {
-  [ -d "${HOMEBREW_PREFIX:=/home/linuxbrew/.linuxbrew}" ] || return
+  [ -d "${HOMEBREW_PREFIX:=/home/linuxbrew/.linuxbrew}" ] || return 0
 
   addPath $HOMEBREW_PREFIX/bin
   export ${!HOMEBREW_*}
 }
+
