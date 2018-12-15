@@ -25,10 +25,11 @@ BWHT="\[\033[47m\]" # background white
 
 function __prompt() {
   local _rc=$?
-  local _branch _upstream _stat{us,} _delta _mod _del _add _unk _ign _tot
   local _prompt= _config
 
 if [ -n "$GIT_PROMPT" ]; then
+  local _branch _upstream _stat{us,} _delta 
+  local -i _mod _del _add _unk _ign _tot
   eval $(
     set -e -o pipefail
     awk '
@@ -67,6 +68,8 @@ if [ -n "$GIT_PROMPT" ]; then
 	    # _status=`echo -e '\u2713'`
 	    unset _status _delta
     esac
+
+    local v
     for v in _mod _del _add _unk _ign _tot; do
       [ ${!v} -ne 0 ] || unset $v
     done

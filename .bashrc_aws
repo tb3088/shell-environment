@@ -50,6 +50,7 @@ function aws-profile {
 
   AWS_PROFILE="$_profile"
   : ${AWS_DEFAULT_REGION:="$_region"}
+  [ -n "$AWS_DEFAULT_REGION" ] || log_WARN "env:AWS_DEFAULT_REGION is not set"
   aws-addPath
 
   export ${!AWS_*}
