@@ -49,8 +49,7 @@ function aws-profile {
   [ -f "$_creds" ] && AWS_SHARED_CREDENTIALS_FILE="$_creds"
 
   AWS_PROFILE="$_profile"
-  : ${AWS_DEFAULT_REGION:="$_region"}
-  [ -n "$AWS_DEFAULT_REGION" ] || log_WARN "env:AWS_DEFAULT_REGION is not set"
+  [ -n "$_region" -o -n "$AWS_DEFAULT_REGION" ] || log_WARN "Region not set"
   aws-addPath
 
   export ${!AWS_*}
