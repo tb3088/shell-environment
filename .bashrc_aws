@@ -7,7 +7,7 @@ which ec2-version &>/dev/null || {
 
 link=`which aws_bash_completer 2>/dev/null`
 [ -n "$link" ] &&
-    for bc in /etc "$HOME"; do
+     for bc in /etc "$HOME"; do
       [ -e "$bc/bash_completion.d/aws_bash_completer" ] && break
       [ "$bc" = "/etc" ] && : ${SUDO:=`which sudo 2>/dev/null`}
 
@@ -32,29 +32,90 @@ function aws-profile {
 
   # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
   local readonly _cmd="aws configure get region"
-  local readonly _profile="${1:?}"
-  local _region _creds
+  local readonly _profile="${1:?}"; shift
+  local _region
 
   [ "$_profile" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
 
-  _region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE $_cmd --profile "$_profile" 2>/dev/null`
+  _region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE $_cmd --profile "$_profile" "$@" 2>/dev/null`
   [ $? -eq 255 ] && {
         log_ERROR "unknown profile ($_profile)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
         return 255
     }
-
   aws-rmPath
 
-  [ -n "$AWS_CONFIG_FILE" ] && _creds="${AWS_CONFIG_FILE%/*}/credentials"
-  [ -f "$_creds" ] && AWS_SHARED_CREDENTIALS_FILE="$_creds"
-
   AWS_PROFILE="$_profile"
-  [ -n "$_region" -o -n "$AWS_DEFAULT_REGION" ] || log_WARN "Region not set"
   aws-addPath
+  [ -n "$AWS_CONFIG_FILE" ] && {
+        local _creds="${AWS_CONFIG_FILE%/*}/credentials"
+        [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
+    }
 
   export ${!AWS_*}
+  [ -n "${_region}${AWS_DEFAULT_REGION}" ] || log_WARN "Region is not set"
 }
 
+function aws-session {
+  : ${AWS_PROFILE:?}
+
+  local mfa=`aws configure get mfa_serial`
+  [ $? -eq 255 ] && log_ERROR "unknown profile ($AWS_PROFILE)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
+
+  local -i duration=14400 write2creds=0
+  local OPTIND opt format=text      # TODO: support AWS_DEFAULT_OUTPUT?
+  while getopts 'jtW' opt; do
+    case "$opt" in
+      j)    which jq &>/dev/null && format=json ;;
+      t)    duration=$OPTARG ;;
+      W)    # modify .aws/credentials (potentially DANGEROUS!)
+            write2creds=1
+            ;;
+      :)    RC=2 log_ERROR "missing argument (-$OPTARG)" ;;
+      \?)   RC=2 log_ERROR "invalid option (-$OPTARG)" ;;
+      *)    log_NOTICE "unhandled option (-$OPTARG)"
+    esac
+  done
+  shift $((OPTIND-1))
+
+  local output=`${DEBUG:+runv} aws sts get-session-token ${mfa:+ --serial-number $mfa ${1:+ --token-code $1}} \
+        --duration-seconds $duration --format $format` || return
+
+  local -A fields=(
+        [AccessKeyId]=aws_access_key_id 
+        [SecretAccessKey]=aws_secret_access_key 
+        [SessionToken]=aws_session_token
+        [Expiration]=aws_session_expire
+    )
+  case "$format" in
+    text)   IFS=$'\t' read -r header AWS_ACCESS_KEY_ID expires AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$output"
+            ;;
+    json)   [ -z "${DEBUG}" ] || jq -MS .Credentials <<< "$output"
+            local field
+			local -u key
+            for field in "${!fields[@]}"; do
+              key="${fields[$field]}"
+              declare -n nref=$key
+              nref=`jq -r .Credentials.$field <<< "$output"`
+
+#              [ ${write2creds:-0} -eq 1 ] && {
+#                    ${DEBUG:+ runv} aws configure set "$key" "${!key}"
+#                    unset ${k^^}
+#                }
+            done
+            [ -n "$VERBOSE" ] && `jq -r .AssumedRoleUser << "$output"`
+            ;;
+  esac
+
+  local v
+  for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; do
+    [ ${write2creds:-0} -eq 1 ] && {
+		${DEBUG:+ runv} aws configure set "${v,,}" "${!v}"
+		unset $v
+	  }
+    [ -n "$VERBOSE$DEBUG" ] && echo "$v=${!v}"
+  done
+  export ${!AWS_*}
+}
 
 function aws-addPath {
   local v f delete

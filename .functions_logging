@@ -45,7 +45,7 @@ for k in "${!LOG_LEVELS[@]}"; do
   readonly -f log_$k
 
   # define legacy function names
-  copy_function "log_$k" "log_${k,,}" "$k" "${k,,}"
+  copy_function "log_$k" "${k,,}"
 done
 unset k
 unset -f __log_exit
