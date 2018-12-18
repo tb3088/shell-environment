@@ -1,3 +1,5 @@
+# $Id$
+
 case ${OSTYPE:-`uname -o`} in
   [cC]ygwin)
         ;;
@@ -11,41 +13,55 @@ export PATHSEP=';'
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 
 function sudo() {
-  local {opt,who,cmd,line,env,shell,flags}=
-  local preserve=' '
+  local opt who cmd line env shell flags preserve=''
+  #FIXME local -A env
+  #FIXME local -a flags
   local OPTIND opt      # important!!
 
-  while getopts 'ieEu:X' opt; do
-    case $opt in
-      i)    initial=1; preserve= ;;
-      e)    cmd=`which ${EDITOR:-vi}` || log_ERROR "unknown EDITOR" ;;
-      E)    preserve=' ' ;;
+  while getopts ':ieEu:X' opt 2>/dev/null; do
+    case "$opt" in
+      i)    initial=1; unset preserve ;;
+      e)    cmd=`which ${EDITOR:-vi} 2>/dev/null` || {
+                log_ERROR "invalid EDITOR (${EDITOR:-vi})"
+                return
+              }
+            ;;
+      E)    preserve='' ;;
       u)    who=$OPTARG ;;
       X)    exec=1 ;;
-      :)    RC=2 log_ERROR "missing argument (-$OPTARG)"
-            return
-            ;;
-      \?)   flags+=" -$OPTARG"      # "unhandled
+      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      \?)   flags+=" -$OPTARG"
     esac
   done
   shift $((OPTIND-1))
 
   : ${who:?missing argument \'-u USER\'}
-  line=`getent passwd $who || grep -s "^${who}:" /etc/passwd` || log_ERROR "unknown USER ($who)"
+  line=`getent passwd $who || grep -s "^${who}:" /etc/passwd` || {
+        log_ERROR "unknown USER ($who)"
+        return
+    }
+
   env=`awk -F: '{ printf("USER=%s USERNAME=%s HOME=%s UID=%s", $1, $1, $(NF-1), $3) }' <<< "$line"`
   # preserve certain values regardless
   for e in USERPROFILE ALLUSERSPROFILE TERM; do
     [ -n "${!e}" ] && env+=" $e='${!e}'"
   done
-  shell=${line##*:}; [ -n "${shell:=$SHELL}" -a -x "$shell" ] || log_ERROR "invalid SHELL ($shell)"
 
-  ${DEBUG:+ runv} ${exec:+exec} env ${preserve:- -i} $env ${cmd:-$shell ${initial:+ -l}} $flags "$@"
+  shell=${line##*:}
+  [ -n "${shell:=$SHELL}" -a -x "$shell" ] || {
+        log_ERROR "invalid SHELL ($shell)"
+        return
+    }
+
+  ${DEBUG:+ runv} ${exec:+ exec} env ${preserve- -i} $env ${cmd:-$shell ${initial:+ -l}} $flags "$@"
 }
 
-which procps &>/dev/null &&
-    alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}' ||
-    alias ps='\ps -f'
 
+if which procps &>/dev/null; then
+  alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
+else
+  alias ps='\ps -f'
+fi
 
 # Example of a semi-smart search, but probably best to define in .aliases.local
 #which 'notepad++' &>/dev/null || {
