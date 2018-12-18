@@ -54,7 +54,7 @@ unset -f __log_exit
 declare -F log >/dev/null ||
 function log() {
   local ts=`date '+%Y-%m-%dT%H:%M:%S'`
-  local format=('%5s' "'%s'")
+  local format=('%-5s' "\t%s")
   local _line fo=1                      # FUNCNAME[0] will always be 'log()'
   declare -u fn level mask=$LOG_MASK
 
@@ -80,7 +80,8 @@ function log() {
   # squelch messages below mask
   [ ${LOG_LEVELS[$level]} -le ${LOG_LEVELS[$mask]} ] || return 0
 
-  [ -n "${STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
+  #TODO if LOG_STACKTRACE print entire stack with x...y...z
+  [ -n "${LOG_STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
         format+=" [${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}]"
 
   # empty arg is wierd but tolerated
