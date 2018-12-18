@@ -1,7 +1,7 @@
-declare -n v
 
 which go &>/dev/null || {
     # look for program in common places
+    declare -n v
     for v in GOROOT SYSTEMDRIVE PROGRAMFILES LOCALAPPDATA; do
         [ -n "$v" ] || continue
         for p in go{,lang}${GO_VERSION:+-$GO_VERSION}; do
@@ -9,7 +9,7 @@ which go &>/dev/null || {
             [ -x "$p/bin/go" ] && { addPath "$p/bin"; break; }
         done
     done
-    which go &>/dev/null || return 0
+    which go &>/dev/null || { unset v; return 0; }
 }
 
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable

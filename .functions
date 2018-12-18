@@ -58,7 +58,7 @@ function convert_path() {
   while [ "${1+x}" ]; do
     # deal with empty option, rare but possible
     [ -n "$1" ] || { shift; continue; }
-    [ -n "$noop" ] || { echo "$1"; shift; continue; }
+    [ -n "$noop" ] && { echo "$1"; shift; continue; }
 
     cooked=()
 

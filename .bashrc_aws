@@ -129,7 +129,7 @@ function aws-session {
             local field; local -u key
             for field in "${!fields[@]}"; do
               key="${fields[$field]}"
-              declare -n nref=$key
+              local -n nref=$key
               nref=`jq -r .Credentials.$field <<< "$output"`
               [ ${write2creds:-0} -eq 1 ] &&
                     ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
