@@ -118,6 +118,8 @@ function aws-session {
     )
   case "$format" in
     text)   IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$output"
+
+            # NOTE:  AWS_SESSION_EXPIRE is ignored by 'aws configure set' and probably API(s) too
             [ ${write2creds:-0} -eq 1 ] &&
                 for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_{EXPIRE,TOKEN}; do
                   ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
