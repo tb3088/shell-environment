@@ -27,23 +27,35 @@ unset link
 #public-ipv4
 #}
 
+function aws-printenv { local v; for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
+alias aws-clearenv='unset ${!AWS_*}'
+
 function aws-profile {
   # NOTE: 'get *' does NOT follow source_profile nor fall-thru to 'default'.
 
   # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
-  local readonly _cmd="aws configure get region"
-  local readonly _profile="${1:?}"; shift
+  local readonly _profile="${1:-$AWS_PROFILE}"; shift
   local _region
 
   [ "$_profile" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
 
-  _region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE $_cmd --profile "$_profile" "$@" 2>/dev/null`
+  [ -n "$_profile" ] || {
+        local list=`awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf(" %s ", $2) }' \
+            ${AWS_CONFIG_FILE:-$HOME/.aws/config}`
+
+        read -t 10 -p "Choose profile ($list):  " || return
+        [ -n "$REPLY" ] && _profile="$REPLY" || return 1
+    }
+
+  [ "$_profile" = "$AWS_PROFILE" ] && return    #TODO do something useful
+
+  _region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE aws configure get region --profile "$_profile" 2>/dev/null`
   [ $? -eq 255 ] && {
         log_ERROR "unknown profile ($_profile)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
         return 255
     }
-  aws-rmPath
 
+  aws-rmPath
   AWS_PROFILE="$_profile"
   aws-addPath
   [ -n "$AWS_CONFIG_FILE" ] && {
@@ -56,29 +68,47 @@ function aws-profile {
 }
 
 function aws-session {
+  # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
+
   : ${AWS_PROFILE:?}
 
   local mfa=`aws configure get mfa_serial`
   [ $? -eq 255 ] && log_ERROR "unknown profile ($AWS_PROFILE)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
 
-  local -i duration=14400 write2creds=0
-  local OPTIND opt format=text      # TODO: support AWS_DEFAULT_OUTPUT?
-  while getopts 'jtW' opt; do
+  local -i duration token write2creds=0
+  local OPTIND opt output format='text'        # TODO: support AWS_DEFAULT_OUTPUT?
+  while getopts ':cjtW' opt 2>/dev/null; do
     case "$opt" in
-      j)    which jq &>/dev/null && format=json ;;
+      c|j)  which jq &>/dev/null || continue
+            ;;&
+      c)    local now=`date '+%s'`
+            for f in $HOME/.aws/cli/cache/*; do
+              [ "${f##*/}" = '*' -o ! -f "$f" ] || continue 2
+              expires=$(date --date `jq .Credentials.Expiration < "$f"` '+%s' 2>/dev/null)
+              [ $now -lt ${expires:-0} ] || { rm "$f"; continue; }
+              output=$(<"$f"); format=json
+              break
+            done
+            ;;
+      j)    format=json ;;
       t)    duration=$OPTARG ;;
       W)    # modify .aws/credentials (potentially DANGEROUS!)
             write2creds=1
             ;;
-      :)    RC=2 log_ERROR "missing argument (-$OPTARG)" ;;
-      \?)   RC=2 log_ERROR "invalid option (-$OPTARG)" ;;
-      *)    log_NOTICE "unhandled option (-$OPTARG)"
+      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      \?)   log_ERROR "invalid option '-$OPTARG'" ;&
+      h)    #TODO usage
+            return 2
     esac
   done
   shift $((OPTIND-1))
 
-  local output=`${DEBUG:+runv} aws sts get-session-token ${mfa:+ --serial-number $mfa ${1:+ --token-code $1}} \
-        --duration-seconds $duration --format $format` || return
+  token=$1; shift
+
+  [ -n "$output" ] || output=`${DEBUG:+runv} aws sts get-session-token \
+        ${mfa:+ --serial-number $mfa ${token:+ --token-code $token}} \
+        ${duration:+ --duration-seconds $duration} \
+        --output $format` || return
 
   local -A fields=(
         [AccessKeyId]=aws_access_key_id 
@@ -87,33 +117,26 @@ function aws-session {
         [Expiration]=aws_session_expire
     )
   case "$format" in
-    text)   IFS=$'\t' read -r header AWS_ACCESS_KEY_ID expires AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$output"
+    text)   IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$output"
+            [ ${write2creds:-0} -eq 1 ] &&
+                for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_{EXPIRE,TOKEN}; do
+                  ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
+                done
             ;;
-    json)   [ -z "${DEBUG}" ] || jq -MS .Credentials <<< "$output"
-            local field
-			local -u key
+    json)   [ -n "${DEBUG}" ] && jq -MS .Credentials <<< "$output"
+            local field; local -u key
             for field in "${!fields[@]}"; do
               key="${fields[$field]}"
               declare -n nref=$key
               nref=`jq -r .Credentials.$field <<< "$output"`
-
-#              [ ${write2creds:-0} -eq 1 ] && {
-#                    ${DEBUG:+ runv} aws configure set "$key" "${!key}"
-#                    unset ${k^^}
-#                }
+              [ ${write2creds:-0} -eq 1 ] &&
+                    ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
             done
-            [ -n "$VERBOSE" ] && `jq -r .AssumedRoleUser << "$output"`
+            [ -n "$VERBOSE" ] && `jq -r .AssumedRoleUser <<< "$output"`
             ;;
   esac
 
-  local v
-  for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; do
-    [ ${write2creds:-0} -eq 1 ] && {
-		${DEBUG:+ runv} aws configure set "${v,,}" "${!v}"
-		unset $v
-	  }
-    [ -n "$VERBOSE$DEBUG" ] && echo "$v=${!v}"
-  done
+  [ -n "${VERBOSE}${DEBUG}" ] && aws-printenv
   export ${!AWS_*}
 }
 
