@@ -69,6 +69,9 @@ function aws-profile {
 
 function aws-session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
+# AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined! 
+# if role_arn the get-session-token is implied and automatic. So look for role_arn
+# and invoke assume-role --role-arn <arn> --role-session-name $AWS_PROFILE/${#:role/}
 
   : ${AWS_PROFILE:?}
 
@@ -103,7 +106,7 @@ function aws-session {
   done
   shift $((OPTIND-1))
 
-  token=$1; shift
+  [ "${#1}" -eq 6 ] && { token=$1; shift; }
 
   [ -n "$output" ] || output=`${DEBUG:+runv} aws sts get-session-token \
         ${mfa:+ --serial-number $mfa ${token:+ --token-code $token}} \
