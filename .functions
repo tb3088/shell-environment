@@ -30,7 +30,7 @@ function convert_path() {
   local raw=() cooked=()
   local IFS OPTIND      # IMPORTANT !!
 
-  while getopts ":D:eEnpPt:" opt; do
+  while getopts ":D:eEnpPt:" opt 2>/dev/null; do
     case $opt in
       D)    delim="$OPTARG" ;;
       e)    escape=1 ;;
@@ -44,9 +44,7 @@ function convert_path() {
                     return
                 }
             ;;
-      :)    RC=2 log_ERROR "missing argument (-$OPTARG)"
-            return
-            ;;
+      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
       \?)   flags+=" -$OPTARG"
     esac
   done
@@ -54,13 +52,13 @@ function convert_path() {
 
   [ -z "$path" ] || { delim=':'; unset escape; }
 
-#FIXME preserve some functionality even in real Unix?
+#TODO? preserve some functionality even in real Unix
   [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && which cygpath &>/dev/null || noop=1
 
   while [ "${1+x}" ]; do
     # deal with empty option, rare but possible
     [ -n "$1" ] || { shift; continue; }
-    [ -z "$noop" ] || { echo "$1"; shift; continue; }
+    [ -n "$noop" ] || { echo "$1"; shift; continue; }
 
     cooked=()
 
@@ -251,7 +249,7 @@ function runv() {
   # mimic 'set -x'
 
   >&2 printf "%s %s\n" `printf '%.0s+' {1..$SHLVL}` "$*"
-  "$@"
+  [ -n "$NOOP" ] || "$@"
 }
 
 
@@ -350,7 +348,7 @@ function lstree() {
   local filter= type= reverse= flags=()
   local _find="find"    # alt: 'ls -R'
 
-  while getopts ":hdlL:P:x" opt; do
+  while getopts ":hdlL:P:x" opt 2>/dev/null; do
     case "$opt" in
       d)    flags+=('-type d') ;;
       l)    _find+=" -L" ;;
@@ -358,6 +356,8 @@ function lstree() {
       P)    flags+=("-name $OPTARG") ;;
       x)    flags+=('-xdev') ;;
 
+      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      \?)   RC=2 log_ERROR "unknown option '-$OPTARG'" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
   A simple imitation of tree(1) - http://mama.indstate.edu/users/ice/tree/tree.1.html
@@ -368,7 +368,7 @@ Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
   -P <pattern>  must escape any wildcards
   -x            stay on single filesystem
 _EOF
-            return 2
+            return ${RC:-2}
             ;;
     esac
   done
