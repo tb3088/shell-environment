@@ -9,7 +9,8 @@ which go &>/dev/null || {
             [ -x "$p/bin/go" ] && { addPath "$p/bin"; break; }
         done
     done
-    which go &>/dev/null || { unset v; return 0; }
+    unset -n v
+    which go &>/dev/null || return 0
 }
 
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
@@ -30,11 +31,11 @@ which go &>/dev/null || {
 #for v in GOPATH; do
 #    [ -d "$v/bin" ] && addPath "$v/bin"
 #done
+unset IFS
 
-unset v p IFS
-export ${!GO*}
-
-#NOTE Windows 'go get' doesn't work if using Cygwin 'git'
+#TODO Windows 'go get' doesn't work if using Cygwin 'git'
 # if OSTYPE=cygwin or uname -k = windows, then git version | grep windows or issue WARN
+
+export ${!GO*}
 
 # vim: expandtab:ts=4:sw=4
