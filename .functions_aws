@@ -61,13 +61,14 @@ function aws-session {
 # AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined! 
 # if role_arn the get-session-token is implied and automatic. So look for role_arn
 # and invoke assume-role --role-arn <arn> --role-session-name $AWS_PROFILE/${#:role/}
+# role session name must match expression pattern: [\w+=,.@-]*
 
   : ${AWS_PROFILE:?}
 
   local mfa=`aws configure get mfa_serial`
   [ $? -eq 255 ] && log_ERROR "unknown profile ($AWS_PROFILE)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
 
-  local -i duration token write2creds=0
+  local -i duration=${AWS_SESSION_EXPIRE:-3600} token write2creds=0
   local OPTIND opt output format='text'        # TODO: support AWS_DEFAULT_OUTPUT?
   while getopts ':cjtW' opt 2>/dev/null; do
     case "$opt" in

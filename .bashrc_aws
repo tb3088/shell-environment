@@ -15,4 +15,7 @@ link=`which aws_bash_completer 2>/dev/null`
     done
 unset link
 
+# assume-role session credentials expire in 1h (default)
+export AWS_SESSION_EXPIRE=$((3600 * 12))
+
 source ${BASH_SOURCE/bashrc/functions}
