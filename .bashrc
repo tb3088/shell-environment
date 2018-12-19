@@ -104,7 +104,6 @@ PS1="${PS_PREFIX}\n\! \$${RS} "
 #PROMPT_COMMAND="history -a"
 PROMPT_COMMAND=__prompt
 
-### Shell Options
 
 # Don't wait for job termination notification
 # set -o notify
@@ -123,7 +122,7 @@ shopt -s nocaseglob globstar
 # for example, cd /vr/lgo/apaache would find /var/log/apache
 shopt -s cdspell
 
-### History Options
+# History Options
 shopt -s histappend
 
 HISTCONTROL="erasedups ignorespace"
@@ -133,8 +132,10 @@ HISTTIMEFORMAT="%H:%M "
 # Ignore some controlling instructions
 HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 
+# don't search PATH for target of 'source'
+shopt -u sourcepath
 
-for f in "$HOME"/.{functions{,.local,_*},aliases{,.local,_*},bashrc{.local,_*}}; do
+for f in "$HOME"/.{functions{,.local},aliases{,.local},bashrc{.local,_*}}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
 

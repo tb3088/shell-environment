@@ -14,3 +14,5 @@ link=`which aws_bash_completer 2>/dev/null`
       $SUDO ln -s "$link" "$bc/bash_completion.d/"
     done
 unset link
+
+source ${BASH_SOURCE/bashrc/functions}
