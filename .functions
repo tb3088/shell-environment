@@ -400,6 +400,4 @@ function max() {
 #TODO
 # array functions; push, pop, delete, replace, truncate
 
-source ${BASH_SOURCE}_logging
-
 # vim: expandtab:ts=4:sw=4

@@ -1,0 +1,182 @@
+# $Id$
+
+#curl -s 'http://169.254.169.254/' && {
+#AWS_METADATA_URL='http://169.254.169.254/'
+#declare -A ec2_metadata=()
+#latest/meta-data/placement/availability-zone
+#ami-id
+#hostname
+#instance-id
+#instance-type
+#local-ipv4
+#public-ipv4
+#}
+
+#function is-aws
+#function aws-whoami or aws-metadata ${instance:-self}
+
+
+function aws-printenv { local v; for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
+alias aws-clearenv='unset ${!AWS_*}'
+
+function aws-profile {
+  # NOTE: 'get *' does NOT follow source_profile nor fall-thru to 'default'.
+
+  # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
+  local readonly _profile="${1:-$AWS_PROFILE}"; shift
+  local _region
+
+  [ "$_profile" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
+
+  [ -n "$_profile" ] || {
+        local list=`awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf(" %s ", $2) }' \
+            ${AWS_CONFIG_FILE:-$HOME/.aws/config}`
+
+        read -t 10 -p "Choose profile ($list):  " || return
+        [ -n "$REPLY" ] && _profile="$REPLY" || return 1
+    }
+
+  [ "$_profile" = "$AWS_PROFILE" ] && return    #TODO do something useful
+
+  _region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE aws configure get region --profile "$_profile" 2>/dev/null`
+  [ $? -eq 255 ] && {
+        log_ERROR "unknown profile ($_profile)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
+        return 255
+    }
+
+  aws-rmPath
+  AWS_PROFILE="$_profile"
+  aws-addPath
+  [ -n "$AWS_CONFIG_FILE" ] && {
+        local _creds="${AWS_CONFIG_FILE%/*}/credentials"
+        [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
+    }
+
+  export ${!AWS_*}
+  [ -n "${_region}${AWS_DEFAULT_REGION}" ] || log_WARN "Region is not set"
+}
+
+function aws-session {
+  # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
+# AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined! 
+# if role_arn the get-session-token is implied and automatic. So look for role_arn
+# and invoke assume-role --role-arn <arn> --role-session-name $AWS_PROFILE/${#:role/}
+
+  : ${AWS_PROFILE:?}
+
+  local mfa=`aws configure get mfa_serial`
+  [ $? -eq 255 ] && log_ERROR "unknown profile ($AWS_PROFILE)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
+
+  local -i duration token write2creds=0
+  local OPTIND opt output format='text'        # TODO: support AWS_DEFAULT_OUTPUT?
+  while getopts ':cjtW' opt 2>/dev/null; do
+    case "$opt" in
+      c|j)  which jq &>/dev/null || continue
+            ;;&
+      c)    local now=`date '+%s'`
+            for f in $HOME/.aws/cli/cache/*; do
+              [ "${f##*/}" = '*' -o ! -f "$f" ] || continue 2
+              expires=$(date --date `jq .Credentials.Expiration < "$f"` '+%s' 2>/dev/null)
+              [ $now -lt ${expires:-0} ] || { rm "$f"; continue; }
+              output=$(<"$f"); format=json
+              break
+            done
+            ;;
+      j)    format=json ;;
+      t)    duration=$OPTARG ;;
+      W)    # modify .aws/credentials (potentially DANGEROUS!)
+            write2creds=1
+            ;;
+      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      \?)   log_ERROR "invalid option '-$OPTARG'" ;&
+      h)    #TODO usage
+            return 2
+    esac
+  done
+  shift $((OPTIND-1))
+
+  [ "${#1}" -eq 6 ] && { token=$1; shift; }
+
+  [ -n "$output" ] || output=`${DEBUG:+runv} aws sts get-session-token \
+        ${mfa:+ --serial-number $mfa ${token:+ --token-code $token}} \
+        ${duration:+ --duration-seconds $duration} \
+        --output $format` || return
+
+  local -A fields=(
+        [AccessKeyId]=aws_access_key_id 
+        [SecretAccessKey]=aws_secret_access_key 
+        [SessionToken]=aws_session_token
+        [Expiration]=aws_session_expire
+    )
+  case "$format" in
+    text)   IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$output"
+
+            # NOTE:  AWS_SESSION_EXPIRE is ignored by 'aws configure set' and probably API(s) too
+            [ ${write2creds:-0} -eq 1 ] &&
+                for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_{EXPIRE,TOKEN}; do
+                  ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
+                done
+            ;;
+    json)   [ -n "${DEBUG}" ] && jq -MS .Credentials <<< "$output"
+            local field; local -u key
+            for field in "${!fields[@]}"; do
+              key="${fields[$field]}"
+              local -n nref=$key
+              nref=`jq -r .Credentials.$field <<< "$output"`
+              [ ${write2creds:-0} -eq 1 ] &&
+                    ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
+            done
+            [ -n "$VERBOSE" ] && `jq -r .AssumedRoleUser <<< "$output"`
+            ;;
+  esac
+
+  [ -n "${VERBOSE}${DEBUG}" ] && aws-printenv
+  export ${!AWS_*}
+}
+
+function aws-addPath {
+  local v f delete
+
+  for v in "$@" ${AWS_CONFIG_FILE:+`dirname "$AWS_CONFIG_FILE"`} \
+        "$HOME"/.{aws,ssh}/"${AWS_PROFILE:-default}"; do
+    [ -n "$v" -a -d "$v" ] || continue
+    [ "$v" = '.' ] && v=`pwd`
+
+    [ -n "$delete" ] && rmPath 'PATH' "$v"{/bin,} || addPath 'PATH' -"$v"/{,${AWS_PROFILE:-default}/}bin
+
+    if [ -n "$SSH_AUTH_SOCK" ]; then
+      for f in "$v"/{${AWS_PROFILE:-default}/,}{id_*,*.pem,*.pub}; do
+        ${DEBUG:+ runv} ssh-add ${delete:+ -d} "$f" &>/dev/null
+      done
+      ${VERBOSE:+ echo; ssh-add -l}
+    fi
+    break
+  done
+}
+
+
+function aws-rmPath {
+  delete=1 aws-addPath "$@"
+}
+
+
+function route53-export {
+  local zoneid=${1:?}
+
+  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zoneid" ||
+    zoneid=$( aws route53 list-hosted-zones --output=json |
+        jq -r ".HostedZones[] | select(.Name == \"$1\".) | .Id" |
+        cut -d'/' -f3
+    )
+
+  for zone in $zoneid; do
+    echo -e "; $zone\n"
+
+    #TODO use printf() with width
+    aws route53 list-resource-record-sets --hosted-zone-id=${zone:?} --output=json |
+        jq -jr '.ResourceRecordSets[] | "\(.Name) \t\(.TTL) \t\(.Type) \t\(.ResourceRecords[].Value)\n"'
+    echo -e "\n"
+  done
+}
+
+# vim: expandtab:ts=4:sw=2
