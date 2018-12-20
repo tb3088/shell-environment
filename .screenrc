@@ -16,7 +16,8 @@ defscrollback 1000
 termcapinfo xterm* cs
 
 # purpose???
-#termcapinfo xterm-*|rxvt*|kterm*|Eterm*|cygwin hs:ts=\E]0;:fs=\007:ds=\E]0;\007
+#termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin hs:ts=\E]0;:fs=\007:ds=\E]0;\007
+#termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin ti@:te@
 
 term screen-256color
 
@@ -53,12 +54,12 @@ bindkey -k k8 select 8	# F8
 escape ^Oo
 bindkey -k F1 command	# F11
 
-bindkey "^[[5;3~" copy	# ALT-PgUP to enter COPY mode (Cygwin)
-bindkey "^[[5~" copy	# ALT-PgUP (WSL)
-bindkey "^[-" copy	# ALT-minus
-bindkey "^[[6;3~" copy	# ALT-PgDN "" (Cygwin)
-bindkey "^[[6~" copy	# ALT-PgDN "" (WSL)
-bindkey "^[=" copy	# ALT-equals
+# ALT-minus/equals to enter COPY mode
+bindkey "^[-" copy
+bindkey "^[=" copy
+# PgUP/DN to scroll. ^b, ^f for entire pages
+bindkey "^[[5~" eval 'copy' 'stuff ^u'
+bindkey "^[[6~" eval 'copy' 'stuff ^d'
 
 
 # Set the altscreen so that when you quit vi, it will go back to
