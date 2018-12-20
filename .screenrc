@@ -53,8 +53,13 @@ bindkey -k k8 select 8	# F8
 escape ^Oo
 bindkey -k F1 command	# F11
 
-bindkey "^[[5;3~" copy	# ALT-PgUP to enter COPY mode
-bindkey "^[[6;3~" copy	# ALT-PgDN "" 
+bindkey "^[[5;3~" copy	# ALT-PgUP to enter COPY mode (Cygwin)
+bindkey "^[[5~" copy	# ALT-PgUP (WSL)
+bindkey "^[-" copy	# ALT-minus
+bindkey "^[[6;3~" copy	# ALT-PgDN "" (Cygwin)
+bindkey "^[[6~" copy	# ALT-PgDN "" (WSL)
+bindkey "^[=" copy	# ALT-equals
+
 
 # Set the altscreen so that when you quit vi, it will go back to
 # what it was before
