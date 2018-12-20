@@ -68,7 +68,7 @@ function aws-session {
   local mfa=`aws configure get mfa_serial`
   [ $? -eq 255 ] && log_ERROR "unknown profile ($AWS_PROFILE)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
 
-  local -i duration=${AWS_SESSION_EXPIRE:-3600} token write2creds=0
+  local -i duration=${AWS_SESSION_DURATION:-3600} token write2creds=0
   local OPTIND opt output format='text'        # TODO: support AWS_DEFAULT_OUTPUT?
   while getopts ':cjtW' opt 2>/dev/null; do
     case "$opt" in

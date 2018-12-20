@@ -79,7 +79,7 @@ if [ -n "$GIT_PROMPT" ]; then
   fi
 fi
 
-  [ -n "${!AWS_*}" ] && {
+  [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ] && {
         _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config%/*}; _config=${_config#.aws/}
         _prompt+="\n  ${UL}AWS:$RS ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}$RS"
     }
