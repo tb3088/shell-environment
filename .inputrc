@@ -56,7 +56,7 @@ $if Bash
   set mark-symlinked-directories on
 
   # Match all files
-  #set match-hidden-files on
+  set match-hidden-files on
 
   # 'Magic Space'
   # Insert a space character then performs

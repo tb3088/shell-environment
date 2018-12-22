@@ -109,7 +109,7 @@ PROMPT_COMMAND=__prompt
 # set -o notify
 
 # Don't use ^D to exit
-set -o ignoreeof
+set -o ignoreeof checkjobs
 
 # use VI mode on command-line (else emacs)
 # http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
@@ -120,10 +120,10 @@ shopt -s nocaseglob globstar
 
 # When changing directory small typos can be ignored by bash
 # for example, cd /vr/lgo/apaache would find /var/log/apache
-shopt -s cdspell
+shopt -s cdspell autocd
 
 # History Options
-shopt -s histappend
+shopt -s histappend histreedit no_empty_cmd_completion
 
 HISTCONTROL="erasedups ignorespace"
 HISTFILESIZE=100
@@ -138,7 +138,6 @@ shopt -u sourcepath
 for f in "$HOME"/.{functions{,.local},aliases{,.local},bashrc{.local,_*}}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
-
   source "$f" || echo "RC=$? in $f"
 done
 

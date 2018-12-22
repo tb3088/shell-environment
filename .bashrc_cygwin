@@ -73,7 +73,4 @@ fi
 #    done
 #  }
 
-# single-quotes for lazy evaluation
-alias downloads='cd "$USERPROFILE"/Downloads'
-
 # vim: expandtab:ts=4:sw=4

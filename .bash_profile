@@ -11,13 +11,13 @@ addPath PATH -"$HOME"/{.local/,}bin
 export PATH MANPATH
 export LANG='en_US.utf8'
 
-if [[ "$-" == *i* ]] || tty -s ; then
+if [[ "$-" == *i* ]] || tty -s; then
   if which ssh-agent &>/dev/null; then
     if [ -z "$SSH_AUTH_SOCK" ]; then
         eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
         trap "kill -9 $SSH_AGENT_PID" EXIT
     fi
-    [ -n "$SSH_AUTH_SOCK" ] && ssh-add ${DEBUG:- -q} "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
+    [ -n "$SSH_AUTH_SOCK" ] && ssh-add -q "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
 
     # CAC/PIF card support
     case ${OSTYPE:-`uname`} in
@@ -25,13 +25,15 @@ if [[ "$-" == *i* ]] || tty -s ; then
             : ${OPENSC_LIB:=/usr/lib/`uname -m`-linux-gnu/opensc-pkcs11.so} ;;
       cygwin|CYGWIN_*)
             # MSI doesn't allow tailoring path
-            : ${OPENSC_LIB:="`convert_path -p "$PROGRAMFILES"`/OpenSC Project/OpenSC/pkcs11/opensc-pkcs11.dll"} ;;
+            : ${OPENSC_LIB:=`convert_path "$PROGRAMFILES/OpenSC Project/OpenSC/pkcs11/opensc-pkcs11.dll"`} ;;
       [dD]arwin*)
             : ${OPENSC_LIB:=/usr/local/lib/opensc-pkcs11.so}
     esac
     if [ -f "$OPENSC_LIB" ]; then
-      export OPENSC_LIB
-      [ -n "$SSH_AUTH_SOCK" ] && ssh-add ${DEBUG:- -q} -s "$OPENSC_LIB"
+        export OPENSC_LIB
+        [ -n "$SSH_AUTH_SOCK" ] && ssh-add -qs "$OPENSC_LIB" 2>/dev/null
+    else
+        unset OPENSC_LIB
     fi
   fi
 fi

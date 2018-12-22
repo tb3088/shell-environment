@@ -27,11 +27,11 @@ which go &>/dev/null || {
   }
 
 # walk elements of GOPATH and add to $PATH
-#IFS="${PATHSEP:-:}"
+#IFS="${PATHSEP:?}"
 #for v in GOPATH; do
 #    [ -d "$v/bin" ] && addPath "$v/bin"
 #done
-unset IFS
+#unset IFS
 
 #TODO Windows 'go get' doesn't work if using Cygwin 'git'
 # if OSTYPE=cygwin or uname -k = windows, then git version | grep windows or issue WARN
