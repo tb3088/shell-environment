@@ -7,11 +7,9 @@
 #
 # symlink to this wrapper will automatically set PROFILE
 
-shopt -s nullglob extglob
-${ABORT:+set -e}
-${CONTINUE:+set +e}
-
 source ~/.functions
+shopt -s nullglob extglob
+
 
 case "${OSTYPE:-`uname`}" in
     [cC]ygwin|CYGWIN*) 
@@ -234,13 +232,13 @@ function init_logs() {
         }
         ;;&
     # IFF advanced logging (implemented separately)
-    3)  LOGMASK=DEBUG ;;
-    2)  LOGMASK=INFO ;;
-    1)  LOGMASK=NOTICE ;;
-    0|'') unset LOGMASK ;;     # defaults to >NOTICE
+    3)  LOG_MASK='DEBUG' ;;
+    2)  LOG_MASK='INFO' ;;
+    1)  LOG_MASK='NOTICE' ;;
+    0|'') unset LOG_MASK ;;     # defaults to >NOTICE
     *)  error "invalid level ($_level) from VERBOSE or DEBUG"
   esac
-  [ -n "$DEBUG" ] && LOGMASK=DEBUG
+  [ -n "$DEBUG" ] && LOG_MASK='DEBUG'
 }
 
 
