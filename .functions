@@ -1,5 +1,10 @@
-shopt -s extglob
+# $Id$
+
+shopt -s nullglob extglob
 [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && PATHSEP=';' || PATHSEP=':'
+
+${ABORT:+ set -eE}
+${CONTINUE:+ set +e}
 
 
 function is_windows() {
@@ -22,20 +27,20 @@ function convert_path() {
   # Also, cygpath only modifies the first occurance of /cygdrive or [A-Z]:
   # on any input argument and does not detect ';:' or any other delimiter.
   #
-  # Option '-p' assumes PATH and overrides delim=':' and unset escape.
+  # Option '-p' assumes PATH and overrides delim=':' and unsets escape.
 
 # any quoted '\ ' is not modified by cygpath forward or reverse
 # so if string starts with /cygdrive we need to remove any '\ ' first when going DOS/Win
 
-  local escape=1 path format flags noop delim=$PATHSEP
-  local raw=() cooked=()
-  local IFS OPTIND      # IMPORTANT !!
+  local format flags delim=${PATHSEP:?}
+  local -i path= noop= escape=1
+  local OPTIND
 
   while getopts ":D:eEnpPt:" opt 2>/dev/null; do
     case $opt in
       D)    delim="$OPTARG" ;;
       e)    escape=1 ;;
-      E)    unset escape ;;
+      E)    escape=0 ;;
       n)    noop=1 ;;
       p)    path=1 ;;
       P)    unset path ;;
@@ -51,53 +56,37 @@ function convert_path() {
   done
   shift $((OPTIND-1))
 
-  [ -z "$path" ] || { delim=':'; unset escape; }
+  [ $path -eq 1 ] && { delim=':'; escape=0; }
 
-#TODO? preserve some functionality even in real Unix
+  #TODO? preserve some functionality even in real Unix
   [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && which cygpath &>/dev/null || noop=1
 
+  local -a cooked=()
   while [ "${1+x}" ]; do
     # deal with empty option, rare but possible
     [ -n "$1" ] || { shift; continue; }
-    [ -n "$noop" ] && { echo "$1"; shift; continue; }
+    [ $noop -eq 1 ] && { echo "$1"; shift; continue; }
 
     cooked=()
 
-    # iterate thru line elements based on delim THEN remove escaped spaces 
-    IFS=$delim read -a raw <<< "$1"
+    # iterate thru line elements based on delim
+    # *stupid* Windows!
+    IFS=$delim read -a raw <<< "${1//\\/\\\\}"
+    local r p
     for r in "${raw[@]}"; do
-        log_DEBUG "input: $r"
-        p=`cygpath $format $flags -- "${r//\\ / }"`
-        log_DEBUG "output: $p"
-        [ -z "$escape" ] || { p="${p// /\\ }"; log_DEBUG "escaped: $p"; }
+        log_TRACE "input:  $r"
+        r="${r//\\ / }"             # remove escaped spaces
+        p=`cygpath $format $flags -- "$r"`
+        [ $escape -eq 1 ] && p="${p// /\\ }"
         cooked+=("$p")
+        log_TRACE "cooked: $p"
     done
-    IFS=$delim
-    echo "${cooked[*]}"
 
-#    #TODO escape both whitespace and '()'
-#    if [ -n "$path" ]; then
-#      p=`cygpath $format -p $flags -- "${1//\\ / }"`
-#      [ -n "$escape" ] && echo "${p// /\\ }" || echo "$p"
-###    else
-#      cooked=()
-#
-#      # iterate thru line elements based on delim THEN remove escaped spaces 
-#      IFS=$delim read -a raw <<< "$1"
-## 
-#      for r in "${raw[@]}"; do
-#        log_DEBUG "input: $r"
-#        p=`cygpath $format $flags -- "${r//\\ / }"`
-#        log_DEBUG "output: $p"
-#        [ -n "$escape" ] && { p="${p// /\\ }"; log_DEBUG "escaped: $p"; }
-#        cooked+=("$p")
-#      done
-#
-#      IFS=$delim; echo "${cooked[*]}"
-#    fi
-    shift 
+    # be paranoid with IFS
+    IFS=$delim; echo "${cooked[*]}"
+    unset IFS
+    shift
   done
-  unset r p
 }
 
 
@@ -110,16 +99,17 @@ function convert_path() {
 # otherwise have to feed it to AWK/SED for magic
 
 function contains() {
-  local delim method
-  local readonly source="${delim}${1}${delim}" 
-  local readonly sub="${delim}${2}${delim}"
+  local delim=${DELIM:-$PATHSEP} method=${METHOD}
+  local -r source="${delim}${1:?}${delim}"
+  local -r sub="${delim}${2:?}${delim}"
 
+  log_TRACE `grep --color "$sub" <<< "$source"`
   # empty string inside empty is valid
   case "$method" in
     grep)   grep -q "$sub" <<< "$source" ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
-#      'insensitive')
+#    insensitive)
 #            ;&
     *)      [[ "$source" == *$sub* ]]
   esac
@@ -132,52 +122,66 @@ function addPath() {
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`join_string $1 $2 $delim`
 
-  local k v flag prepend delim=$PATHSEP
+  local k v flag delim=${DELIM:-$PATHSEP}
+  local -i prepend=
   local readonly _prepend=$prepend
 
   [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
-  [[ "$k" =~ ^[A-Za-z] ]] || return 2
+  [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
+  local -n nref=$k
 
-  [ "$k" = 'PATH' ] && { delim=':'; flag="-p"; }
+  [ "$k" = 'PATH' ] && { delim=':'; flag='-p'; }
 
-  for v in "$@"; do
-    [ -n "$v" ] || continue
+  log_TRACE "before" "$nref"
+  while [ "${1+x}" ]; do
+    [ -n "$1" ] || continue
     prepend=$_prepend              # restore state
 
     # leading '-' means prepend
-    [ "${v:0:1}" = '-' ] && { prepend=1; v="${v:1}"; }
-
+    [ "${1:0:1}" = '-' ] && { prepend=1; v="${1:1}"; }
     v=`convert_path $flag "$v"`
-    # prevent duplicates
-    delim="$delim" contains "${!k}" "$v" && continue
+
+    # do *NOT* prefix with '${DEBUG:+ runv}'
+    DELIM="$delim" contains "$nref" "$v" && continue
 
     # embedded spaces/special chars require lazy evaluation
-    [ -n "$prepend" ] && { eval $k="$v${delim}\$$k"; } || eval $k+="${delim}$v"
+#    [ $prepend -eq 1 ] && { eval $k="$v${delim}\$$k"; } || eval $k+="${delim}$v"
+    [ $prepend -eq 1 ] && nref="$v${delim}${nref}" || nref+="${delim}$v"
+    shift
   done
+  log_TRACE "after" "$nref"
 }
 
 
 function rmPath() {
-  local k v delim=':'
-#  local IFS=${delim:=':'}
+  local k v delim=${DELIM:-$PATHSEP}
 
-  [ $# -eq 1 ] && k='PATH'
-  [ -n "$k" ] || { k="$1"; shift; }
-  [[ "$k" =~ ^[A-Za-z] ]] || return 2
+  [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
+  [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
+  local -n nref=$k
 
-  for v in "$@"; do
-    # curse you embeddd whitespace!
-    #FIXME this is stupid, use IFS=$delim to walk elements
-    #IFS=$delim
-    #for v in ${!k}; do newk+=($v); done
-    #eval $k="${newk[*]}" # IFS only works on arrays when '*'
+  [ "$k" = 'PATH' ] && delim=':'
 
-    eval $k=\"`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "${!k}"`\"
+  log_TRACE "before" "$nref"
+  while [ "${1+x}" ]; do
+    [ -n "$1" ] || continue
+
+    #alt: nref=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "$nref"`
+    nref=$(
+        IFS=$delim
+        read -ra items <<< "$nref"
+        for ((i=0; i < ${#items[@]}; i++)); do
+          [ "$1" = "${items[$i]}" ] && items[$i]=
+        done
+        echo "${items[*]}"
+    )
+    shift
   done
+  log_TRACE "after" "$nref"
 
   # trim dangling $delim
-  eval $k=\"\${$k/#${delim}}\"
-  eval $k=\"\${$k/%${delim}}\"
+#  eval $k=\"\${$k/#${delim}}\"
+#  eval $k=\"\${$k/%${delim}}\"
 }
 
 
@@ -204,23 +208,23 @@ function getcert() {
 
   output=`openssl s_client -connect ${host}:${port} </dev/null 2>/dev/null`
   if [ -n "$output" ]; then
-	gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
-	gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" | openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
+    gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
+    gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" | openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
   else 
-	return 1
+    return 1
   fi
 }
 
 
 function pause() {
-  [ $# -ne 0 ] && read -p "$*" || read -p 'Press [ENTER] to continue ...'
+  [ $# -eq 0 ] && read -p 'Press [ENTER] to continue ...' || read -p "$*"
 }
 
 
-function ask() { 
-  read -n 1 -t 30 -p 'Are you sure (y/N)? '
+function confirm() {
+  read -n 1 -t 15 -p 'Are you sure (y/N)? '
   echo
-  [ "${REPLY,,}" = 'y' ]
+  [[ "$REPLY" =~ [yY] ]]
 }
 
 
@@ -384,19 +388,31 @@ _EOF
 
 
 function min() {
-  local flag
+  local flag=() values=()
 
-  [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
-  printf "%s\n" "$@" | sort $flag | head -n 1
+  while [ ${1+x} ]; do
+    [[ $1 = -[a-zA-Z] ]] && flag+=($1) || {
+        IFS=' ' read -a v <<< "$1"
+        values+=( ${v[@]} )
+      }
+    shift
+  done
+  printf "%s\n" ${values[@]} | sort "${flag[@]}" | head -n 1
 }
 
 function max() {
-  local flag
-
-  [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
-  printf "%s\n" "$@" | sort $flag | tail -n 1
+  min -r "$@"
+#  local flag
+#
+#  [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
+#  printf "%s\n" "$@" | sort $flag | tail -n 1
 }
 
+function keys() { local -n nref=$1; echo "${!nref[@]}"; }
+
+function values() { local -n nref=$1; echo "${nref[@]}"; }
+
+function value() { local -n nref=$1; echo "${nref[${2:?}]}"; }
 
 #TODO
 # array functions; push, pop, delete, replace, truncate

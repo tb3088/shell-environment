@@ -1,5 +1,9 @@
-#LOG_TIMESTAMP=1                        # add timestamp to output
-#LOG_MASK='WARNING'
+# $Id
+
+#LOG_TIMESTAMP
+#LOG_LEVEL      # default = INFO
+#LOG_MASK       # default = WARN
+
 
 # reference https://code.woboq.org/gcc/include/sys/syslog.h.html
 # syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
@@ -7,16 +11,26 @@
 [ -n "${LOG_LEVELS[*]}" ] ||
 declare -A -rx LOG_LEVELS=(
     [EMERG]=0   [PANIC]=0
+    [0]='EMERG'
     [ALERT]=1
+    [1]='ALERT'
     [CRIT]=2    [CRITICAL]=2
+#    [FATAL]=2
+    [2]='CRIT'
     [ERR]=3     [ERROR]=3
+    [3]='ERROR'
     [WARN]=4    [WARNING]=4
+    [4]='WARN'
     [NOTICE]=5
+    [5]='NOTICE'
     [INFO]=6
+    [6]='INFO'
     [DEBUG]=7
+    [7]='DEBUG'
     # Java'ish extensions
-#   [TRACE]=8 [FINE]=8
-#   [FINEST]=9
+    [TRACE]=8   [FINE]=8
+    [8]='TRACE'
+#    [FINEST]=9
 )
 
 [ -n "${LOG_FACILITIES[*]}" ] ||
@@ -25,74 +39,141 @@ declare -a -rx LOG_FACILITIES=(
 )
 
 
+#TODO function __log_verbose __log_debug() {
+#  local _level=${VERBOSE:=$DEBUG}
+# DEBUG>1 will lower LOG_MASK into TRACE
+# call this individually for DEBUG and VERBOSE
+#
+#  case "$_level" in
+#    -*) ;;  # ignore like '-v -d'
+#
+#    [4-9])  VERBOSE=3 ;&
+#    [1-3])
+#            [ -n "$DEBUG" ] || : $((_level--))
+#            [ $_level -eq 0 ] || 
+#_VERBOSE="-`printf -- '%.0sv' {1..$_level}`"
+#        }
+#        ;;&
+#    3)  LOG_MASK='DEBUG' ;;
+#    2)  LOG_MASK='INFO' ;;
+#    1)  LOG_MASK='NOTICE' ;;
+#    0|'') unset LOG_MASK ;;     # defaults to >NOTICE
+#    *)  error "invalid level ($_level) from VERBOSE or DEBUG"
+#  esac
+#  [ -n "$DEBUG" ] && LOG_MASK='DEBUG'
+#}
+
+
 function __log_exit() {
+  local rc=${RC:-$?}
   >&2 log "$@"
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
         [[ `/bin/ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
-    return ${RC:-1}
+    return $rc
   fi
-  exit ${RC:-1}
+  exit $rc
 }
 
 for k in "${!LOG_LEVELS[@]}"; do
+  [[ $k == [0-9] ]] && continue
   declare -F "log_$k" >/dev/null && continue
 
   case "${LOG_LEVELS[$k]}" in
     [0-3])  copy_function __log_exit "log_$k" ;;
-    4)      eval function log_$k '{ >&2 log "$@"; }' ;;
-    [5-7])  eval function log_$k '{ log "$@"; }' ;;
+    [4-8])  eval function log_$k '{ >&2 log "$@"; }' ;;
   esac
-  readonly -f log_$k
 
-  # define legacy function names
+  # legacy functions
   copy_function "log_$k" "${k,,}"
 done
 unset k
-unset -f __log_exit
+#unset -f __log_exit
+
+
+function log_level {
+  # returns numeric value only
+  local -u key=${1:-x}
+
+  local result="${LOG_LEVELS[$key]}"
+  [[ $result == [0-9] ]] && echo "$result" || return 1
+}
 
 
 declare -F log >/dev/null ||
 function log() {
-  local ts=`date '+%Y-%m-%dT%H:%M:%S'`
-  local format=('%-5s' "\t%s")
-  local _line fo=1                      # FUNCNAME[0] will always be 'log()'
-  declare -u fn level mask=$LOG_MASK
+  local -r ts=`date '+%Y-%m-%dT%H:%M:%S'`
+  local format=('%-5s' '\t%s')
 
-  # legacy style    # log <LEVEL> "msg"
-  if [ -n "$1" -a "${LOG_LEVELS[${1^^}]}" ]; then
-    level=$1; shift
-  elif [ "${LOG_LEVELS[${level:-x}]}" ]; then
-    :               # level=<LEVEL> log "msg"
+  local -A default=([level]=`log_level 'INFO'` [mask]=`log_level 'WARN'`)
+  local -i level=`log_level $LOG_LEVEL`
+  local -i mask=`log_level $LOG_MASK`
+  local -i fo=1 _level
+
+  # legacy style
+  if [ `log_level "$1"` ]; then
+    level=`log_level "$1"`      # log <LEVEL> "msg"
+    shift;
+  elif [ `log_level $LEVEL` ]; then
+    level=`log_level $LEVEL`    # LEVEL=<LEVEL> log "msg"
   else
-    unset level
+    declare -u fn               # level() "msg"
     fn="${FUNCNAME[1]}"; fn="${fn#LOG_}"
-    [ -n "${LOG_LEVELS[${fn:-x}]}" ] && { level="$fn"; fo=2; }
+    if [ `log_level $fn` ]; then
+      level=`log_level $fn`
+      fo=2
+    fi
   fi
 
   # set mask on externalities
-  [ -n "$VERBOSE" ] && mask='INFO'
-  [ -n "$DEBUG" ]   && mask='DEBUG'
+  [ ${VERBOSE:-0} -ne 0 ] && mask=`log_level 'INFO'`
+  [ ${DEBUG:-0} -ne 0 ]   && mask=$((`log_level 'DEBUG'` + $DEBUG - 1))
 
   # sanity check
-  [ -n "${LOG_LEVELS[${level:-x}]}" ] || level='INFO'
-  [ -n "${LOG_LEVELS[${mask:-x}]}" ]  || mask='WARNING'
+  [ ${level:- -1} -ge 0 ] || level=$default['level']
+  [ ${mask:- -1}  -ge 0 ] || mask=$default['mask']
 
   # squelch messages below mask
-  [ ${LOG_LEVELS[$level]} -le ${LOG_LEVELS[$mask]} ] || return 0
+  [ $level -le $mask ] || return 0
 
-  #TODO if LOG_STACKTRACE print entire stack with x...y...z
-  [ -n "${LOG_STACKTRACE}${DEBUG}" -a -n "${BASH_SOURCE[$fo]}" ] &&
-        format+=" [${BASH_SOURCE[$fo]}/${FUNCNAME[$fo]}]"
+#  # legacy
+#  if [ -n "$1" -a "${LOG_LEVELS[${1^^}]}" ]; then
+#    level=$1; shift     # log <LEVEL> "msg"
+#
+#  elif [ "${LOG_LEVELS[${level:-x}]}" ]; then
+#    :                   # LEVEL=<LEVEL> log "msg"
+#  else
+#    unset level
+#    fn="${FUNCNAME[1]}"; fn="${fn#LOG_}"
+#    [ -n "${LOG_LEVELS[${fn:-x}]}" ] && { level="$fn"; fo=2; }
+#  fi
+#
+#  # set mask on externalities
+#  [ $VERBOSE -ne 0 ] && mask=${LOG_LEVELS['INFO']}
+#  [ $DEBUG -ne 0 ]   && mask=${LOG_LEVELS['DEBUG']}
+#
+#  # sanity check
+#  [ -n "${LOG_LEVELS[${level:-x}]}" ] || level='INFO'
+#  [ -n "${LOG_LEVELS[${mask:-x}]}" ]  || mask='WARNING'
+#
+#  # squelch messages below mask
+#  [ ${LOG_LEVELS[$level]} -le ${LOG_LEVELS[$mask]} ] || return 0
+#
+#  [ -n "${LOG_TRACE}" -a -n "${BASH_SOURCE[$fo]}" ] && {
+#        IFS='*'
+#        format+=" [${BASH_SOURCE[$fo]}/${FUNCNAME[@]:$fo:$DEBUG}]"
+#        unset IFS
+#    }
 
+  local line level_name="${LOG_LEVELS[$level]}"
   # empty arg is wierd but tolerated
   while [ "${1+x}" ]; do
-    printf -v _line "${LOG_TIMESTAMP:+$ts }${format[*]}" $level "$1"
-    _line=`echo -e "$_line"`
-    tee -a $LOGFILE <<< "$_line"
-    [ -n "$SYSLOG" ] && ${LOGGER:-logger --priority user.${level,,}} -- "$_line"
+    printf -v line "${LOG_TIMESTAMP:+$ts} ${format[*]}" $level_name "$1"
+    line=`echo -e "$line"`            # primitive escape sequences
+    tee -a $LOGFILE <<< "$line"
+    [ -n "$SYSLOG" ] && ${LOGGER:-logger --priority user.${level_name,,}} -- "$line"
     shift
   done
 }
-readonly -f log
+#readonly -f log{_*}
 
 # vim: expandtab:ts=4:sw=4

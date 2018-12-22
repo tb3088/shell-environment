@@ -1,5 +1,23 @@
 # $Id$
 
+declare -A __aws_session=(
+    [AccessKeyId]=aws_access_key_id
+    [SecretAccessKey]=aws_secret_access_key
+    [SessionToken]=aws_session_token
+    [Expiration]=aws_session_expire
+)
+
+alias aws-clearenv='unset ${!AWS_*}'
+
+function aws-printenv {
+  local v
+  for v in ${!AWS_*}; do echo "$v=${!v}"; done
+}
+
+
+#function is-aws
+
+#function aws-whoami or aws-metadata ${instance:-self}
 #curl -s 'http://169.254.169.254/' && {
 #AWS_METADATA_URL='http://169.254.169.254/'
 #declare -A ec2_metadata=()
@@ -10,82 +28,139 @@
 #instance-type
 #local-ipv4
 #public-ipv4
-#}
 
-#function is-aws
-#function aws-whoami or aws-metadata ${instance:-self}
-
-
-function aws-printenv { local v; for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
-alias aws-clearenv='unset ${!AWS_*}'
 
 function aws-profile {
-  # NOTE: 'get *' does NOT follow source_profile nor fall-thru to 'default'.
+  # NOTE 'aws configure get' does NOT follow 'source_profile'
+  #  nor fall-thru to 'default' unless profile is ''.
 
-  # set AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE to influence AWS Tools
-  local readonly _profile="${1:-$AWS_PROFILE}"; shift
-  local _region
+  [ "$1" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
+  local v
+  for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
+    if [ -n "${!v}" ]; then
+      [ -f "${!v}" ] || { log_ERROR "invalid $v (${!v})"; return; }
+    fi
+  done
 
-  [ "$_profile" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
-
-  [ -n "$_profile" ] || {
+  local profile="$1"; shift
+  [ -n "$profile" ] || {
         local list=`awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf(" %s ", $2) }' \
             ${AWS_CONFIG_FILE:-$HOME/.aws/config}`
 
         read -t 10 -p "Choose profile ($list):  " || return
-        [ -n "$REPLY" ] && _profile="$REPLY" || return 1
+        [ -n "$REPLY" ] && profile="$REPLY" || return
     }
+  [ "$profile" != "$AWS_PROFILE" ] || return 0
 
-  [ "$_profile" = "$AWS_PROFILE" ] && return    #TODO do something useful
+  # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
+  # stacktrace on empty values of AWS_PROFILE.
 
-  _region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE aws configure get region --profile "$_profile" 2>/dev/null`
-  [ $? -eq 255 ] && {
-        log_ERROR "unknown profile ($_profile)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
-        return 255
-    }
+  local _aws_config="${AWS_CONFIG_FILE:+ in ${AWS_CONFIG_FILE/$HOME/\~}}"
+  local region
+  region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE aws configure get region --profile "$profile" 2> >(tail -n 1)`
+  if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
+    log_ERROR "unknown profile ($profile)$_aws_config"
+    return
+  fi
 
-  aws-rmPath
-  AWS_PROFILE="$_profile"
+  aws-rmPath    # cleanup previous environment
+
+  AWS_PROFILE="$profile"
   aws-addPath
-  [ -n "$AWS_CONFIG_FILE" ] && {
-        local _creds="${AWS_CONFIG_FILE%/*}/credentials"
-        [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
-    }
+  if [ -n "$AWS_CONFIG_FILE" ]; then
+    local _creds="${AWS_CONFIG_FILE%/*}/credentials"
+    [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
+  fi
 
   export ${!AWS_*}
-  [ -n "${_region}${AWS_DEFAULT_REGION}" ] || log_WARN "Region is not set"
+  [ -n "${region}${AWS_DEFAULT_REGION}" ] || log_WARN "property 'region' for profile ($profile)$_aws_config or env:AWS_DEFAULT_REGION is not set"
+}
+
+function aws-load_session {
+  local format=${FORMAT:-'text'}
+  local input="${1:?}"
+
+  [ "${input:0:1}" = '{' ] && format='json' || {
+        [ -f "$1" ] && input=(<("$f"))
+    }
+
+  case "$format" in
+    text)   local header rest
+            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
+                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
+            ;;
+    json)   local key
+            local -u value
+            [ -n "${DEBUG}" ] && jq -MS .Credentials <<< "$input"
+#            for key in "${!__aws_session[@]}"; do
+#              value="${__aws_session[$key]}"
+#              local -n nref=$value
+            for key in `keys __aws_session`; do
+              value=`value __aws_session $key`
+              local -n nref=$value
+              nref=`jq -r .Credentials.$key <<< "$input"`
+            done
+            [ -n "$VERBOSE" ] && `jq -r .AssumedRoleUser <<< "$input"`
+            ;;
+    *)      log_ERROR "unsupported format ($format)"
+  esac
+}
+
+function aws-save_session {
+    local field
+    local -u key
+
+    for field in "${!__aws_session[@]}"; do
+      key="${__aws_session[$field]}"
+      ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
+    done
 }
 
 function aws-session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
 # AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined! 
-# if role_arn the get-session-token is implied and automatic. So look for role_arn
-# and invoke assume-role --role-arn <arn> --role-session-name $AWS_PROFILE/${#:role/}
-# role session name must match expression pattern: [\w+=,.@-]*
 
-  : ${AWS_PROFILE:?}
+  aws-profile "${AWS_PROFILE:-$1}" || return
+  [ "$1" != "$AWS_PROFILE" ] || shift
 
+  local -i token
+  if [ -n "$1" ]; then
+    [[ "$1" =~ [0-9]{6,} ]] && token=$1 || log_WARN "malformed TOTP token ($1)"
+    shift
+  fi
+
+  # 'aws configure get' of non-existent key is silent
   local mfa=`aws configure get mfa_serial`
-  [ $? -eq 255 ] && log_ERROR "unknown profile ($AWS_PROFILE)${AWS_CONFIG_FILE:+ in $AWS_CONFIG_FILE}"
+  if [ $? -eq 255 ]; then       # not reached
+    log_PANIC "unknown profile ($AWS_PROFILE) ${AWS_CONFIG_FILE:+in $AWS_CONFIG_FILE}"
+    return
+  fi
 
-  local -i duration=${AWS_SESSION_DURATION:-3600} token write2creds=0
-  local OPTIND opt output format='text'        # TODO: support AWS_DEFAULT_OUTPUT?
-  while getopts ':cjtW' opt 2>/dev/null; do
+  local -ir now=`date '+%s'`
+  local -i duration=${AWS_SESSION_DURATION:-3600} write2creds= force=
+  local cmd output role
+
+  local OPTIND opt
+  while getopts ':cfr:tW' opt 2>/dev/null; do
     case "$opt" in
-      c|j)  which jq &>/dev/null || continue
+      c)    which jq &>/dev/null || {
+                log_WARN "'jq' not found. skipping option (-$opt) ..."
+                continue
+            }
             ;;&
-      c)    local now=`date '+%s'`
-            for f in $HOME/.aws/cli/cache/*; do
-              [ "${f##*/}" = '*' -o ! -f "$f" ] || continue 2
-              expires=$(date --date `jq .Credentials.Expiration < "$f"` '+%s' 2>/dev/null)
+      c)    for f in $HOME/.aws/cli/cache/*; do
+              [ -f "$f" ] || continue
+              expires=$(date --date `jq .Credentials.Expiration < "$f"` '+%s') 2>/dev/null
               [ $now -lt ${expires:-0} ] || { rm "$f"; continue; }
-              output=$(<"$f"); format=json
+
+              output=(<("$f"))
               break
             done
             ;;
-      j)    format=json ;;
+      f)    force=1 ;;
+      r)    role="$OPTARG" ;;
       t)    duration=$OPTARG ;;
-      W)    # modify .aws/credentials (potentially DANGEROUS!)
+      W)    # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
             write2creds=1
             ;;
       :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
@@ -96,79 +171,73 @@ function aws-session {
   done
   shift $((OPTIND-1))
 
-  [ "${#1}" -eq 6 ] && { token=$1; shift; }
+  # 'role-session-name' pattern is [\w+=,.@-]*
+  [ -n "${role:=`aws configure get role_arn`}" ] &&
+        cmd="assume-role --role-arn $role --role-session-name '${role#:role/}@$AWS_PROFILE-$$'" ||
+        cmd='get-session-token'
 
-  [ -n "$output" ] || output=`${DEBUG:+runv} aws sts get-session-token \
-        ${mfa:+ --serial-number $mfa ${token:+ --token-code $token}} \
-        ${duration:+ --duration-seconds $duration} \
-        --output $format` || return
+  if [ -z "$output" -o $force -eq 1 ]; then
+    output=$(
+        local field
+        local -u key
+        for field in "${!__aws_session[@]}"; do
+          key="${__aws_session[$field]}"
+          unset $key
+        done
 
-  local -A fields=(
-        [AccessKeyId]=aws_access_key_id 
-        [SecretAccessKey]=aws_secret_access_key 
-        [SessionToken]=aws_session_token
-        [Expiration]=aws_session_expire
-    )
-  case "$format" in
-    text)   IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$output"
+        ${DEBUG:+ runv} aws sts $cmd \
+            ${mfa:+ --serial-number $mfa ${token:+ --token-code $token}} \
+            ${duration:+ --duration-seconds $duration} \
+            --output text
+    ) || return
+  fi
 
-            # NOTE:  AWS_SESSION_EXPIRE is ignored by 'aws configure set' and probably API(s) too
-            [ ${write2creds:-0} -eq 1 ] &&
-                for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_{EXPIRE,TOKEN}; do
-                  ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
-                done
-            ;;
-    json)   [ -n "${DEBUG}" ] && jq -MS .Credentials <<< "$output"
-            local field; local -u key
-            for field in "${!fields[@]}"; do
-              key="${fields[$field]}"
-              local -n nref=$key
-              nref=`jq -r .Credentials.$field <<< "$output"`
-              [ ${write2creds:-0} -eq 1 ] &&
-                    ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
-            done
-            [ -n "$VERBOSE" ] && `jq -r .AssumedRoleUser <<< "$output"`
-            ;;
-  esac
+  aws-load_session "$output"
+  [ $write2creds -eq 1 ] && aws-save_session
 
-  [ -n "${VERBOSE}${DEBUG}" ] && aws-printenv
+  [ -z "${VERBOSE}${DEBUG}" ] || aws-printenv
   export ${!AWS_*}
 }
 
+
 function aws-addPath {
-  local v f delete
+  local v f
+  local -i delete=${DELETE:-0}
 
   for v in "$@" ${AWS_CONFIG_FILE:+`dirname "$AWS_CONFIG_FILE"`} \
-        "$HOME"/.{aws,ssh}/"${AWS_PROFILE:-default}"; do
+        `echo ${AWS_PROFILE:+"$HOME"/.{aws,ssh}}`; do
     [ -n "$v" -a -d "$v" ] || continue
     [ "$v" = '.' ] && v=`pwd`
 
-    [ -n "$delete" ] && rmPath 'PATH' "$v"{/bin,} || addPath 'PATH' -"$v"/{,${AWS_PROFILE:-default}/}bin
+    if [ $delete -eq 1 ]; then
+      ${DEBUG:+ runv} rmPath 'PATH' `eval echo "$v"${AWS_PROFILE:+{,/$AWS_PROFILE}}{,/bin}`
+    else
+      ${DEBUG:+ runv} addPath 'PATH' `eval echo -"$v"${AWS_PROFILE:+{,/$AWS_PROFILE}}{,/bin}`
+    fi
 
     if [ -n "$SSH_AUTH_SOCK" ]; then
-      for f in "$v"/{${AWS_PROFILE:-default}/,}{id_*,*.pem,*.pub}; do
+      for f in "$v"/{$AWS_PROFILE/,}{id_*,*.pem,*.pub}; do
+        [ -f "$f" ] || continue
         ${DEBUG:+ runv} ssh-add ${delete:+ -d} "$f" &>/dev/null
       done
-      ${VERBOSE:+ echo; ssh-add -l}
+
+      [ -n "$VERBOSE" ] && { echo; ssh-add -l; }
     fi
-    break
   done
 }
 
-
 function aws-rmPath {
-  delete=1 aws-addPath "$@"
+  DELETE=1 aws-addPath "$@"
 }
 
-
 function route53-export {
+  which jq &>/dev/null || { log_ERROR "'jq' not installed"; return; }
   local zoneid=${1:?}
 
   grep -qE '([A-Z]|[0-9]){12,}' <<< "$zoneid" ||
-    zoneid=$( aws route53 list-hosted-zones --output=json |
-        jq -r ".HostedZones[] | select(.Name == \"$1\".) | .Id" |
-        cut -d'/' -f3
-    )
+        zoneid=$(aws route53 list-hosted-zones --output=json |
+            jq -r ".HostedZones[] | select(.Name == \"$1\".) | .Id" |
+            cut -d'/' -f3)
 
   for zone in $zoneid; do
     echo -e "; $zone\n"
