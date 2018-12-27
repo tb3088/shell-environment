@@ -40,6 +40,8 @@ go
 *.rdp
 *_history
 *log
+*.stackdump
+*.core
 *~
 mercurial.ini
 
@@ -50,6 +52,8 @@ Dropbox
 logs/
 OpenVPN/
 .WINHOME
+.CYGHOME
+
 
 # Windows-specific
 3D\ Objects
