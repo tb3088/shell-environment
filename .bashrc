@@ -153,18 +153,12 @@ for f in "$HOME"/.functions{,_${OSTYPE:-`uname`},.local}; do
 done
 unset f
 
-echo "IFS after functions."
-cat -etv <<<"$IFS"
-
 for f in "$HOME"/.{aliases{,.local},bashrc{.local,_*}}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? in $f"
 done
 unset f
-
-echo "IFS after aliases and bashrc_*."
-cat -etv <<<"$IFS"
 
 addPath PATH -"$HOME"/{,.local/}bin
 

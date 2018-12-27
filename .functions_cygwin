@@ -14,8 +14,8 @@ function convert_path() {
   # cygpath only modifies the first occurance of '/cygdrive' or '[A-Z]:'
   # unless '-p' but delimiter must match input (';' for Windows, ':' for Unix)
 
-  local format delim flags=()
-  local -i path=0 noop=0 escape
+  local format flags=()
+  local -i noop=0 escape
   local OPTIND
 
   while getopts ":eEnt:" opt; do
@@ -35,24 +35,15 @@ function convert_path() {
   done
   shift $((OPTIND-1))
 
-  #XXX : ${delim=${PATHSEP:?}}
   : ${escape:=1}
 
-  local r p
-#  while [ "${1+x}" ]; do
-#    # empty arg, rare but possible
-#    [ -n "$1" ] || { shift; continue; }
-#    [ $noop -eq 1 ] && { echo "$1"; shift; continue; }
+  local p
   [ -n "$1" ] || return 0
-    # damn Windows!
-    # r="${1//\\/\\\\}" only needed if using read()
-    log_TRACE "raw:    '$1'"
-    # r="${1//\\ / }"             # remove escaped spaces
-    p=`cygpath -p $format ${flags[@]} -- "${1//\\ / }"`
-    log_TRACE "cooked: '$p'"
-    [ $escape -eq 1 ] && echo "${p// /\\ }" || echo "$p"
-#    shift
-#  done
+  log_TRACE "raw:    '$1'"
+  # damn Windows! unescape whitespace
+  p=`cygpath -p $format ${flags[@]} -- "${1//\\ / }"`
+  log_TRACE "cooked: '$p'"
+  [ $escape -eq 1 ] && echo "${p// /\\ }" || echo "$p"
 }
 readonly -f convert_path
 
@@ -117,5 +108,5 @@ readonly -f is_windows
 
 # TODO use procps
 # function pidof() {
-    # ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+#    ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 # }

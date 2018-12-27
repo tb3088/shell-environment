@@ -16,9 +16,6 @@ if [[ "$-" == *i* ]] || tty -s; then
   [ -n "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
 fi
 
-echo "IFS before anything. "
-cat -etv <<<"$IFS"
-
 for f in "$HOME"/.{bash_profile.local,bashrc}; do
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? in $f"

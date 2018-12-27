@@ -119,7 +119,7 @@ function aws-save_session {
 
 function aws-session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
-# AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined! 
+  #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined! 
 
   aws-profile "${AWS_PROFILE:-$1}" || return
   [ "$1" != "$AWS_PROFILE" ] || shift
@@ -149,12 +149,13 @@ function aws-session {
                 continue
             }
             ;;&
-      c)    for f in $HOME/.aws/cli/cache/*; do
+            #FIXME figure out why not firing
+      c)    for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
               expires=$(date --date `jq -r .Credentials.Expiration "$f"` '+%s')
               [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
 
-              output="$( <$f )"
+              output="$( <"$f" )"
               break
             done
             ;;
@@ -173,17 +174,20 @@ function aws-session {
   shift $((OPTIND-1))
 
   # 'role-session-name' pattern is [\w+=,.@-]*
-  [ -n "${role:=`aws configure get role_arn`}" ] && {
-        local session_name="${role#:role/}@$AWS_PROFILE-$$"
-        session_name="${session_name: -45}"
-        cmd="assume-role --role-arn $role --role-session-name $session_name"
-      } ||
-        cmd='get-session-token'
+  if [ -n "${role:=`aws configure get role_arn`}" ]; then
+    local session_name="${role#:role/}@$AWS_PROFILE-$$"
+    session_name="${session_name: -45}"
+    cmd="assume-role --role-arn $role --role-session-name $session_name"
+  else
+    cmd='get-session-token'
+  fi
 
   if [ -z "$output" -o $force -eq 1 ]; then
     output=$(
         local field
         local -u key
+#FIXME confirm safe to toss all?
+# use same pattern as aws-load_session with 'keys' and 'values'
         for field in "${!__aws_session[@]}"; do
           key="${__aws_session[$field]}"
           unset $key
@@ -193,8 +197,9 @@ function aws-session {
             ${mfa:+ --serial-number $mfa ${token:+ --token-code $token}} \
             ${duration:+ --duration-seconds $duration} \
             --output text
-    ) || return
+    ) || return     #FIXME why did it error? test for -n "$output" instead?
   fi
+#  [ -n "$output" ] || return
 
   aws-load_session "$output"
   [ $write2creds -eq 1 ] && aws-save_session

@@ -8,6 +8,7 @@ function is_windows() { false; }
 
 declare -F convert_path >/dev/null ||
 function convert_path() {
+  # skeleton, do-nothing but Echo
   local OPTIND
   while getopts ":eEnt:" opt; do
     :
@@ -31,6 +32,7 @@ declare -F contains >/dev/null ||
 function contains() {
   local delim method
   : ${delim=${PATHSEP:?}}
+
   local -r source="${delim}${1:?}${delim}"
   local -r sub="${delim}${2:?}${delim}"
 
@@ -77,12 +79,9 @@ function addPath() {
     # do *NOT* prefix with '${DEBUG:+ runv}'
     v=`convert_path ${flags[@]} "$v"`
     delim="$delim" contains "$nref" "$v" || {   # pedant
-        [ $prepend -eq 1 ] && nref="$v${delim}$nref" || nref+="${delim}$v"
+        [ $prepend -eq 1 ] && nref="$v${delim}${nref}" || nref+="${delim}$v"
       }
 
-    # embedded spaces/special chars require lazy evaluation
-#    [ $prepend -eq 1 ] && { eval $k="$v${delim}\$$k"; } || eval $k+="${delim}$v"
-    # [ $prepend -eq 1 ] && nref="$v${delim}${nref}" || nref+="${delim}$v"
     shift
   done
   #TODO strip double $delim
@@ -108,7 +107,6 @@ function rmPath() {
     #alt: nref=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "$nref"`
     nref=$(
         IFS=$delim
-		>&2 cat -etv <<<"$IFS"
         read -ra items <<< "$nref"
         for i in ${!items[@]}; do
           [ "${items[i]}" = "$1" ] && unset 'items[i]'
