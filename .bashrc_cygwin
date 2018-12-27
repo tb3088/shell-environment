@@ -1,61 +1,12 @@
-# $Id$
+[[ ${OSTYPE:-`uname -o`} == [cC]ygwin ]] || return 0
 
-case ${OSTYPE:-`uname -o`} in
-  [cC]ygwin)
-        ;;
-  *)    return 0
-esac
+f="${BASH_SOURCE/bashrc/functions}"
+[ -f "$f" ] && { source "$f" || echo >&2 "RC=$? in $f"; }
 
 #Ref: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
-contains "${CYGWIN:-XX}" "winsymlinks" || export CYGWIN+=" winsymlinks:lnk"
-export PATHSEP=';'
+delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=" winsymlinks:lnk"
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
-
-function sudo() {
-  local opt who cmd line env shell flags preserve=''
-  #FIXME local -A env
-  #FIXME local -a flags
-  local OPTIND opt      # important!!
-
-  while getopts ':ieEu:X' opt 2>/dev/null; do
-    case "$opt" in
-      i)    initial=1; unset preserve ;;
-      e)    cmd=`which ${EDITOR:-vi} 2>/dev/null` || {
-                log_ERROR "invalid EDITOR (${EDITOR:-vi})"
-                return
-              }
-            ;;
-      E)    preserve='' ;;
-      u)    who=$OPTARG ;;
-      X)    exec=1 ;;
-      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
-      \?)   flags+=" -$OPTARG"
-    esac
-  done
-  shift $((OPTIND-1))
-
-  : ${who:?missing argument \'-u USER\'}
-  line=`getent passwd $who || grep -s "^${who}:" /etc/passwd` || {
-        log_ERROR "unknown USER ($who)"
-        return
-    }
-
-  env=`awk -F: '{ printf("USER=%s USERNAME=%s HOME=%s UID=%s", $1, $1, $(NF-1), $3) }' <<< "$line"`
-  # preserve certain values regardless
-  for e in USERPROFILE ALLUSERSPROFILE TERM; do
-    [ -n "${!e}" ] && env+=" $e='${!e}'"
-  done
-
-  shell=${line##*:}
-  [ -n "${shell:=$SHELL}" -a -x "$shell" ] || {
-        log_ERROR "invalid SHELL ($shell)"
-        return
-    }
-
-  ${DEBUG:+ runv} ${exec:+ exec} env ${preserve- -i} $env ${cmd:-$shell ${initial:+ -l}} $flags "$@"
-}
-
 
 if which procps &>/dev/null; then
   alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
@@ -68,7 +19,7 @@ fi
 #which 'notepad++' &>/dev/null || {
 #    bin='Notepad++/notepad++.exe'
 #    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
-#      dir=`convert_path -p "${!dir}"`
+#      dir=`convert_path -E "${!dir}"`
 #      [ -x "$dir/$bin" ] && { alias npp="run \"$dir/$bin\""; break; }
 #    done
 #  }

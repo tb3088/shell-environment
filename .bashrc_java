@@ -1,3 +1,5 @@
+return 0
+
 which java &>/dev/null && return
 
 for v in "$JAVA_HOME" "${PROGRAMFILES:-/opt}/java${JAVA_VERSION}"; do

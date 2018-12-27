@@ -38,51 +38,51 @@ function aws-profile {
   local v
   for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
     if [ -n "${!v}" ]; then
-      [ -f "${!v}" ] || { log_ERROR "invalid $v (${!v})"; return; }
+      [ -f "${!v}" ] || { log_ERROR "invalid env:$v (${!v})"; return; }
     fi
   done
 
   local profile="$1"; shift
-  [ -n "$profile" ] || {
-        local list=`awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf(" %s ", $2) }' \
-            ${AWS_CONFIG_FILE:-$HOME/.aws/config}`
+  local config="${AWS_CONFIG_FILE:-$HOME/.aws/config}"
 
-        read -t 10 -p "Choose profile ($list):  " || return
-        [ -n "$REPLY" ] && profile="$REPLY" || return
-    }
-  [ "$profile" != "$AWS_PROFILE" ] || return 0
+  if [ -z "$profile" ]; then
+    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf("%s ", $2); }' $config` )
+	[ -n "${list[*]}" ] || { log_ERROR "no profiles found ($config)"; return; }
+
+    read -t 12 -p "Choose new AWS_PROFILE from [ *${list[*]} ]:  " || return
+    [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
+  fi
+  [ "${profile:?}" = "$AWS_PROFILE" ] && return 0
 
   # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
   # stacktrace on empty values of AWS_PROFILE.
 
-  local _aws_config="${AWS_CONFIG_FILE:+ in ${AWS_CONFIG_FILE/$HOME/\~}}"
   local region
-  region=`AWS_CONFIG_FILE=$AWS_CONFIG_FILE aws configure get region --profile "$profile" 2> >(tail -n 1)`
+  region=`AWS_CONFIG_FILE="$config" aws configure get region --profile "$profile" 2> >(tail -n 1)`
   if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
-    log_ERROR "unknown profile ($profile)$_aws_config"
+    log_ERROR "unknown profile ($profile) in ${config/$HOME/\~}"
     return
   fi
 
-  aws-rmPath    # cleanup previous environment
+  ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
 
   AWS_PROFILE="$profile"
-  aws-addPath
+  ${DEBUG:+ runv} aws-addPath
   if [ -n "$AWS_CONFIG_FILE" ]; then
     local _creds="${AWS_CONFIG_FILE%/*}/credentials"
     [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
   fi
 
   export ${!AWS_*}
-  [ -n "${region}${AWS_DEFAULT_REGION}" ] || log_WARN "property 'region' for profile ($profile)$_aws_config or env:AWS_DEFAULT_REGION is not set"
+  [ -n "${region}${AWS_DEFAULT_REGION}" ] || log_WARN "region for profile ($profile) in ${config/$HOME/\~} or env:AWS_DEFAULT_REGION is not set"
 }
 
 function aws-load_session {
   local format=${FORMAT:-'text'}
-  local input="${1:?}"
+  local input="${1:?}" IFS
 
-  [ "${input:0:1}" = '{' ] && format='json' || {
-        [ -f "$1" ] && input=(<("$f"))
-    }
+  [ -f "$1" ] && input="$( <"$1" )"
+  [ "${input:0:1}" = '{' ] && format='json'
 
   case "$format" in
     text)   local header rest
@@ -104,6 +104,7 @@ function aws-load_session {
             ;;
     *)      log_ERROR "unsupported format ($format)"
   esac
+  export ${!AWS_*}
 }
 
 function aws-save_session {
@@ -137,7 +138,7 @@ function aws-session {
   fi
 
   local -ir now=`date '+%s'`
-  local -i duration=${AWS_SESSION_DURATION:-3600} write2creds= force=
+  local -i duration=${AWS_SESSION_DURATION:-3600} write2creds= force=0
   local cmd output role
 
   local OPTIND opt
@@ -150,10 +151,10 @@ function aws-session {
             ;;&
       c)    for f in $HOME/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
-              expires=$(date --date `jq .Credentials.Expiration < "$f"` '+%s') 2>/dev/null
-              [ $now -lt ${expires:-0} ] || { rm "$f"; continue; }
+              expires=$(date --date `jq -r .Credentials.Expiration "$f"` '+%s')
+              [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
 
-              output=(<("$f"))
+              output="$( <$f )"
               break
             done
             ;;
@@ -172,8 +173,11 @@ function aws-session {
   shift $((OPTIND-1))
 
   # 'role-session-name' pattern is [\w+=,.@-]*
-  [ -n "${role:=`aws configure get role_arn`}" ] &&
-        cmd="assume-role --role-arn $role --role-session-name '${role#:role/}@$AWS_PROFILE-$$'" ||
+  [ -n "${role:=`aws configure get role_arn`}" ] && {
+        local session_name="${role#:role/}@$AWS_PROFILE-$$"
+        session_name="${session_name: -45}"
+        cmd="assume-role --role-arn $role --role-session-name $session_name"
+      } ||
         cmd='get-session-token'
 
   if [ -z "$output" -o $force -eq 1 ]; then
@@ -202,32 +206,33 @@ function aws-session {
 
 function aws-addPath {
   local v f
-  local -i delete=${DELETE:-0}
+  local -i delete
 
-  for v in "$@" ${AWS_CONFIG_FILE:+`dirname "$AWS_CONFIG_FILE"`} \
-        `echo ${AWS_PROFILE:+"$HOME"/.{aws,ssh}}`; do
-    [ -n "$v" -a -d "$v" ] || continue
+  for v in "$@" \
+		${AWS_CONFIG_FILE:+`eval echo $(dirname "$AWS_CONFIG_FILE")${AWS_PROFILE:+"{,/$AWS_PROFILE}"}`} \
+        ${AWS_PROFILE:+`echo "$HOME"/.{aws,ssh}/$AWS_PROFILE`}; do
+    [ -n "$v" ] || continue
     [ "$v" = '.' ] && v=`pwd`
 
-    if [ $delete -eq 1 ]; then
-      ${DEBUG:+ runv} rmPath 'PATH' `eval echo "$v"${AWS_PROFILE:+{,/$AWS_PROFILE}}{,/bin}`
-    else
-      ${DEBUG:+ runv} addPath 'PATH' `eval echo -"$v"${AWS_PROFILE:+{,/$AWS_PROFILE}}{,/bin}`
-    fi
+    for f in "$v"{/bin,}; do
+      if [ ${delete:-0} -eq 1 ]; then
+        ${DEBUG:+ runv} rmPath "$f"
+      else
+	    [ -d "$f" ] || continue
+        ${DEBUG:+ runv} addPath -"$f"
+      fi
+	done
 
-    if [ -n "$SSH_AUTH_SOCK" ]; then
-      for f in "$v"/{$AWS_PROFILE/,}{id_*,*.pem,*.pub}; do
+    [ -n "$SSH_AUTH_SOCK" ] &&
+      for f in "$v"/{id_*,*.pem,*.pub}; do
         [ -f "$f" ] || continue
         ${DEBUG:+ runv} ssh-add ${delete:+ -d} "$f" &>/dev/null
       done
-
-      [ -n "$VERBOSE" ] && { echo; ssh-add -l; }
-    fi
   done
 }
 
 function aws-rmPath {
-  DELETE=1 aws-addPath "$@"
+  delete=1 aws-addPath "$@"
 }
 
 function route53-export {

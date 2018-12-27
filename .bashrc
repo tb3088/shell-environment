@@ -1,6 +1,10 @@
 # To pick up the latest recommended .bashrc content,
 # look in /etc/defaults/etc/skel/.bashrc
 
+shopt -s nullglob extglob
+${ABORT:+ set -eE}
+${CONTINUE:+ set +e}
+
 # ANSI color codes
 RS="\[\033[0m\]"    # reset
 HC="\[\033[1m\]"    # hicolor
@@ -25,7 +29,8 @@ BWHT="\[\033[47m\]" # background white
 
 function __prompt() {
   local _rc=$?
-  local _prompt= _config
+  #TODO _prompt=() and use IFS='<enter' to join elements
+  local _prompt=
 
 if [ -n "$GIT_PROMPT" ]; then
   local _branch _upstream _stat{us,} _delta 
@@ -75,34 +80,41 @@ if [ -n "$GIT_PROMPT" ]; then
     done
 
     _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
-    _prompt+="\n  ${UL}Git:$RS ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
+    _prompt+="
+  ${UL}Git:$RS ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
   fi
 fi
 
-  [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ] && {
-        _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config%/*}; _config=${_config#.aws/}
-        _prompt+="\n  ${UL}AWS:$RS ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}$RS"
-    }
+  if [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ]; then
+    local _config
+    _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config%/*}; _config=${_config#.aws/}
+    _prompt+="
+  ${UL}AWS:$RS ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}$RS"
+  fi
 
-  PS1="$PS_PREFIX${_prompt}\n"
+  #TODO use array with IFS
+  PS1="\n${PS_PREFIX}${_prompt}\n"
   [ $EUID -eq 0 ] && PS1+="${BRED}"
   [ $_rc -eq 0 ] && unset _rc
   PS1+="\!${_rc:+($_rc)} \$$RS "
 }
 
-PS_PREFIX="\n${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
-PS1="${PS_PREFIX}\n\! \$${RS} "
+PS_PREFIX="${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
+#PS1="\n${PS_PREFIX}\n\! \$${RS} "
+PS1="
+${PS_PREFIX}
+\! \$${RS} "
 
-# put into ROOT's .bashrc
+# Examples:
+# for ROOT
 #  PS1="\n${FRED}\u${RS}@${FGRN}\h ${FYEL}\w\n${BRED}\!;\j${RS} \$ "
-
-# other examples
+#
 #PS1="\[\e]0;\w\a\]\n\[\e[32m\]\u@\h \[\e[33m\]\w\[\e[0m\]\n\!,\j \$ "
 #\[\033[36m\][\t]\[\033[32m\][\u@\h:\[\033[33m\]\w\[\033[32m\]]-> \[\033[0m\]
-
+#
 # Whenever displaying the prompt, write the previous line to disk
 #PROMPT_COMMAND="history -a"
-PROMPT_COMMAND=__prompt
+declare -F __prompt &>/dev/null && PROMPT_COMMAND=__prompt
 
 
 # Don't wait for job termination notification
@@ -135,18 +147,32 @@ HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 # don't search PATH for target of 'source'
 shopt -u sourcepath
 
-for f in "$HOME"/.{functions{,.local},aliases{,.local},bashrc{.local,_*}}; do
+for f in "$HOME"/.functions{,_${OSTYPE:-`uname`},.local}; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? in $f"
+done
+unset f
+
+echo "IFS after functions."
+cat -etv <<<"$IFS"
+
+for f in "$HOME"/.{aliases{,.local},bashrc{.local,_*}}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
-  source "$f" || echo "RC=$? in $f"
+  source "$f" || echo >&2 "RC=$? in $f"
 done
+unset f
+
+echo "IFS after aliases and bashrc_*."
+cat -etv <<<"$IFS"
+
+addPath PATH -"$HOME"/{,.local/}bin
 
 # Base16 color themes
-COLORSCHEME=`readlink -e "$HOME"/.colorscheme`
-[ -n  "$COLORSCHEME" ] && {
-  source "$COLORSCHEME" || echo "RC=$? in $COLORSCHEME"
-  export COLORSCHEME=`basename $COLORSCHEME .sh`
-}
+if COLORSCHEME=`readlink -e "$HOME/.colorscheme"`; then
+  source "$COLORSCHEME" || echo >&2 "RC=$? in $COLORSCHEME"
+  COLORSCHEME=`basename $COLORSCHEME .sh`
+fi
 
 ### Completion options
 # If this shell is interactive, turn on programmable completion enhancements.
@@ -154,8 +180,9 @@ COLORSCHEME=`readlink -e "$HOME"/.colorscheme`
 case $- in
   *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} "$HOME"/.bash_completion; do
           [ -f "$f" ] || continue
-          source "$f" || echo "RC=$? in $f"
+          source "$f" || echo >&2 "RC=$? in $f"
         done
+        unset f
         ;;
   *c*)  SSH_AGENT=
 esac

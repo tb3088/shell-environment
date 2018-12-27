@@ -1,96 +1,25 @@
-# $Id$
+# use soft-override
 
-shopt -s nullglob extglob
-[[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && PATHSEP=';' || PATHSEP=':'
+: ${PATHSEP=':'}
 
-${ABORT:+ set -eE}
-${CONTINUE:+ set +e}
-
-
-function is_windows() {
-  # detects if path or binary is Cygwin or native Windows
-  [ "${1:0:1}" = '/' ] && return [[ "$1" =~ ^/cygdrive ]]
-
-  bin=`which "${1:?}" 2>/dev/null` || return 2
-  [ "$bin" != "${bin#/cygdrive}" ]
-}
+declare -F is_windows >/dev/null ||
+function is_windows() { false; }
 
 
+declare -F convert_path >/dev/null ||
 function convert_path() {
-  # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
-  # This *magical* behavior does NOT extend to other PATH-like variables!
-  #     eg. GOPATH, RUBYPATH, RUBYLIB, PUPPET_MODULE_PATH
-  #
-  # However, interactive use of paths must be inside quotes or escaped
-  # since the $SHELL parser is not so gifted.
-  #
-  # Also, cygpath only modifies the first occurance of /cygdrive or [A-Z]:
-  # on any input argument and does not detect ';:' or any other delimiter.
-  #
-  # Option '-p' assumes PATH and overrides delim=':' and unsets escape.
-
-# any quoted '\ ' is not modified by cygpath forward or reverse
-# so if string starts with /cygdrive we need to remove any '\ ' first when going DOS/Win
-
-  local format flags delim=${PATHSEP:?}
-  local -i path= noop= escape=1
   local OPTIND
-
-  while getopts ":D:eEnpPt:" opt 2>/dev/null; do
-    case $opt in
-      D)    delim="$OPTARG" ;;
-      e)    escape=1 ;;
-      E)    escape=0 ;;
-      n)    noop=1 ;;
-      p)    path=1 ;;
-      P)    unset path ;;
-      t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
-                format="-t $OPTARG" || {
-                    RC=2 log_ERROR "unknown format ($OPTARG)"
-                    return
-                }
-            ;;
-      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
-      \?)   flags+=" -$OPTARG"
-    esac
+  while getopts ":eEnt:" opt; do
+    :
   done
   shift $((OPTIND-1))
 
-  [ $path -eq 1 ] && { delim=':'; escape=0; }
-
-  #TODO? preserve some functionality even in real Unix
-  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] && which cygpath &>/dev/null || noop=1
-
-  local -a cooked=()
-  while [ "${1+x}" ]; do
-    # deal with empty option, rare but possible
-    [ -n "$1" ] || { shift; continue; }
-    [ $noop -eq 1 ] && { echo "$1"; shift; continue; }
-
-    cooked=()
-
-    # iterate thru line elements based on delim
-    # *stupid* Windows!
-    IFS=$delim read -a raw <<< "${1//\\/\\\\}"
-    local r p
-    for r in "${raw[@]}"; do
-        log_TRACE "input:  $r"
-        r="${r//\\ / }"             # remove escaped spaces
-        p=`cygpath $format $flags -- "$r"`
-        [ $escape -eq 1 ] && p="${p// /\\ }"
-        cooked+=("$p")
-        log_TRACE "cooked: $p"
-    done
-
-    # be paranoid with IFS
-    IFS=$delim; echo "${cooked[*]}"
-    unset IFS
-    shift
-  done
+  [ -n "$1" ] || return 0
+  echo "$1"
 }
 
 
-#TODO handle Hash/Array, 
+#TODO handle Hash/Array,
 #FIXME leverage IFS="$delim" read <<< "$1"
 # note IFS only considers a single char, you can't have compound IFS
 # see https://unix.stackexchange.com/questions/7904/can-ifs-internal-field-separator-function-as-a-single-seperator-for-multiple-c
@@ -98,12 +27,13 @@ function convert_path() {
 # you can correctly guess something not in the data stream (eg. high-order non-printing char?)
 # otherwise have to feed it to AWK/SED for magic
 
+declare -F contains >/dev/null ||
 function contains() {
-  local delim=${DELIM:-$PATHSEP} method=${METHOD}
+  local delim method
+  : ${delim=${PATHSEP:?}}
   local -r source="${delim}${1:?}${delim}"
   local -r sub="${delim}${2:?}${delim}"
 
-  log_TRACE `grep --color "$sub" <<< "$source"`
   # empty string inside empty is valid
   case "$method" in
     grep)   grep -q "$sub" <<< "$source" ;;
@@ -116,51 +46,60 @@ function contains() {
 }
 
 
+declare -F addPath >/dev/null ||
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
+  # but does NOT sub-divide arguments!
 
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`join_string $1 $2 $delim`
 
-  local k v flag delim=${DELIM:-$PATHSEP}
-  local -i prepend=
-  local readonly _prepend=$prepend
+  local k v flags=() delim
+  local -i prepend
+  local -ir _prepend=${prepend:-0}
 
   [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
   [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
   local -n nref=$k
 
-  [ "$k" = 'PATH' ] && { delim=':'; flag='-p'; }
+  [ "$k" = 'PATH' ] && { delim=':'; flags+=('-E'); }
+  : ${delim:=${PATHSEP:?}}
 
-  log_TRACE "before" "$nref"
+  log_TRACE "before" "$k=$nref"
   while [ "${1+x}" ]; do
     [ -n "$1" ] || continue
-    prepend=$_prepend              # restore state
 
+    prepend=$_prepend           # restore state
+    v="$1"
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v="${1:1}"; }
-    v=`convert_path $flag "$v"`
 
     # do *NOT* prefix with '${DEBUG:+ runv}'
-    DELIM="$delim" contains "$nref" "$v" && continue
+    v=`convert_path ${flags[@]} "$v"`
+    delim="$delim" contains "$nref" "$v" || {   # pedant
+        [ $prepend -eq 1 ] && nref="$v${delim}$nref" || nref+="${delim}$v"
+      }
 
     # embedded spaces/special chars require lazy evaluation
 #    [ $prepend -eq 1 ] && { eval $k="$v${delim}\$$k"; } || eval $k+="${delim}$v"
-    [ $prepend -eq 1 ] && nref="$v${delim}${nref}" || nref+="${delim}$v"
+    # [ $prepend -eq 1 ] && nref="$v${delim}${nref}" || nref+="${delim}$v"
     shift
   done
-  log_TRACE "after" "$nref"
+  #TODO strip double $delim
+  log_TRACE "after" "$k=$nref"
 }
 
 
+declare -F rmPath >/dev/null ||
 function rmPath() {
-  local k v delim=${DELIM:-$PATHSEP}
+  local k v flag delim
 
   [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
   [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
   local -n nref=$k
 
-  [ "$k" = 'PATH' ] && delim=':'
+  [ "$k" = 'PATH' ] && { delim=':'; flag='-E'; }
+  : ${delim:=${PATHSEP:?}}
 
   log_TRACE "before" "$nref"
   while [ "${1+x}" ]; do
@@ -169,14 +108,16 @@ function rmPath() {
     #alt: nref=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "$nref"`
     nref=$(
         IFS=$delim
+		>&2 cat -etv <<<"$IFS"
         read -ra items <<< "$nref"
-        for ((i=0; i < ${#items[@]}; i++)); do
-          [ "$1" = "${items[$i]}" ] && items[$i]=
+        for i in ${!items[@]}; do
+          [ "${items[i]}" = "$1" ] && unset 'items[i]'
         done
         echo "${items[*]}"
     )
     shift
   done
+  #TODO strip double $delim
   log_TRACE "after" "$nref"
 
   # trim dangling $delim
@@ -186,15 +127,19 @@ function rmPath() {
 
 
 function define() {
-  # Assign a HEREDOC to a variable. To preserve space/tab use '<<-'
-  # contents will be expanded unless marker is quoted
+  # Assign a HEREDOC to a variable. To preserve space/tab use '<<-_EOF'.
+  # Contents will be expanded unless marker ('_EOF') is quoted.
   # Usage: define VAR <<_EOF ...
 
-  IFS='\n' read -r -d '' $1 || true
+  local IFS
+  # alt: IFS='
+  #'
+  IFS=$'\n' read -r -d '' $1 || true
 }
 
 
-#FIXME cygwin needs procps with -o, or suitable flags to simple 'ps'
+#TODO /etc/init.d/functions typically defines
+declare -F pidof >/dev/null ||
 function pidof() {
     ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
@@ -210,17 +155,19 @@ function getcert() {
   if [ -n "$output" ]; then
     gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
     gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" | openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
-  else 
+  else
     return 1
   fi
 }
 
 
+declare -F pause >/dev/null ||
 function pause() {
   [ $# -eq 0 ] && read -p 'Press [ENTER] to continue ...' || read -p "$*"
 }
 
 
+declare -F confirm >/dev/null ||
 function confirm() {
   read -n 1 -t 15 -p 'Are you sure (y/N)? '
   echo
@@ -228,29 +175,34 @@ function confirm() {
 }
 
 
-# Does NOT support recursive since can fail easily or in unintended ways.
+# Does NOT support recursion since fails easily or in unintended ways.
 # Using SED with BOL, EOL or whitespace detection isn't reliable either.
+declare -F copy_function >/dev/null ||
 function copy_function() {
+  # Does NOT support recursion since fails easily or in unintended ways.
   local readonly source=`declare -f "${1:?}"`
-  local overwrite
-  local target
+  local -i overwrite
 
   [ -n "$source" ] || return
 
+  local target
   for target in "${@:1}"; do
     [ -n "$target" ] || continue
-    declare -F "$target" >/dev/null && { [ -n "$overwrite" ] || continue; }
+    declare -F "$target" >/dev/null && { [ ${overwrite:-0} -eq 1 ] || continue; }
 
     eval "${source/$1/$target}"     # alt: "function $target ${source#*\(\)}"
   done
 }
 
+
+declare -F rename_function >/dev/null ||
 function rename_function() {
   copy_function "${1:?}" "${2:?}" && unset -f "$1"
 }
 
 
-function runv() { 
+declare -F runv >/dev/null ||
+function runv() {
   # mimic 'set -x'
 
   >&2 printf "%s %s\n" `printf '%.0s+' {1..$SHLVL}` "$*"
@@ -286,32 +238,33 @@ function join_string() {
 function join_quote() { quote=\' join_string "$@"; }
 
 
-function __parse_options() {
-    local option{,2}= i= IFS='
-,/|';
-
-  for i in $1; do
-    case $i in
-      ---*) break ;;
-      --?*) option="$i"; break ;;
-      -?*)  [ -n "$option" ] || option="$i" ;;
-      *)    break ;;
-    esac;
-  done
-  [ -n "$option" ] || return 0
-
-  IFS='
-';
-
-  if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
-    option2=${option/"${BASH_REMATCH[1]}"/}
-    option2=${option2%%[<{().[]*}
-    printf '%s\n' "${option2/=*/=}"
-    option=${option/"${BASH_REMATCH[1]}"/"${BASH_REMATCH[2]}"}
-  fi
-  option="${option%%[<{().[]*}"
-  printf '%s\n' "${option/=*/=}"
-}
+# function __parse_options() {
+    # local option{,2} arg IFS='
+# ,/|'
+#FIXME this looks very odd.
+# enforce --[no-][a-zA-Z]+=<value>, --[no-][a-zA-Z] <value>, --<flag> sets $flag=1,
+# create a hash of options and values and any single dash are likewise treated as long
+  # for arg in $1; do
+    # case "$arg" in
+      # ---*) break ;;
+      # --?*) option="$arg"; break ;;
+      # -?*)  [ -n "$option" ] || option="$arg" ;;
+      # *)    break ;;
+    # esac;
+  # done
+#  # [ -n "$option" ] || return 0
+#
+#   IFS='
+# '
+  # if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
+    # option2=${option/"${BASH_REMATCH[1]}"/}
+    # option2=${option2%%[<{().[]*}
+    # printf '%s\n' "${option2/=*/=}"
+    # option=${option/"${BASH_REMATCH[1]}"/"${BASH_REMATCH[2]}"}
+  # fi
+  # option="${option%%[<{().[]*}"
+  # printf '%s\n' "${option/=*/=}"
+# }
 
 
 function userinfo() {
@@ -320,7 +273,7 @@ function userinfo() {
   local OPTIND
 #  FIXME use getopts like a sane person!
   [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
- 
+
 #FIXME define a HASH for lookups instead of this crap
   case $flag in
     l)  field=1 ;;&
@@ -348,6 +301,7 @@ function userinfo() {
 }
 
 
+declare -F lstree >/dev/null ||
 function lstree() {
   local OPTIND opt      # IMPORTANT !!
   local filter= type= reverse= flags=()
@@ -387,6 +341,7 @@ _EOF
 }
 
 
+declare -F min >/dev/null ||
 function min() {
   local flag=() values=()
 
@@ -400,18 +355,22 @@ function min() {
   printf "%s\n" ${values[@]} | sort "${flag[@]}" | head -n 1
 }
 
-function max() {
-  min -r "$@"
+
+declare -F max >/dev/null ||
+function max() { min -r "$@"; }
 #  local flag
 #
 #  [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
 #  printf "%s\n" "$@" | sort $flag | tail -n 1
-}
 
+
+declare -F keys >/dev/null ||
 function keys() { local -n nref=$1; echo "${!nref[@]}"; }
 
+declare -F values >/dev/null ||
 function values() { local -n nref=$1; echo "${nref[@]}"; }
 
+declare -F value >/dev/null ||
 function value() { local -n nref=$1; echo "${nref[${2:?}]}"; }
 
 #TODO

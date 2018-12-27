@@ -1,0 +1,121 @@
+# force override unless pre-empted
+
+declare -r PATHSEP=';' 2>/dev/null
+
+unset -f convert_path 2>/dev/null &&
+function convert_path() {
+  # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
+  # This *magical* behavior does NOT extend to other PATH-like variables!
+  #     eg. GOPATH, RUBYPATH, RUBYLIB, PUPPET_MODULE_PATH, JAVA_HOME
+  #
+  # However, interactive use of paths must be inside quotes or escaped
+  # since the $SHELL parser is not so gifted.
+  #
+  # cygpath only modifies the first occurance of '/cygdrive' or '[A-Z]:'
+  # unless '-p' but delimiter must match input (';' for Windows, ':' for Unix)
+
+  local format delim flags=()
+  local -i path=0 noop=0 escape
+  local OPTIND
+
+  while getopts ":eEnt:" opt; do
+    case $opt in
+      e)    escape=1 ;;
+      E)    escape=0 ;;
+      n)    noop=1 ;;
+      t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
+                format="-t $OPTARG" || {
+                    RC=2 log_ERROR "unknown format ($OPTARG)"
+                    return
+                }
+            ;;
+      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      \?)   flags+=("-$OPTARG")
+    esac
+  done
+  shift $((OPTIND-1))
+
+  #XXX : ${delim=${PATHSEP:?}}
+  : ${escape:=1}
+
+  local r p
+#  while [ "${1+x}" ]; do
+#    # empty arg, rare but possible
+#    [ -n "$1" ] || { shift; continue; }
+#    [ $noop -eq 1 ] && { echo "$1"; shift; continue; }
+  [ -n "$1" ] || return 0
+    # damn Windows!
+    # r="${1//\\/\\\\}" only needed if using read()
+    log_TRACE "raw:    '$1'"
+    # r="${1//\\ / }"             # remove escaped spaces
+    p=`cygpath -p $format ${flags[@]} -- "${1//\\ / }"`
+    log_TRACE "cooked: '$p'"
+    [ $escape -eq 1 ] && echo "${p// /\\ }" || echo "$p"
+#    shift
+#  done
+}
+readonly -f convert_path
+
+
+unset -f sudo 2>/dev/null &&
+function sudo() {
+  local opt who cmd line env shell flags preserve=''
+  #FIXME local -A env
+  #FIXME local -a flags
+  local OPTIND opt      # important!!
+
+  while getopts ':ieEu:X' opt 2>/dev/null; do
+    case "$opt" in
+      i)    initial=1; unset preserve ;;
+      e)    cmd=`which ${EDITOR:-vi} 2>/dev/null` || {
+                log_ERROR "invalid EDITOR (${EDITOR:-vi})"
+                return
+              }
+            ;;
+      E)    preserve='' ;;
+      u)    who=$OPTARG ;;
+      X)    exec=1 ;;
+      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      \?)   flags+=" -$OPTARG"
+    esac
+  done
+  shift $((OPTIND-1))
+
+  : ${who:?missing argument \'-u USER\'}
+  line=`getent passwd $who || grep -s "^${who}:" /etc/passwd` || {
+        log_ERROR "unknown USER ($who)"
+        return
+    }
+
+  env=`awk -F: '{ printf("USER=%s USERNAME=%s HOME=%s UID=%s", $1, $1, $(NF-1), $3) }' <<< "$line"`
+  # preserve certain values regardless
+  for e in USERPROFILE ALLUSERSPROFILE TERM; do
+    [ -n "${!e}" ] && env+=" $e='${!e}'"
+  done
+
+  shell=${line##*:}
+  [ -n "${shell:=$SHELL}" -a -x "$shell" ] || {
+        log_ERROR "invalid SHELL ($shell)"
+        return
+    }
+
+  ${DEBUG:+ runv} ${exec:+ exec} env ${preserve- -i} $env ${cmd:-$shell ${initial:+ -l}} $flags "$@"
+}
+readonly -f sudo
+
+
+unset -f is_windows 2>/dev/null &&
+function is_windows() {
+  # detects if path or binary is Cygwin or native Windows
+  [ "${1:0:1}" = '/' ] && return [[ "$1" =~ ^/cygdrive ]]
+
+  bin=`which "${1:?}" 2>/dev/null` || return
+  [ "$bin" != "${bin#/cygdrive}" ]
+}
+readonly -f is_windows
+
+
+# TODO use procps
+# function pidof() {
+    # ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+# }

@@ -1,6 +1,7 @@
 # $Id
 
-declare -i LOG_TIMESTAMP LOG_STACKTRACE
+#LOG_TIMESTAMP=1
+#LOG_STACKTRACE=1
 #LOG_MASK='WARN'
 
 
@@ -8,7 +9,7 @@ declare -i LOG_TIMESTAMP LOG_STACKTRACE
 # syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
 
 [ -n "${LOG_LEVELS[*]}" ] ||
-declare -A -rx LOG_LEVELS=(
+declare -Ar LOG_LEVELS=(
     [EMERG]=0   [PANIC]=0
     [0]='EMERG'
     [ALERT]=1
@@ -33,13 +34,13 @@ declare -A -rx LOG_LEVELS=(
 )
 
 [ -n "${LOG_FACILITIES[*]}" ] ||
-declare -a -rx LOG_FACILITIES=(
+declare -ar LOG_FACILITIES=(
     auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
 )
 
 function log_setmask {
-  local -u key=${1:-x}
-  [ -n "${LOG_LEVELS[$key]}" ] && LOG_MASK="$key"
+  local -u key=$1
+  [ -n "${LOG_LEVELS[${key:-x}]}" ] && LOG_MASK="$key" || log_ERROR "invalid level ($key)"
 }
 
 
@@ -86,7 +87,7 @@ for k in "${!LOG_LEVELS[@]}"; do
     [0-3])  copy_function __log_exit "log_$k" ;;
     [4-8])  eval function log_$k '{ >&2 log "$@"; }' ;;
   esac
-
+  readonly -f "log_$k"
   # legacy functions
   copy_function "log_$k" "${k,,}"
 done
@@ -96,90 +97,69 @@ unset -f __log_exit
 
 function log_level {
   # returns numeric value only
-  local -u key=${1:-x}
+  local -u key=${1#log_}
+  local result="${LOG_LEVELS[${key:-x}]}"
 
-  local result="${LOG_LEVELS[$key]}"
-  [[ $result == [0-8] ]] && echo "$result" || { echo '-1'; return 1; }
+  [ -n "$result" ] || return
+  [[ $result == [0-8] ]] && echo $result || echo $key
 }
 
 
 declare -F log >/dev/null ||
 function log() {
   local -r ts=`date '+%Y-%m-%dT%H:%M:%S'`
-  local format=('%-5s' '\t%s')
+  local -a format=( ${LOG_FORMAT[@]:-'%-5s' '\t%s'} )
 
   local -A default=([level]=`log_level 'INFO'` [mask]=`log_level 'WARN'`)
-  local -i level mask=`log_level $LOG_MASK`
-  local -i fo=1
+  local -i level mask=`log_level $LOG_MASK` offset=1
 
   # legacy invocation
   if level=`log_level "$1"`; then
-    shift                   # log <LEVEL> "msg"
-  elif level=`log_level $LEVEL`; then
-    :                       # LEVEL=<LEVEL> log "msg"
-  else
-    declare -u fn           # level() or log_LEVEL() "msg"
-    fn="${FUNCNAME[1]}"
-    level=`log_level ${fn#LOG_}` && fo=2
+    shift                   # log <level> "msg"
+  elif level=`log_level $LOG_LEVEL`; then
+    :                       # LOG_LEVEL=<level> log "msg"
+  else                      # level() or log_LEVEL() "msg"
+    level=`log_level ${FUNCNAME[1]}` &&	offset+=1
   fi
 
   # set mask on externalities
-  [ ${VERBOSE:-0} -gt 0 -a $mask -lt 0 ] && mask=`log_level 'INFO'`
-  [ ${DEBUG:-0}   -gt 0 -a $mask -lt 0 ] && mask=$((`log_level 'DEBUG'` + $DEBUG - 1))
+  if [ -z "$mask" ]; then
+	[ -n "$VERBOSE" ] && mask=`log_level 'INFO'`
+	[ -n "$DEBUG" ] && { mask=`log_level 'DEBUG'`
+		#FIXME handle large values that overrun MAX(LOG_LEVELS)
+		[ $(($DEBUG - 1)) -gt 0 ] && mask+=$(($DEBUG - 1))
+	  }
+  fi
 
   # sanity check
-  [ ${level:- -1} -ge 0 ] || level=${default['level']}
-  [ ${mask:- -1}  -ge 0 ] || mask=${default['mask']}
+  [[ ${level:- -1} == [0-8] ]] || level=${default['level']}
+  [[ ${mask:- -1}  == [0-8] ]] || mask=${default['mask']}
 
   # squelch messages below mask
   [ $level -le $mask ] || return 0
 
 
-#  # legacy
-#  if [ -n "$1" -a "${LOG_LEVELS[${1^^}]}" ]; then
-#    level=$1; shift     # log <LEVEL> "msg"
-#
-#  elif [ "${LOG_LEVELS[${level:-x}]}" ]; then
-#    :                   # LEVEL=<LEVEL> log "msg"
-#  else
-#    unset level
-#    fn="${FUNCNAME[1]}"; fn="${fn#LOG_}"
-#    [ -n "${LOG_LEVELS[${fn:-x}]}" ] && { level="$fn"; fo=2; }
-#  fi
-#
-#  # set mask on externalities
-#  [ $VERBOSE -ne 0 ] && mask=${LOG_LEVELS['INFO']}
-#  [ $DEBUG -ne 0 ]   && mask=${LOG_LEVELS['DEBUG']}
-#
-#  # sanity check
-#  [ -n "${LOG_LEVELS[${level:-x}]}" ] || level='INFO'
-#  [ -n "${LOG_LEVELS[${mask:-x}]}" ]  || mask='WARNING'
-#
-#  # squelch messages below mask
-#  [ ${LOG_LEVELS[$level]} -le ${LOG_LEVELS[$mask]} ] || return 0
-#
-#  [ -n "${LOG_TRACE}" -a -n "${BASH_SOURCE[$fo]}" ] && {
-#        IFS='*'
-#        format+=" [${BASH_SOURCE[$fo]}/${FUNCNAME[@]:$fo:$DEBUG}]"
-#        unset IFS
-#    }
+  if [ -n "$LOG_STACKTRACE" -a "${FUNCNAME[1]}" != "$FUNCNAME" ]; then
+    local -a msg=()
+    local -i i
+    for i in ${!FUNCNAME[@]}; do
+	  [ $i -eq 0 ] && continue			# skip self
+      msg+=("callstack: ${BASH_SOURCE[i]}/${FUNCNAME[i]}()")
+    done
+    LOG_MASK='TRACE' log_TRACE "${msg[@]}"
+  fi
 
-  [ $LOG_STACKTRACE -gt 0 -a "${BASH_SOURCE[$fo]}" ] && {
-        IFS='*'
-        format+=" [${BASH_SOURCE[$fo]}/${FUNCNAME[*]:$fo}]"
-        unset IFS
-    }
-
-  local line level_name="${LOG_LEVELS[$level]}"
+  local line fn level_name="${LOG_LEVELS[$level]}"
+  [ $level -ge `log_level 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] && fn="${FUNCNAME[offset]}() "
 
   while [ "${1+x}" ]; do                # blank lines allowed
-    printf -v line "${LOG_TIMESTAMP:+$ts} ${format[*]}" $level_name "$1"
+    printf -v line "${LOG_TIMESTAMP:+$ts }${format[*]}" "$level_name" "$fn$1"
     line=`echo -e "$line"`              # primitive escape sequences
     tee -a $LOGFILE <<< "$line"
     [ -n "$SYSLOG" ] && ${LOGGER:-logger --priority user.${level_name,,}} -- "$line"
     shift
   done
 }
-#readonly -f log{_*}
+readonly -f log
 
 # vim: expandtab:ts=4:sw=4

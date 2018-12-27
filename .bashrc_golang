@@ -1,32 +1,35 @@
+return 0
 
 which go &>/dev/null || {
     # look for program in common places
     declare -n v
     for v in GOROOT SYSTEMDRIVE PROGRAMFILES LOCALAPPDATA; do
         [ -n "$v" ] || continue
-        for p in go{,lang}${GO_VERSION:+-$GO_VERSION}; do
-#            p="`cygpath -- $v`/$p"
+        for p in `convert_path "$v"`/go{,lang}{,{,-,_}$GO_VERSION}; do
             [ -x "$p/bin/go" ] && { addPath "$p/bin"; break; }
         done
     done
     unset -n v
+    unset p
     which go &>/dev/null || return 0
 }
 
+#FIXME detect if Windows binary. if so, we can't mangle paths into UNIX-style
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
 : ${GOROOT:=`go env GOROOT`}
 
-[ -d "${GOPATH:=`go env GOPATH`}" ] || {
-    # Windows:  %USERPROFILE%/go
-    # Unix:     $HOME/go
-    mkdir -p "$GOPATH"
+# Windows:  %USERPROFILE%/go
+# Unix:     $HOME/go
+# Personally I prefer %LOCALAPPDATA%/go and $HOME/.go
 
-    # Personally I prefer %LOCALAPPDATA%/go and $HOME/.go
-# if `is_windows go` then mkdir "$LOCALAPPDATA/go" and GOPATH=`convert_path -t windows ...`
-# else mkdir $HOME/.go and GOPATH=$HOME/.go; 
-  }
+IFS=':' read -a items < <(convert_path `go env GOPATH`)
+for d in "${items[@]}"; do 
+    mkdir -p "$d"
+done
+# if `is_windows go` then mkdir "$LOCALAPPDATA/go" and GOPATH=`convert_path -t windows -E ...`
 
 # walk elements of GOPATH and add to $PATH
+# cygpath -p $GOPATH
 #IFS="${PATHSEP:?}"
 #for v in GOPATH; do
 #    [ -d "$v/bin" ] && addPath "$v/bin"

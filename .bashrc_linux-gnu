@@ -1,8 +1,6 @@
-case "${OSTYPE:-`uname`}" in
-  [lL]inux)
-	;;
-  *)	return 0
-esac
+[[ ${OSTYPE:-`uname -o`} =~ [lL]inux ]] || return 0
+
+PATHSEP=':'
 
 #TODO support Debian/WSL?
 which yum &>/dev/null &&
