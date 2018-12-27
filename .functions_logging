@@ -119,16 +119,16 @@ function log() {
   elif level=`log_level $LOG_LEVEL`; then
     :                       # LOG_LEVEL=<level> log "msg"
   else                      # level() or log_LEVEL() "msg"
-    level=`log_level ${FUNCNAME[1]}` &&	offset+=1
+    level=`log_level ${FUNCNAME[1]}` && offset+=1
   fi
 
   # set mask on externalities
   if [ -z "$mask" ]; then
-	[ -n "$VERBOSE" ] && mask=`log_level 'INFO'`
-	[ -n "$DEBUG" ] && { mask=`log_level 'DEBUG'`
-		#FIXME handle large values that overrun MAX(LOG_LEVELS)
-		[ $(($DEBUG - 1)) -gt 0 ] && mask+=$(($DEBUG - 1))
-	  }
+    [ -n "$VERBOSE" ] && mask=`log_level 'INFO'`
+    [ -n "$DEBUG" ] && { mask=`log_level 'DEBUG'`
+        #FIXME handle large values that overrun MAX(LOG_LEVELS)
+        [ $(($DEBUG - 1)) -gt 0 ] && mask+=$(($DEBUG - 1))
+      }
   fi
 
   # sanity check
@@ -143,7 +143,7 @@ function log() {
     local -a msg=()
     local -i i
     for i in ${!FUNCNAME[@]}; do
-	  [ $i -eq 0 ] && continue			# skip self
+      [ $i -eq 0 ] && continue          # skip self
       msg+=("callstack: ${BASH_SOURCE[i]}/${FUNCNAME[i]}()")
     done
     LOG_MASK='TRACE' log_TRACE "${msg[@]}"

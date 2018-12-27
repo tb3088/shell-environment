@@ -47,7 +47,7 @@ function aws-profile {
 
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf("%s ", $2); }' $config` )
-	[ -n "${list[*]}" ] || { log_ERROR "no profiles found ($config)"; return; }
+    [ -n "${list[*]}" ] || { log_ERROR "no profiles found ($config)"; return; }
 
     read -t 12 -p "Choose new AWS_PROFILE from [ *${list[*]} ]:  " || return
     [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
@@ -214,7 +214,7 @@ function aws-addPath {
   local -i delete
 
   for v in "$@" \
-		${AWS_CONFIG_FILE:+`eval echo $(dirname "$AWS_CONFIG_FILE")${AWS_PROFILE:+"{,/$AWS_PROFILE}"}`} \
+        ${AWS_CONFIG_FILE:+`eval echo $(dirname "$AWS_CONFIG_FILE")${AWS_PROFILE:+"{,/$AWS_PROFILE}"}`} \
         ${AWS_PROFILE:+`echo "$HOME"/.{aws,ssh}/$AWS_PROFILE`}; do
     [ -n "$v" ] || continue
     [ "$v" = '.' ] && v=`pwd`
@@ -223,10 +223,10 @@ function aws-addPath {
       if [ ${delete:-0} -eq 1 ]; then
         ${DEBUG:+ runv} rmPath "$f"
       else
-	    [ -d "$f" ] || continue
+        [ -d "$f" ] || continue
         ${DEBUG:+ runv} addPath -"$f"
       fi
-	done
+    done
 
     [ -n "$SSH_AUTH_SOCK" ] &&
       for f in "$v"/{id_*,*.pem,*.pub}; do
