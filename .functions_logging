@@ -38,7 +38,7 @@ declare -ar LOG_FACILITIES=(
     auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
 )
 
-function log_setmask {
+function log-setmask {
   local -u key=$1
   [ -n "${LOG_LEVELS[${key:-x}]}" ] && LOG_MASK="$key" || log_ERROR "invalid level ($key)"
 }
@@ -95,12 +95,12 @@ unset k
 unset -f __log_exit
 
 
-function log_level {
+function log-level {
   # returns numeric value only
   local -u key=${1#log_}
   local result="${LOG_LEVELS[${key:-x}]}"
 
-  [ -n "$result" ] || return
+  [ -n "$result" ] || { echo -1; return 1; }
   [[ $result == [0-8] ]] && echo $result || echo $key
 }
 
@@ -110,22 +110,22 @@ function log() {
   local -r ts=`date '+%Y-%m-%dT%H:%M:%S'`
   local -a format=( ${LOG_FORMAT[@]:-'%-5s' '\t%s'} )
 
-  local -A default=([level]=`log_level 'INFO'` [mask]=`log_level 'WARN'`)
-  local -i level mask=`log_level $LOG_MASK` offset=1
+  local -A default=([level]=`log-level 'INFO'` [mask]=`log-level 'WARN'`)
+  local -i level mask=`log-level $LOG_MASK` offset=1
 
   # legacy invocation
-  if level=`log_level "$1"`; then
+  if level=`log-level "$1"`; then
     shift                   # log <level> "msg"
-  elif level=`log_level $LOG_LEVEL`; then
+  elif level=`log-level $LOG_LEVEL`; then
     :                       # LOG_LEVEL=<level> log "msg"
   else                      # level() or log_LEVEL() "msg"
-    level=`log_level ${FUNCNAME[1]}` && offset+=1
+    level=`log-level ${FUNCNAME[1]}` && offset+=1
   fi
 
   # set mask on externalities
   if [ -z "$mask" ]; then
-    [ -n "$VERBOSE" ] && mask=`log_level 'INFO'`
-    [ -n "$DEBUG" ] && { mask=`log_level 'DEBUG'`
+    [ -n "$VERBOSE" ] && mask=`log-level 'INFO'`
+    [ -n "$DEBUG" ] && { mask=`log-level 'DEBUG'`
         #FIXME handle large values that overrun MAX(LOG_LEVELS)
         [ $(($DEBUG - 1)) -gt 0 ] && mask+=$(($DEBUG - 1))
       }
@@ -150,7 +150,7 @@ function log() {
   fi
 
   local line fn level_name="${LOG_LEVELS[$level]}"
-  [ $level -ge `log_level 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] && fn="${FUNCNAME[offset]}() "
+  [ $level -ge `log-level 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] && fn="${FUNCNAME[offset]}() "
 
   while [ "${1+x}" ]; do                # blank lines allowed
     printf -v line "${LOG_TIMESTAMP:+$ts }${format[*]}" "$level_name" "$fn$1"
