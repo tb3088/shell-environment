@@ -309,7 +309,7 @@ done
 
 : ${CLOUD:='aws'}
 declare -n CLOUD_PROFILE=${CLOUD^^}_PROFILE
-declare -n REGION=${CLOUD}_DEFAULT_REGION
+declare -n REGION=${CLOUD^^}_DEFAULT_REGION
 
 # My personal definitions for D{1..3} delimiter sets.
 # One can also override via args to genlist() or change the defaults
