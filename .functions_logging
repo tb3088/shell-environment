@@ -38,7 +38,7 @@ declare -ar LOG_FACILITIES=(
     auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
 )
 
-function log-setmask {
+function log-set-mask {
   local -u key=$1
   [ -n "${LOG_LEVELS[${key:-x}]}" ] && LOG_MASK="$key" || log_ERROR "invalid level ($key)"
 }
