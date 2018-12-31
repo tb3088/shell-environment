@@ -1,0 +1,246 @@
+return 0
+
+#WIP
+shopt -s extglob nullglob
+
+: ${QUIET:=1}
+# standardize behavior keyed off of 'special' variables
+# non-integer values won't expand correctly but also won't blow up
+for v in DEBUG VERBOSE QUIET; do
+  if [ -z "${!v}" -o "${!v}" = "0" ]; then
+    unset -v {,_}$v
+  else
+    c=${v:0:1}; c=${c,,}
+    level=`printf "%d" ${!v} 2>/dev/null` || level=1
+    eval _$v="-`eval printf "%0.s$c" {1..$level}`"
+    export {,_}$v
+  fi
+done
+unset -v v c level
+
+#TODO nearly universal cmdline options
+#NOOP=${NOOP:+ -n}
+
+
+[ `id -u` -eq 0 ] || SUDO=sudo
+[ "`ps -p 1 -o comm= 2>/dev/null`" != 'systemd' ]
+SYSTEMD=$?
+
+#function log()    { echo -e "$*"; }
+#function debug()  { [ -n "$DEBUG" ] && log "${FUNCNAME^^}" "$@" || return 0; }
+#function info()   { [ -n "${VERBOSE}${DEBUG}" ] && log "${FUNCNAME^^}" "$@" || return 0; }
+#function notice() { log "${FUNCNAME^^}" "$@"; }
+#function warn()   { >&2 log "${FUNCNAME^^}" "$@"; }
+#function error()  { >&2 log "${FUNCNAME^^}" "$@"; [ ${SHLVL:-1} -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }
+
+
+function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
+
+function detect_os() {
+  #TODO leverage facter2, chef equiv, and distro if available
+  #ref: https://github.com/nir0s/distro/blob/master/distro.py#L154
+
+# old, rather brittle way
+#if [[ -e /etc/redhat-release ]]; then
+#   RELEASE_RPM=$(rpm -qf /etc/redhat-release)
+#   RELEASE=$(rpm -q --qf '%{VERSION}' ${RELEASE_RPM})
+#   case ${RELEASE_RPM} in
+#       centos*)
+#           echo "detected CentOS ${RELEASE}"
+#           ;;
+#       redhat*)
+  local k
+  declare -A defaults=(
+        [OS_ID]=
+        [OS_NAME]=`uname -o`
+        [OS_KERNEL]=`uname -s`
+        [OS_ARCH]=`uname -m`
+        # Cygwin puts Build version inside () which is nonstandard, and RHEL/Amazon/CentOS tack on 'arch'
+        [OS_RELEASE]=$( uname -r | sed -e 's/(.*)$//' -e "s/\.`uname -m`$//" | awk -F . '{ print $NF }' )
+        [OS_FAMILY]=$( facter osfamily 2>/dev/null )
+        # or `lsb_release -i | awk '{ print $NF }' 2>/dev/null`
+        [OS_MAJOR]=$( facter operatingsystemmajrelease 2>/dev/null )
+        [OS_REPO_CMD]=
+        [OS_PKG_CMD]=
+        [OS_PKG_SUFFIX]=
+		[OS_LOCAL_DIR]=/usr/local
+		[OS_TEMP_DIR]=/tmp
+        # also `facter lsb*`
+  )
+  #TODO? define *_CMD of type array
+  # convirt MAP to individual OS_* variables
+  for k in "${!defaults[@]}"; do
+    [ -n "${!k}" ] || eval $k="${defaults[$k]}"
+  done
+
+  #TODO section only applies to Linux - break out into detect_${OS_KERNEL}
+  case $OS_RELEASE in
+    amzn?|el?)
+        : ${OS_FAMILY:=RedHat}
+        [ -n "$OS_REPO_CMD" ] || {
+            OS_REPO_CMD="yum ${QUIET:+$_QUIET}"
+            [ ${DEBUG:-0} -ge 2 ] && OS_REPO_CMD+=" --debuglevel=$DEBUG" || OS_REPO_CMD+=" --debuglevel=0"
+            [ ${VERBOSE:-0} -ge 2 ] && OS_REPO_CMD+=" --rpmverbosity=info" || OS_REPO_CMD+=" --rpmverbosity=warn"
+          }
+        : ${OS_PKG_CMD:='rpm'}
+        : ${OS_PKG_SUFFIX:='rpm'}
+        ;;&
+    amzn1|el6)
+        OS_MAJOR=6
+        ;;
+    amzn2|el7)
+        OS_MAJOR=7
+        ;;
+    deb*)
+        : ${OS_FAMILY:=Debian}
+        : ${OS_REPO_CMD:="apt-get --verbose-versions
+            -o Dpkg::Options::='--force-confdef'
+            -o Dpkg::Options::='--force-confold'
+            -o Dpkg::Options::='--force-confmiss'"}
+        : ${OS_PKG_CMD:='dpkg'}
+        : ${OS_PKG_SUFFIX:='deb'}
+        ;;&
+    *)
+  esac
+
+  for k in ${!OS_*}; do debug "$k=${!k}"; done
+  export ${!OS_*}
+}
+
+
+function package_name() {
+  local name= py{2,3}
+
+  while [ "${1:x}" ]; do
+    [ -n "$1" ] || { shift; continue; }
+
+    case "${OS_FAMILY:-$OS_NAME}" in
+      *Linux)
+            unset OS_FAMILY
+			;&
+      "")   detect_os
+            ;;&
+      RedHat)
+        case "$1" in
+          epel-release)
+                name="https://dl.fedoraproject.org/pub/epel/epel-release-latest-${OS_MAJOR:?}.noarch.${OS_PKG_SUFFIX:?}"
+                ;;
+          ius-release)
+                # TODO also 'centos', use $OS_ID? `curl 'https://setup.ius.io/' | bash` is possible but weak
+                name="https://rhel${OS_MAJOR:?}.iuscommunity.org/ius-release.${OS_PKG_SUFFIX:?}"
+                ;;
+          puppet-release)
+                name="https://yum.puppet.com/puppet/puppet-release-el-${OS_MAJOR:?}.noarch.${OS_PKG_SUFFIX:?}"
+                ;;
+		  python3|python3-*)
+				rpm -q epel-release &>/dev/null && py3=34
+				rpm -q ius-release &>/dev/null && py3=36u
+				name=${1/3/$py3}
+				;;
+        esac
+        ;;
+      Debian)
+        ;;
+      *)    # unsupported
+    esac
+
+    echo "${name:-$1}"
+    shift
+  done
+}
+
+
+# replace file and optionally take backup
+function replace_file() {
+  local orig="${1:?}"
+  local new="${2:?}"
+  local flags="${3- --backup}"
+  local mode uid gid context
+
+# TODO Selinux Context with '%C' and --context=$context. check with 'getenforce' first
+  #FIXME test for symlink and output %N ('link' -> 'real dest'), parse and strip quotes?
+  # non-priv can stat restricted files if can walk intervening paths
+  read -r mode uid gid context \
+      < <(stat --format='%a %U %G' "$orig" 2>/dev/null)
+
+  # clear parameters if our own
+  [ "$uid" = "`id -nu`" ] && unset uid
+  [ "$gid" = "`id -ng`" ] && unset gid
+
+  ${DEBUG:+runv} ${uid:+$SUDO} install $VERBOSE ${flags} -m ${mode:-644} \
+      ${uid:+ -o $uid} ${gid:+ -g $gid} ${context:+ --context=$context} \
+      "$new" "$orig"
+}
+
+
+function whereis_function() {
+
+  shopt -s extdebug
+  declare -F "${1:?}" | cut -d' ' -f3
+  shopt -u extdebug
+}
+
+
+function list_functions() {
+  local file
+
+  [ -n "$1" -a file=`readlink -qe $1` ] && source "$file" &>/dev/null
+
+  shopt -s extdebug
+  declare -F `compgen -A function` | awk -v f="$file" '$3 ~ f { print $1 }'
+  shopt -u extdebug
+
+#NOTE
+# This doesn't work if "$file" sources other files - answer is polluted.
+#
+#  env -i /bin/bash --noprofile --norc <<_EOF
+#        source "$file" &>/dev/null
+#        compgen -A function    #alt: declare -F | cut -d' ' -f3
+#_EOF
+}
+
+
+# misc notes
+#if [ -f /etc/os-release ]; then
+#    # freedesktop.org and systemd
+#    . /etc/os-release
+#    OS=$NAME
+#    VER=$VERSION_ID
+#elif type lsb_release >/dev/null 2>&1; then
+#    # linuxbase.org
+#    OS=$(lsb_release -si)
+#    VER=$(lsb_release -sr)
+#elif [ -f /etc/lsb-release ]; then
+#    # For some versions of Debian/Ubuntu without lsb_release command
+#    . /etc/lsb-release
+#    OS=$DISTRIB_ID
+#    VER=$DISTRIB_RELEASE
+#elif [ -f /etc/debian_version ]; then
+#    # Older Debian/Ubuntu/etc.
+#    OS=Debian
+#    VER=$(cat /etc/debian_version)
+#elif [ -f /etc/SuSe-release ]; then
+#    # Older SuSE/etc.
+#    ...
+#elif [ -f /etc/redhat-release ]; then
+#    # Older Red Hat, CentOS, etc.
+#    ...
+#else
+#    # Fall back to uname, e.g. "Linux <version>", also works for BSD, etc.
+#    OS=$(uname -s)
+#    VER=$(uname -r)
+#fi
+#
+#case $(uname -m) in
+#x86_64)
+#    ARCH=x64  # or AMD64 or Intel64 or whatever
+#    ;;
+#i*86)
+#    ARCH=x86  # or IA32 or Intel32 or whatever
+#    ;;
+#*)
+#    # leave ARCH as-is
+#    ;;
+#esac
+
+# vim: expandtab:ts=4:sw=4
