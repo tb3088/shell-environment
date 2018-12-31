@@ -47,7 +47,10 @@ function aws-profile {
 
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf("%s ", $2); }' $config` )
-    [ -n "${list[*]}" ] || { log_ERROR "no profiles found ($config)"; return; }
+    [ -n "${list[*]}" ] || {
+        log_ERROR "no profiles found ($config)"
+        return
+      }
 
     read -t 12 -p "Choose new AWS_PROFILE from [ *${list[*]} ]:  " || return
     [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
@@ -67,6 +70,7 @@ function aws-profile {
   ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
 
   AWS_PROFILE="$profile"
+  unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
   ${DEBUG:+ runv} aws-addPath
   if [ -n "$AWS_CONFIG_FILE" ]; then
     local _creds="${AWS_CONFIG_FILE%/*}/credentials"
@@ -77,7 +81,8 @@ function aws-profile {
   [ -n "${region}${AWS_DEFAULT_REGION}" ] || log_WARN "region for profile ($profile) in ${config/$HOME/\~} or env:AWS_DEFAULT_REGION is not set"
 }
 
-function aws-load_session {
+
+function aws-session-load {
   local format=${FORMAT:-'text'}
   local input="${1:?}" IFS
 
@@ -91,7 +96,7 @@ function aws-load_session {
             ;;
     json)   local key
             local -u value
-            [ -n "${DEBUG}" ] && jq -MS .Credentials <<< "$input"
+            log_DEBUG `jq -MS .Credentials <<< "$input"`
 #            for key in "${!__aws_session[@]}"; do
 #              value="${__aws_session[$key]}"
 #              local -n nref=$value
@@ -100,14 +105,15 @@ function aws-load_session {
               local -n nref=$value
               nref=`jq -r .Credentials.$key <<< "$input"`
             done
-            [ -n "$VERBOSE" ] && `jq -r .AssumedRoleUser <<< "$input"`
+            log_INFO `jq -r .AssumedRoleUser <<< "$input"`
             ;;
     *)      log_ERROR "unsupported format ($format)"
   esac
   export ${!AWS_*}
 }
 
-function aws-save_session {
+
+function aws-session-save {
     local field
     local -u key
 
@@ -117,32 +123,18 @@ function aws-save_session {
     done
 }
 
+
 function aws-session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
-  #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined! 
-
-  aws-profile "${AWS_PROFILE:-$1}" || return
-  [ "$1" != "$AWS_PROFILE" ] || shift
-
-  local -i token
-  if [ -n "$1" ]; then
-    [[ "$1" =~ [0-9]{6,} ]] && token=$1 || log_WARN "malformed TOTP token ($1)"
-    shift
-  fi
-
-  # 'aws configure get' of non-existent key is silent
-  local mfa=`aws configure get mfa_serial`
-  if [ $? -eq 255 ]; then       # not reached
-    log_PANIC "unknown profile ($AWS_PROFILE) ${AWS_CONFIG_FILE:+in $AWS_CONFIG_FILE}"
-    return
-  fi
+  #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
   local -ir now=`date '+%s'`
   local -i duration=${AWS_SESSION_DURATION:-3600} write2creds= force=0
-  local cmd output role
+  # Bash 'integer' doesn't handle leading ZEROs
+  local cmd output role profile token
 
   local OPTIND opt
-  while getopts ':cfr:tW' opt 2>/dev/null; do
+  while getopts ':cfr:T:t:W' opt 2>/dev/null; do
     case "$opt" in
       c)    which jq &>/dev/null || {
                 log_WARN "'jq' not found. skipping option (-$opt) ..."
@@ -161,11 +153,13 @@ function aws-session {
             ;;
       f)    force=1 ;;
       r)    role="$OPTARG" ;;
-      t)    duration=$OPTARG ;;
+      T)    duration=$OPTARG ;;
+      t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || log_WARN "invalid Token ($OPTARG)"
+            ;;
       W)    # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
             write2creds=1
             ;;
-      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      :)    RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
       \?)   log_ERROR "invalid option '-$OPTARG'" ;&
       h)    #TODO usage
             return 2
@@ -173,11 +167,34 @@ function aws-session {
   done
   shift $((OPTIND-1))
 
-  # 'role-session-name' pattern is [\w+=,.@-]*
+  while [ "${1+x}" ]; do
+    if [[ $1 =~ [0-9]{6} ]]; then
+      token=$1
+    elif [[ $1 =~ ^arn:aws:iam: ]]; then
+      role="$1"
+    elif [[ $1 =~ ^[a-zA-Z]+ ]]; then
+      profile="$1"
+    else
+      log_WARN "unknown argument ($1)"
+      break
+    fi
+    shift
+  done
+
+  aws-profile "${profile:-$AWS_PROFILE}" || return
+
+  local mfa=`aws configure get mfa_serial`
+  if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
+    # not reached, aws-profile should have caught it
+    log_PANIC "unknown profile ($AWS_PROFILE) ${AWS_CONFIG_FILE:+in $AWS_CONFIG_FILE}"
+    return
+  fi
+
   if [ -n "${role:=`aws configure get role_arn`}" ]; then
-    local session_name="${role#:role/}@$AWS_PROFILE-$$"
-    session_name="${session_name: -45}"
-    cmd="assume-role --role-arn $role --role-session-name $session_name"
+    # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
+    local session_name="${role#:role/}"
+    session_name="${session_name:0:25}@${AWS_PROFILE}-$$"
+    cmd="assume-role --role-arn=$role --role-session-name=$session_name"
   else
     cmd='get-session-token'
   fi
@@ -186,23 +203,23 @@ function aws-session {
     output=$(
         local field
         local -u key
-#FIXME confirm safe to toss all?
-# use same pattern as aws-load_session with 'keys' and 'values'
+
+# FIXME use same pattern as aws-session-load with 'keys' and 'values'
         for field in "${!__aws_session[@]}"; do
           key="${__aws_session[$field]}"
           unset $key
         done
 
-        ${DEBUG:+ runv} aws sts $cmd \
-            ${mfa:+ --serial-number $mfa ${token:+ --token-code $token}} \
-            ${duration:+ --duration-seconds $duration} \
+        ${DEBUG:+ runv} aws sts ${DEBUG:+ --debug} $cmd \
+            ${mfa:+ --serial-number=$mfa ${token:+ --token-code=$token}} \
+            ${duration:+ --duration-seconds=$duration} \
             --output text
-    ) || return     #FIXME why did it error? test for -n "$output" instead?
+    ) || return
   fi
 #  [ -n "$output" ] || return
 
-  aws-load_session "$output"
-  [ $write2creds -eq 1 ] && aws-save_session
+  aws-session-load "$output"
+  [ $write2creds -eq 1 ] && aws-session-save
 
   [ -z "${VERBOSE}${DEBUG}" ] || aws-printenv
   export ${!AWS_*}
@@ -219,7 +236,7 @@ function aws-addPath {
     [ -n "$v" ] || continue
     [ "$v" = '.' ] && v=`pwd`
 
-    for f in "$v"{/bin,}; do
+    for f in "$v"/bin; do
       if [ ${delete:-0} -eq 1 ]; then
         ${DEBUG:+ runv} rmPath "$f"
       else
@@ -236,11 +253,13 @@ function aws-addPath {
   done
 }
 
+
 function aws-rmPath {
   delete=1 aws-addPath "$@"
 }
 
-function route53-export {
+
+function aws-route53-export {
   which jq &>/dev/null || { log_ERROR "'jq' not installed"; return; }
   local zoneid=${1:?}
 
@@ -258,5 +277,15 @@ function route53-export {
     echo -e "\n"
   done
 }
+
+# function aws-kms-crypt (de/en) are simple 1 liner calls to kms-crypt
+# -e for encrypt, -d for decrypt. -B to pipe results to base64 -d. must NOT decode (ie. consume the already base64-encoded
+# cyphertext as-is for assignment to Bash variables. Pipes, however have no such limitation.
+# shamelessly cribbed from https://stackoverflow.com/questions/49537224/how-can-i-call-amazons-aws-kms-decrypt-function-without-using-a-binary-file/53735748#53735748
+# remember to whack Gruntwork's retarded 'kmscrypt::' header both forward and backward.
+#
+# also support -j and auto-detect on 1st char = '{'
+# aws kms  decrypt --ciphertext-blob fileb://<(sed -e 's/^kmscrypt:://' post | base64 -d) --query Plaintext --output text
+# }
 
 # vim: expandtab:ts=4:sw=2
