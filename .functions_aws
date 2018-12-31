@@ -77,49 +77,53 @@ function aws-profile {
     [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
   fi
 
+  [ -n "${region}${AWS_DEFAULT_REGION}" ] ||
+        log_WARN "region for profile ($profile) in ${config/$HOME/\~} or env:AWS_DEFAULT_REGION is not set"
   export ${!AWS_*}
-  [ -n "${region}${AWS_DEFAULT_REGION}" ] || log_WARN "region for profile ($profile) in ${config/$HOME/\~} or env:AWS_DEFAULT_REGION is not set"
 }
 
 
 function aws-session-load {
-  local format=${FORMAT:-'text'}
-  local input="${1:?}" IFS
+  local format input="$1"
 
-  [ -f "$1" ] && input="$( <"$1" )"
+  if [ -z "$input" ]; then
+    local -a list=(`ls -t $HOME/.aws/cli/cache/`)
+    read -t 15 -p "Choose cached credentials from [ *${list[*]} ]:  " || return
+    [ -n "$REPLY" ] && input="$REPLY" || input="${list[0]}"
+    input="$HOME/.aws/cli/cache/$input"
+  fi
+  [ -f "$input" ] && input="$( <"$input" )"     # alt: 'cat'
   [ "${input:0:1}" = '{' ] && format='json'
 
-  case "$format" in
-    text)   local header rest
+  case "${format:=text}" in
+    text)   local header rest IFS
+            log_DEBUG "$input"
             IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
                 AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
-    json)   local key
-            local -u value
+    json)   local field; local -u envvar
             log_DEBUG `jq -MS .Credentials <<< "$input"`
-#            for key in "${!__aws_session[@]}"; do
-#              value="${__aws_session[$key]}"
-#              local -n nref=$value
-            for key in `keys __aws_session`; do
-              value=`value __aws_session $key`
-              local -n nref=$value
-              nref=`jq -r .Credentials.$key <<< "$input"`
+            for field in `keys __aws_session`; do
+              envvar=`value __aws_session $field`
+              local -n nref="$envvar"
+              nref=`jq -r .Credentials.$field <<< "$input"`
             done
             log_INFO `jq -r .AssumedRoleUser <<< "$input"`
             ;;
-    *)      log_ERROR "unsupported format ($format)"
+    *)      RC=2 log_ERROR "unsupported format ($format)"
+            return
   esac
+  log_INFO `aws-printenv`
   export ${!AWS_*}
 }
 
 
-function aws-session-save {
-    local field
-    local -u key
+function aws-session-write {
+    local field; local -u envvar
 
-    for field in "${!__aws_session[@]}"; do
-      key="${__aws_session[$field]}"
-      ${DEBUG:+ runv} aws configure set "${key,,}" "${!key}"
+    for field in `keys __aws_session`; do
+      envvar=`value __aws_session $field`
+      ${DEBUG:+ runv} aws configure set "${envvar,,}" "${!envvar}"
     done
 }
 
@@ -129,19 +133,19 @@ function aws-session {
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
   local -ir now=`date '+%s'`
-  local -i duration=${AWS_SESSION_DURATION:-3600} write2creds= force=0
+  local -i duration=${AWS_SESSION_DURATION:-3600} write=0 force=0
   # Bash 'integer' doesn't handle leading ZEROs
   local cmd output role profile token
 
   local OPTIND opt
-  while getopts ':cfr:T:t:W' opt 2>/dev/null; do
+  while getopts ':cfp:r:T:t:W' opt 2>/dev/null; do
     case "$opt" in
       c)    which jq &>/dev/null || {
                 log_WARN "'jq' not found. skipping option (-$opt) ..."
                 continue
-            }
+              }
             ;;&
-            #FIXME figure out why not firing
+            #FIXME first valid != desired AWS_PROFILE
       c)    for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
               expires=$(date --date `jq -r .Credentials.Expiration "$f"` '+%s')
@@ -152,12 +156,13 @@ function aws-session {
             done
             ;;
       f)    force=1 ;;
+      p)    profile="$OPTARG" ;;
       r)    role="$OPTARG" ;;
       T)    duration=$OPTARG ;;
       t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || log_WARN "invalid Token ($OPTARG)"
             ;;
       W)    # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
-            write2creds=1
+            write=1
             ;;
       :)    RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
       \?)   log_ERROR "invalid option '-$OPTARG'" ;&
@@ -219,9 +224,9 @@ function aws-session {
 #  [ -n "$output" ] || return
 
   aws-session-load "$output"
-  [ $write2creds -eq 1 ] && aws-session-save
+  [ $write -eq 1 ] && aws-session-write
 
-  [ -z "${VERBOSE}${DEBUG}" ] || aws-printenv
+  log_INFO `aws-printenv`
   export ${!AWS_*}
 }
 
