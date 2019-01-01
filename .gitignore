@@ -20,6 +20,7 @@ go
 .npm/
 .packer.d
 .rnd
+.screen_exchange
 .serverauth.*
 .skipbuddy
 .ssh

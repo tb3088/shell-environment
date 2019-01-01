@@ -96,14 +96,12 @@ fi
   PS1="\n${PS_PREFIX}${_prompt}\n"
   [ $EUID -eq 0 ] && PS1+="${BRED}"
   [ $_rc -eq 0 ] && unset _rc
-  PS1+="\!${_rc:+($_rc)} \$$RS "
+  PS1+="\!${_rc:+($_rc)}$RS ${PS_SCREEN}\$ "
 }
 
+PS_SCREEN='\[\033k\033\\\]'
 PS_PREFIX="${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
-#PS1="\n${PS_PREFIX}\n\! \$${RS} "
-PS1="
-${PS_PREFIX}
-\! \$${RS} "
+PS1="\n${PS_PREFIX}\n\! ${PS_SCREEN}\$ "
 
 # Examples:
 # for ROOT
@@ -153,7 +151,7 @@ for f in "$HOME"/.functions{,_${OSTYPE:-`uname`},.local}; do
 done
 unset f
 
-for f in "$HOME"/.{aliases{,.local},bashrc{.local,_*}}; do
+for f in "$HOME"/.{aliases{,.local},bashrc{.local,_*},dircolors}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? in $f"
