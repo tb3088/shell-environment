@@ -197,8 +197,10 @@ function aws-session {
 
   if [ -n "${role:=`aws configure get role_arn`}" ]; then
     # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
-    local session_name="${role#:role/}"
-    session_name="${session_name:0:25}@${AWS_PROFILE}-$$"
+    local session_name="${role#*:role/}"
+    local session_suffix="${AWS_PROFILE}.$$"
+    session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
+    session_name="${session_name//:/.}"
     cmd="assume-role --role-arn=$role --role-session-name=$session_name"
   else
     cmd='get-session-token'
