@@ -14,7 +14,7 @@ autodetach on
 startup_message off
 
 defscrollback 2000
-defbce on			# clear background
+defbce on           # clear background
 
 term screen-256color
 
@@ -23,8 +23,7 @@ termcapinfo xterm* cs
 termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "ti@:te@"
 termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "hs:ts=\E]0;:fs=\007:ds=\E]0;screen\007"
 
-hardstatus off
-#hardstatus lastline
+hardstatus off      # alwayslastline
 
 hardstatus string "%t%? [%h]%?"
 #hardstatus string "%{-b gk}%-w%{+b kg}%50>%n %t%{-b gk}%+w"
@@ -33,7 +32,7 @@ hardstatus string "%t%? [%h]%?"
 #hardstatus string "%{.bW} %-w%{.rW}%n %t%{-}%+w %=%{..} %l | @%H | %D %c:%s %d.%m.%Y"
 
 caption always 
-caption string "%{gk}%-w%{kg}%50>%n %t%{-}%+w%<"
+caption string "%{gk}%-w%{kg}%50>%n %t%{-}%+w"
 # alt:  "%?%{= gk}%-w%?%{+r}%50>%n %t%?%{-}%+w%?"
 #caption string "%{.bW}%-w%{.BW}%n %t%{-}%+w %=%{..G} %H %{..Y} %Y%m%d "
 #caption string "%{= ck}%H  %= %Y-%m-%d | %c"
@@ -60,30 +59,30 @@ bind h focus left
 bind l focus right
 bind ' ' windowlist -b
 
-bindkey "^[[1;3D" prev	# ALT-left arrow
-bindkey "^[[1;3C" next	# ALT_right arrow
-bindkey -k F1 prev	# F11
-bindkey -k F2 next	# F12
 # do 'ctrl-v <keypress>' in normal window to see escape codes
+bindkey '^[[1;3D' prev  # ALT-left arrow
+bindkey '^[[1;3C' next  # ALT_right arrow
+bindkey -k F1 prev      # F11
+bindkey -k F2 next      # F12
 
-bindkey -k k1 select 1	# F1
+bindkey -k k1 select 1  # F1
 bindkey -k k2 select 2
 bindkey -k k3 select 3
 bindkey -k k4 select 4
 bindkey -k k5 select 5
 bindkey -k k6 select 6
 bindkey -k k7 select 7
-bindkey -k k8 select 8	# F8
+bindkey -k k8 select 8  # F8
 
 # use ctrl-Oh or F11 instead of Ctrl-a for command mode
 escape ^Oo
 
 # ALT-minus/equals to enter COPY mode
-bindkey "^[-" copy
-bindkey "^[=" copy
+bindkey '^[-' copy
+bindkey '^[=' copy
 # PgUP/DN to scroll. ^b, ^f for entire pages
-bindkey "^[[5~" eval copy 'stuff ^u'
-bindkey "^[[6~" eval copy 'stuff ^d'
+bindkey '^[[5~' eval copy 'stuff ^u'
+bindkey '^[[6~' eval copy 'stuff ^d'
 
 bufferfile "$HOME/.screen_exchange"
 # alt: /tmp/screen-exchange-$PPID
@@ -100,5 +99,6 @@ bufferfile "$HOME/.screen_exchange"
 # Set the altscreen so that when you quit vi, it will go back to
 # what it was before
 altscreen on
-
 deflogin off
+
+# vim: expandtab:ts=4:sw=4
