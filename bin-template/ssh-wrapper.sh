@@ -113,7 +113,6 @@ function genlist() {
         [ -z "$b$c" -a -n "$item2" -a -n "$item1"  ] &&
             combo="$item2\${d3}$item1 $item1\${d3}$item2"
 
-        # NOTE if D# is Array, will only process 1st element
         for d1 in "${D1[@]}"; do
             for d2 in "${D2[@]}"; do
                 [ -n "$b" -a -n "$c" ] && stub="$b$d2$c" || stub="$b$c"
@@ -185,7 +184,7 @@ function _ssh() {
           `prefix="$HOME/.ssh" genlist`; do
 
         # discard match on '.aws/config' since that is reserved
-        grep -q -- "${AWS_CONFIG_FILE:-\.aws/config$}" <<< "$_file" && continue
+        [ "$_file" = "${AWS_CONFIG_FILE:-$HOME/.aws/config}" ] && continue
 
         debug "    $_file"
         [ -f "$_file" ] && { SSH_CONFIG="$_file"; break; }
