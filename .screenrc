@@ -2,7 +2,8 @@
 # http://aperiodic.net/screen/appearance, title_examples
 
 shell -${SHELL}
-shelltitle "$ |shell"
+# something wrong with PS1 escapes?
+#shelltitle "$ |shell"
 
 vbell off
 vbell_msg " *ring* "
@@ -32,7 +33,7 @@ hardstatus string "%t%? [%h]%?"
 #hardstatus string "%{.bW} %-w%{.rW}%n %t%{-}%+w %=%{..} %l | @%H | %D %c:%s %d.%m.%Y"
 
 caption always 
-caption string "%{gk}%-w%{kg}%50>%n %t%{-}%+w"
+caption string "%{gk}%-w%{kg}%50>%n %t%{-}%+w%<"
 # alt:  "%?%{= gk}%-w%?%{+r}%50>%n %t%?%{-}%+w%?"
 #caption string "%{.bW}%-w%{.BW}%n %t%{-}%+w %=%{..G} %H %{..Y} %Y%m%d "
 #caption string "%{= ck}%H  %= %Y-%m-%d | %c"
