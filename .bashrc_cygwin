@@ -14,6 +14,8 @@ else
   alias ps='\ps -f'
 fi
 
+shopt -s nullglob
+
 # Example of a semi-smart search, but probably best to define in .aliases.local
 # or better yet put $LOCALAPPDATA on $PATH and symlink to actual.
 #which 'notepad++' &>/dev/null || {

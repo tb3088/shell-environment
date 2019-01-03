@@ -1,7 +1,8 @@
 # To pick up the latest recommended .bashrc content,
 # look in /etc/defaults/etc/skel/.bashrc
 
-shopt -s nullglob extglob
+ulimit -S -c 0 -u 80
+
 ${ABORT:+ set -eE}
 ${CONTINUE:+ set +e}
 
@@ -126,7 +127,12 @@ set -o ignoreeof checkjobs
 set -o vi
 
 # case-insensitive filename globbing, '*' matches all files and zero or more directories
-shopt -s nocaseglob globstar
+shopt -s nocaseglob globstar extglob
+
+# nullglob=off preserves '*' even if no files present. During interactive 
+# this is rather silly but it appears that compgen (aka autocomplete) on Ubuntu(?)
+# stops working if set.
+shopt -u nullglob failglob
 
 # When changing directory small typos can be ignored by bash
 # for example, cd /vr/lgo/apaache would find /var/log/apache
