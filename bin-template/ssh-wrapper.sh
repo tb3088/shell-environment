@@ -170,8 +170,9 @@ function _ssh() {
         # skip irrelevent
         SSH_AGENT_PID|SSH_AUTH_SOCK|SSH_VERBOSE|SSH_OPTS) continue ;;
     esac
+    local -n vv=$v
 
-    [ -n "${!v}" -a -f "${!v}" ] || error "file $v (${!v}) not found!"
+    [ -n "${vv}" -a -f "${vv}" ] || error "file $v (${vv}) not found!"
   done
 
   # TODO? convert to function since identical
