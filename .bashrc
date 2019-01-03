@@ -1,7 +1,7 @@
 # To pick up the latest recommended .bashrc content,
 # look in /etc/defaults/etc/skel/.bashrc
 
-ulimit -S -c 0 -u 80
+ulimit -S -c 0
 
 ${ABORT:+ set -eE}
 ${CONTINUE:+ set +e}
@@ -176,7 +176,7 @@ fi
 # If this shell is interactive, turn on programmable completion enhancements.
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
-  *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} "$HOME"/.bash_completion; do
+  *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
           [ -f "$f" ] || continue
           source "$f" || echo >&2 "RC=$? in $f"
         done

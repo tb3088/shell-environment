@@ -5,17 +5,17 @@ which ec2-version &>/dev/null || {
     unset d
   }
 
-link=`which aws_bash_completer 2>/dev/null`
-[ -n "$link" ] &&
-     for bc in /etc "$HOME"; do
-      [ -e "$bc/bash_completion.d/aws_bash_completer" ] && break
-      [ "$bc" = "/etc" ] && : ${SUDO:=`which sudo 2>/dev/null`}
+link=`which aws_bash_completer 2>/dev/null` &&
+  for bc in {/etc/,"$HOME"/.}bash_completion.d; do
+    [ -e "$bc/${link##*/}" ] && break
+    [[ "$bc" =~ ^/etc ]] && continue
 
-      $SUDO ln -s "$link" "$bc/bash_completion.d/"
-    done
+    mkdir -p "$bc"
+    ln -s "$link" "$bc"/
+  done
 unset link
 
 # assume-role session credentials expire in 1h (default)
-export AWS_SESSION_DURATION=$((3600 * 12))
+export AWS_SESSION_DURATION=$((3600 * 8))
 
 source ${BASH_SOURCE/bashrc/functions}
