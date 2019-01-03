@@ -10,16 +10,28 @@
 source ~/.functions
 shopt -s nullglob extglob
 
-
 case "${OSTYPE:-`uname`}" in
-    [cC]ygwin|CYGWIN*) 
+  [cC]ygwin|CYGWIN*) 
         WHICH='\which --skip-functions --skip-alias'
         ;;
-    [dD]arwin*)
+  [dD]arwin*)
         WHICH='\which -s'
         ;;
-    *)  WHICH='\which'
+  *)    WHICH='which'
 esac
+
+# Check for essential binaries
+for p in SSH SCP SFTP SCREEN; do
+    declare -n pp=$p
+    # skip variables set to anything, even '' so as to not clobber aliases
+    [ -n "${pp+x}" ] && continue
+
+    pp=`$WHICH ${p,,} 2>/dev/null`
+    # screen not found is benign
+    [ -n "$pp" -o "$p" = 'SCREEN' ] || { echo >&2 "Error: missing binary ($p)"; exit 1; }
+done
+unset p pp
+
 
 declare -F log >/dev/null ||
 function log() { echo "$*"; }
@@ -64,15 +76,7 @@ function error() {
 declare -F runv >/dev/null ||
 function runv() { >&2 echo "+ $*"; "$@"; }
 
-# Check for essential binaries
-for p in SSH SCP SFTP SCREEN; do
-    # skip variables set to anything, even '' so as to not clobber aliases
-    [ -n "${p+x}" ] || continue
 
-    eval $p=`$WHICH ${p,,} 2>/dev/null`
-    # screen not found is benign
-    [ -n "${!p}" -o "$p" = 'SCREEN' ] || error "missing binary ($p)"
-done
 
 function genlist() {
   # Example list
@@ -244,6 +248,7 @@ function init_logs() {
 
 
 #--- main ---
+
 
 _prog="${BASH_SOURCE##*/}"
 _progdir=$( cd `dirname "$BASH_SOURCE"`; pwd )
