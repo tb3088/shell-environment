@@ -21,7 +21,7 @@ term screen-256color
 
 # disable problems with 'cs' inherited from /etc/screenrc
 termcapinfo xterm* cs
-termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "ti@:te@"
+#termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "ti@:te@"
 termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "hs:ts=\E]0;:fs=\007:ds=\E]0;screen\007"
 
 hardstatus off      # alwayslastline
@@ -79,11 +79,11 @@ bindkey -k k8 select 8  # F8
 escape ^Oo
 
 # ALT-minus/equals to enter COPY mode
-bindkey '^[-' copy
-bindkey '^[=' copy
+bindkey "^[-" copy
+bindkey "^[=" copy
 # PgUP/DN to scroll. ^b, ^f for entire pages
-bindkey '^[[5~' eval copy 'stuff ^u'
-bindkey '^[[6~' eval copy 'stuff ^d'
+bindkey "^[[5~" eval copy 'stuff ^u'
+bindkey "^[[6~" eval copy 'stuff ^d'
 
 bufferfile "$HOME/.screen_exchange"
 # alt: /tmp/screen-exchange-$PPID
