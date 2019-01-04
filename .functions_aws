@@ -1,18 +1,34 @@
 # $Id$
 
-declare -A __aws_session=(
-    [AccessKeyId]=aws_access_key_id
-    [SecretAccessKey]=aws_secret_access_key
-    [SessionToken]=aws_session_token
-    [Expiration]=aws_session_expire
+declare -p __aws_session &>/dev/null ||
+declare -Ar __aws_session=(
+    [AccessKeyId]='aws_access_key_id'
+    [SecretAccessKey]='aws_secret_access_key'
+    [SessionToken]='aws_session_token'
+    [Expiration]='aws_session_expire'
 )
 
-alias aws-clearenv='unset ${!AWS_*}'
-
-function aws-printenv {
-  local v
-  for v in ${!AWS_*}; do echo "$v=${!v}"; done
-}
+# aws ec2 describe-regions --output text | awk '{print $NF}'
+# aws ec2 describe-availability-zones --region $REGION --output text | awk '{print $NF}'
+declare -p __aws_regions &>/dev/null ||
+declare -Ar __aws_regions=(
+  [ap-northeast-2]=\(`echo ap-northeast-2{a,c}`\)
+  [ap-northeast-1]=\(`echo ap-northeast-1{a,c,d}`\)
+  [ap-south-1]=\(`echo ap-south-1{a..b}`\)
+  [ap-southeast-1]=\(`echo ap-southeast-1{a..c}`\)
+  [ap-southeast-2]=\(`echo ap-southeast-2{a..c}`\)
+  [ca-central-1]=\(`echo ca-central-1{a..b}`\)
+  [eu-central-1]=\(`echo eu-central-1{a..c}`\)
+  [eu-north-1]=\(`echo eu-north-1{a..c}`\)
+  [eu-west-1]=\(`echo eu-west-1{a..c}`\)
+  [eu-west-2]=\(`echo eu-west-2{a..c}`\)
+  [eu-west-3]=\(`echo eu-west-3{a..c}`\)
+  [sa-east-1]=\(`echo sa-east-1{a,c}`\)
+  [us-east-1]=\(`echo us-east-1{a..f}`\)
+  [us-east-2]=\(`echo us-east-2{a..c}`\)
+  [us-west-1]=\(`echo us-west-1{a,c}`\)
+  [us-west-2]=\(`echo us-west-2{a..c}`\)
+)
 
 
 #function is-aws
@@ -29,6 +45,14 @@ function aws-printenv {
 #local-ipv4
 #public-ipv4
 
+function aws-region {
+  local region=${1:-'us-east-1'}
+  if [ -z "$1" ]; then
+    read -t 8 -p "Choose new region from [ `printf "\n  %15s %15s %15s %15s" ${!__aws_regions[@]}` ]:  " || return
+    [ -n "$REPLY" ] && region="$REPLY"
+  fi
+  [ -n "${__aws_regions[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
+}
 
 function aws-profile {
   # NOTE 'aws configure get' does NOT follow 'source_profile'
@@ -52,7 +76,7 @@ function aws-profile {
         return
       }
 
-    read -t 12 -p "Choose new AWS_PROFILE from [ *${list[*]} ]:  " || return
+    read -t 8 -p "Choose new profile from [ *${list[*]} ]:  " || return
     [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
   fi
   [ "${profile:?}" = "$AWS_PROFILE" ] && return 0
