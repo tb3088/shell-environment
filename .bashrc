@@ -81,28 +81,26 @@ if [ -n "$GIT_PROMPT" ]; then
     done
 
     _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
-    _prompt+="
-  ${UL}Git:$RS ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
+    _prompt+="\n${UL}Git:$RS ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
   fi
 fi
 
   if [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ]; then
     local _config
     _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config%/*}; _config=${_config#.aws/}
-    _prompt+="
-  ${UL}AWS:$RS ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}$RS"
+    _prompt+="\n${UL}AWS:$RS ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}$RS"
   fi
 
   #TODO use array with IFS
   PS1="\n${PS_PREFIX}${_prompt}\n"
   [ $EUID -eq 0 ] && PS1+="${BRED}"
   [ $_rc -eq 0 ] && unset _rc
-  PS1+="\!${_rc:+($_rc)}$RS ${PS_SCREEN}\$ "
+  PS1+="\!${_rc:+($_rc)}$RS "${PS_SCREEN}'\$ '
 }
 
-PS_SCREEN='\[\033k\033\\\]'
+PS_SCREEN='\[\033k\033\134\]'
 PS_PREFIX="${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
-PS1="\n${PS_PREFIX}\n\! ${PS_SCREEN}\$ "
+PS1="\n${PS_PREFIX}\n\! "${PS_SCREEN}'\$ '
 
 # Examples:
 # for ROOT

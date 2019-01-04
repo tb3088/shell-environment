@@ -2,8 +2,7 @@
 # http://aperiodic.net/screen/appearance, title_examples
 
 shell -${SHELL}
-# something wrong with PS1 escapes?
-#shelltitle "$ |shell"
+shelltitle "$ |shell"
 
 vbell off
 vbell_msg " *ring* "
@@ -15,25 +14,24 @@ autodetach on
 startup_message off
 
 defscrollback 2000
-defbce on           # clear background
-
-term screen-256color
+#defbce on           # clear background
 
 # disable problems with 'cs' inherited from /etc/screenrc
 termcapinfo xterm* cs
-#termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "ti@:te@"
-termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "hs:ts=\E]0;:fs=\007:ds=\E]0;screen\007"
+# scrollbars don't play nice in WSL
+#termcapinfo xterm*|rxvt*|kterm*|Eterm* "ti@:te@"
+termcapinfo cygwin "ti@:te@"
+#termcapinfo xterm*|rxvt*|kterm*|Eterm*|cygwin "hs:ts=\E]0;:fs=\007:ds=\E]0"
+#term screen-256color
 
-hardstatus off      # alwayslastline
-
-hardstatus string "%t%? [%h]%?"
+hardstatus alwayslastline
+hardstatus string "%{gk}%-w%{kg}%50>%n %t%{-}%+w%<"
 #hardstatus string "%{-b gk}%-w%{+b kg}%50>%n %t%{-b gk}%+w"
 #hardstatus string "%?%{yk}%-Lw%?%{wb}%n*%f %t%?(%u)%?%?%{yk}%+Lw%?"
 #hardstatus string "%-Lw%{= BW}%50>%n%f* %t%{-}%+Lw%<"
 #hardstatus string "%{.bW} %-w%{.rW}%n %t%{-}%+w %=%{..} %l | @%H | %D %c:%s %d.%m.%Y"
 
-caption always 
-caption string "%{gk}%-w%{kg}%50>%n %t%{-}%+w%<"
+#caption always "%{gk}%-w%{kg}%50>%n %t%{-}%+w%<"
 # alt:  "%?%{= gk}%-w%?%{+r}%50>%n %t%?%{-}%+w%?"
 #caption string "%{.bW}%-w%{.BW}%n %t%{-}%+w %=%{..G} %H %{..Y} %Y%m%d "
 #caption string "%{= ck}%H  %= %Y-%m-%d | %c"
@@ -61,8 +59,8 @@ bind l focus right
 bind ' ' windowlist -b
 
 # do 'ctrl-v <keypress>' in normal window to see escape codes
-bindkey '^[[1;3D' prev  # ALT-left arrow
-bindkey '^[[1;3C' next  # ALT_right arrow
+bindkey "^[[1;3D" prev  # ALT-left arrow
+bindkey "^[[1;3C" next  # ALT_right arrow
 bindkey -k F1 prev      # F11
 bindkey -k F2 next      # F12
 
@@ -101,5 +99,8 @@ bufferfile "$HOME/.screen_exchange"
 # what it was before
 altscreen on
 deflogin off
+
+# workaround for '0' not parsing hardstatus line
+screen 1
 
 # vim: expandtab:ts=4:sw=4
