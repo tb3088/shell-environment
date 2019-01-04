@@ -101,8 +101,9 @@ function aws-profile {
     [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
   fi
 
-  [ -n "${region}${AWS_DEFAULT_REGION}" ] ||
-        log_WARN "region for profile ($profile) in ${config/$HOME/\~} or env:AWS_DEFAULT_REGION is not set"
+  [ -n "${AWS_DEFAULT_REGION:=$region}" ] || {
+        aws-region || log_WARN "region for profile ($profile) in ${config/$HOME/\~} or env:AWS_DEFAULT_REGION is not set"
+	}
   export ${!AWS_*}
 }
 
