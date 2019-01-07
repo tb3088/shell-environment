@@ -10,29 +10,6 @@
 source ~/.functions 2>/dev/null || true
 shopt -s nullglob extglob
 
-case "${OSTYPE:-`uname`}" in
-  [cC]ygwin|CYGWIN*)
-        WHICH='\which --skip-functions --skip-alias'
-        ;;
-  [dD]arwin*)
-        WHICH='\which -s'
-        ;;
-  *)    WHICH='which'
-esac
-
-# Check for essential binaries
-for p in SSH SCP SFTP SCREEN; do
-    declare -n pp=$p
-    # skip variables set to anything, even '' so as to not clobber aliases
-    [ -n "${pp+x}" ] && continue
-
-    pp=`$WHICH ${p,,} 2>/dev/null`
-    # screen not found is benign
-    [ -n "$pp" -o "$p" = 'SCREEN' ] || { echo >&2 "Error: missing binary ($p)"; exit 1; }
-done
-unset p pp
-
-
 declare -F log >/dev/null ||
 function log() { echo "$*"; }
 
@@ -75,7 +52,6 @@ function error() {
 
 declare -F runv >/dev/null ||
 function runv() { >&2 echo "+ $*"; "$@"; }
-
 
 
 function genlist() {
@@ -245,6 +221,28 @@ function init_logs() {
   [ -n "$DEBUG" ] && LOG_MASK='DEBUG'
 }
 
+case "${OSTYPE:-`uname`}" in
+  [cC]ygwin|CYGWIN*)
+        WHICH='\which --skip-functions --skip-alias'
+        ;;
+  [dD]arwin*)
+        WHICH='\which -s'
+        ;;
+  *)    WHICH='which'
+esac
+
+# Check for essential binaries
+for p in SSH SCP SFTP SCREEN; do
+    declare -n pp=$p
+    # skip variables set to anything, even '' so as to not clobber aliases
+    [ -n "${pp+x}" ] && continue
+
+    pp=`$WHICH ${p,,} 2>/dev/null`
+    # screen not found is benign
+    [ -n "$pp" -o "$p" = 'SCREEN' ] || error "missing binary ($p)"
+done
+unset p pp
+
 
 #--- main ---
 
@@ -252,7 +250,7 @@ _prog="${BASH_SOURCE##*/}"
 _progdir=$( cd `dirname "$BASH_SOURCE"`; pwd )
 _PROG=`readlink -e "$BASH_SOURCE"` || {
     # impossible error
-    >&2 echo "ERROR: $0 has broken link component"; exit 1
+    error "broken link ($BASH_SOURCE)"
 }
 _PROGDIR="${_PROG%/*}"
 _PROG="${_PROG##*/}"
