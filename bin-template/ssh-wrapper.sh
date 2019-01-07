@@ -7,11 +7,11 @@
 #
 # symlink to this wrapper will automatically set PROFILE
 
-source ~/.functions
+source ~/.functions 2>/dev/null || true
 shopt -s nullglob extglob
 
 case "${OSTYPE:-`uname`}" in
-  [cC]ygwin|CYGWIN*) 
+  [cC]ygwin|CYGWIN*)
         WHICH='\which --skip-functions --skip-alias'
         ;;
   [dD]arwin*)
@@ -157,7 +157,7 @@ function _ssh() {
         _cmd=${1^^}
         ;&
     SSH)
-        shift; 
+        shift;
         # disable Screen where persistent command output is helpful
         unset _screen
         ;;
@@ -246,9 +246,7 @@ function init_logs() {
 }
 
 
-
 #--- main ---
-
 
 _prog="${BASH_SOURCE##*/}"
 _progdir=$( cd `dirname "$BASH_SOURCE"`; pwd )
