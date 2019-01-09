@@ -179,7 +179,7 @@ function _ssh() {
 
   # propagate environment when running Screen
   local _env=()
-  for v in DEBUG VERBOSE REGION ${!CLOUD*} ${!SSH_*} ${!AWS_*}; do
+  for v in DEBUG VERBOSE REGION ${!CLOUD_*} ${!SSH_*}; do
     [ -n "${!v}" ] || continue
 
     info "$v=${!v}"
@@ -310,11 +310,11 @@ done
 
 : ${CLOUD:='aws'}
 declare -n CLOUD_PROFILE=${CLOUD^^}_PROFILE
+#FIXME rename to CLOUD_REGION (keep compat) and check for optional '_DEFAULT'
 declare -n REGION=${CLOUD^^}_DEFAULT_REGION
 
 # My personal definitions for D{1..3} delimiter sets.
 # One can also override via args to genlist() or change the defaults
-#FIXME use DELIM1..3 and arrays
 D1='/'
 D2=('/' '.')
 _ssh "${_args[@]}" "$@"
