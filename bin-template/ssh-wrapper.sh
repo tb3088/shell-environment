@@ -7,8 +7,8 @@
 #
 # symlink to this wrapper will automatically set PROFILE
 
-source ~/.functions 2>/dev/null || true
 shopt -s nullglob extglob
+#source ~/.functions_logging 2>/dev/null || true
 
 declare -F log >/dev/null ||
 function log() { echo "$*"; }
