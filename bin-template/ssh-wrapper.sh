@@ -193,7 +193,7 @@ function _ssh() {
         ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
         ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
         $SSH_OPTS \
-        "$@" ${_screen:+ ${DEBUG:+ || sleep 15}\"}
+        "$@" ${_screen:+ || sleep 15\"}
 }
 
 
@@ -221,6 +221,7 @@ function init_logs() {
   [ -n "$DEBUG" ] && LOG_MASK='DEBUG'
 }
 
+
 case "${OSTYPE:-`uname`}" in
   [cC]ygwin|CYGWIN*)
         WHICH='\which --skip-functions --skip-alias'
@@ -239,9 +240,8 @@ for p in SSH SCP SFTP SCREEN; do
 
     pp=`$WHICH ${p,,} 2>/dev/null`
     # screen not found is benign
-    [ -n "$pp" -o "$p" = 'SCREEN' ] || error "missing binary ($p)"
+    [ -n "$pp" -o "$p" = 'SCREEN' ] && info "$p=$pp" || error "missing binary ($p)"
 done
-unset p pp
 
 
 #--- main ---
