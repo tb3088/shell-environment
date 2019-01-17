@@ -71,15 +71,12 @@ function aws-profile {
 
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf("%s ", $2); }' $config` )
-    [ -n "${list[*]}" ] || {
-        log_ERROR "no profiles found ($config)"
-        return
-      }
-
-    read -t 8 -p "Choose new profile from [ *${list[*]} ]:  " || return
-    [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
+    [ -n "${list[*]}" ] && {
+        read -t 8 -p "Choose new profile from [ *${list[*]} ]:  " || return
+        [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
+    } || log_NOTICE "no profiles found ($config)"
   fi
-  [ "${profile:?}" = "$AWS_PROFILE" ] && return 0
+  [ "$profile" = "$AWS_PROFILE" ] && return 0
 
   # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
   # stacktrace on empty values of AWS_PROFILE.
