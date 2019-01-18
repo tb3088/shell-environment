@@ -260,7 +260,7 @@ function aws-addPath {
   local -i delete
 
   for v in "$@" \
-        ${AWS_CONFIG_FILE:+`eval echo $(dirname "$AWS_CONFIG_FILE")${AWS_PROFILE:+"{,/$AWS_PROFILE}"}`} \
+        ${AWS_CONFIG_FILE:+`eval echo $(dirname "$AWS_CONFIG_FILE")${AWS_PROFILE:+"{/$AWS_PROFILE,}"}`} \
         ${AWS_PROFILE:+`echo "$HOME"/.{aws,ssh}/$AWS_PROFILE`}; do
     [ -n "$v" ] || continue
     [ "$v" = '.' ] && v=`pwd`
@@ -275,7 +275,7 @@ function aws-addPath {
     done
 
     [ -n "$SSH_AUTH_SOCK" ] &&
-      for f in "$v"/{id_*,*.pem,*.pub}; do
+      for f in `eval echo "$v"/${AWS_DEFAULT_REGION:+"{$AWS_DEFAULT_REGION/,}"}{id_*,*.pem,*.pub}`; do
         [ -f "$f" ] || continue
         ${DEBUG:+ runv} ssh-add ${delete:+ -d} "$f" &>/dev/null
       done
