@@ -48,7 +48,7 @@ declare -Ar __aws_regions=(
 function aws-region {
   local region=${1:-'us-east-1'}
   if [ -z "$1" ]; then
-    read -t 8 -p "Choose new region from [ `printf "\n  %15s %15s %15s %15s" ${!__aws_regions[@]}` ]:  " || return
+    read -t 8 -p "Choose REGION from [ *us-east-1 `printf "\n  %15s %15s %15s %15s" ${!__aws_regions[@]}` ]:  " || return
     [ -n "$REPLY" ] && region="$REPLY"
   fi
   [ -n "${__aws_regions[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
@@ -72,7 +72,7 @@ function aws-profile {
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf("%s ", $2); }' $config` )
     [ -n "${list[*]}" ] && {
-        read -t 8 -p "Choose new profile from [ *${list[*]} ]:  " || return
+        read -t 8 -p "Choose PROFILE from [ *${list[0]}`[ ${#list[@]} -gt 1 ] && printf "\n  %s %s %s %s" ${list[@]:1}` ]:  " || return
         [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
     } || log_NOTICE "no profiles found ($config)"
   fi
