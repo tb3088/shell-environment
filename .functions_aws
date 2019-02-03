@@ -12,22 +12,22 @@ declare -Ar __aws_session=(
 # aws ec2 describe-availability-zones --region $REGION --output text | awk '{print $NF}'
 declare -p __aws_regions &>/dev/null ||
 declare -Ar __aws_regions=(
-  [ap-northeast-2]=\(`echo ap-northeast-2{a,c}`\)
-  [ap-northeast-1]=\(`echo ap-northeast-1{a,c,d}`\)
-  [ap-south-1]=\(`echo ap-south-1{a..b}`\)
-  [ap-southeast-1]=\(`echo ap-southeast-1{a..c}`\)
-  [ap-southeast-2]=\(`echo ap-southeast-2{a..c}`\)
-  [ca-central-1]=\(`echo ca-central-1{a..b}`\)
-  [eu-central-1]=\(`echo eu-central-1{a..c}`\)
-  [eu-north-1]=\(`echo eu-north-1{a..c}`\)
-  [eu-west-1]=\(`echo eu-west-1{a..c}`\)
-  [eu-west-2]=\(`echo eu-west-2{a..c}`\)
-  [eu-west-3]=\(`echo eu-west-3{a..c}`\)
-  [sa-east-1]=\(`echo sa-east-1{a,c}`\)
-  [us-east-1]=\(`echo us-east-1{a..f}`\)
-  [us-east-2]=\(`echo us-east-2{a..c}`\)
-  [us-west-1]=\(`echo us-west-1{a,c}`\)
-  [us-west-2]=\(`echo us-west-2{a..c}`\)
+  [ap-northeast-2]=`echo ap-northeast-2{a,c}`
+  [ap-northeast-1]=`echo ap-northeast-1{a,c,d}`
+  [ap-south-1]=`echo ap-south-1{a..b}`
+  [ap-southeast-1]=`echo ap-southeast-1{a..c}`
+  [ap-southeast-2]=`echo ap-southeast-2{a..c}`
+  [ca-central-1]=`echo ca-central-1{a..b}`
+  [eu-central-1]=`echo eu-central-1{a..c}`
+  [eu-north-1]=`echo eu-north-1{a..c}`
+  [eu-west-1]=`echo eu-west-1{a..c}`
+  [eu-west-2]=`echo eu-west-2{a..c}`
+  [eu-west-3]=`echo eu-west-3{a..c}`
+  [sa-east-1]=`echo sa-east-1{a,c}`
+  [us-east-1]=`echo us-east-1{a..f}`
+  [us-east-2]=`echo us-east-2{a..c}`
+  [us-west-1]=`echo us-west-1{a,c}`
+  [us-west-2]=`echo us-west-2{a..c}`
 )
 
 
@@ -47,23 +47,29 @@ declare -Ar __aws_regions=(
 
 function aws-region {
   local region=${1:-'us-east-1'}
+
   if [ -z "$1" ]; then
-    read -t 8 -p "Choose REGION from [ *us-east-1 `printf "\n  %15s %15s %15s %15s" ${!__aws_regions[@]}` ]:  " || return
+    echo; printf ' %s\n' ${!__aws_regions[@]} | sort | column; echo
+    read -t 8 -p "Choose REGION from [ *us-east-1 ... ]:  " || return
     [ -n "$REPLY" ] && region="$REPLY"
   fi
+
   [ -n "${__aws_regions[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
 }
 
 function aws-profile {
-  # NOTE 'aws configure get' does NOT follow 'source_profile'
-  #  nor fall-thru to 'default' unless profile is ''.
+  # NOTE 'aws configure get' does NOT follow 'source_profile' keyword
+  # nor fall-thru to 'default' unless profile is ''.
 
   [ "$1" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
+
   local v
+  local -n vref
   for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
-    if [ -n "${!v}" ]; then
-      [ -f "${!v}" ] || { log_ERROR "invalid env:$v (${!v})"; return; }
-    fi
+    vref = $v
+    [ -n "$vref" ] && {
+        [ -f "$vref" ] || { log_ERROR "invalid \$env:$v ($vref)"; return; }
+    }
   done
 
   local profile="$1"; shift
@@ -71,11 +77,16 @@ function aws-profile {
 
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf("%s ", $2); }' $config` )
-    [ -n "${list[*]}" ] && {
-        read -t 8 -p "Choose PROFILE from [ *${list[0]}`[ ${#list[@]} -gt 1 ] && printf "\n  %s %s %s %s" ${list[@]:1}` ]:  " || return
-        [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
-    } || log_NOTICE "no profiles found ($config)"
+
+    if [ -n "${list[*]}" ]; then
+      profile="${list[0]}"
+      echo; printf ' %s\n' ${list[@]:1} | sort | column; echo
+      read -t 8 -p "Choose PROFILE from [ *${list[0]} ... ]:  " || return
+      [ -n "$REPLY" ] && profile="$REPLY"
+    else log_NOTICE "no profiles found ($config)"
+    fi
   fi
+
   [ "$profile" = "$AWS_PROFILE" ] && return 0
 
   # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
