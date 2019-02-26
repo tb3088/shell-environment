@@ -64,11 +64,9 @@ function aws-profile {
   [ "$1" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
 
   local v
-  local -n vref
   for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
-    vref = $v
-    [ -n "$vref" ] && {
-        [ -f "$vref" ] || { log_ERROR "invalid \$env:$v ($vref)"; return; }
+    [ -n "${!v}" ] && {
+        [ -f "${!v}" ] || { log_ERROR "invalid \$env:$v (${!v})"; return; }
     }
   done
 
