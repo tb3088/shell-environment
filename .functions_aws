@@ -66,7 +66,7 @@ function aws-profile {
   local v
   for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
     [ -n "${!v}" ] && {
-        [ -f "${!v}" ] || { log_ERROR "invalid \$env:$v (${!v})"; return; }
+        [ -f "${!v}" ] || { log_ERROR "invalid \$ENV:$v (${!v})"; return; }
     }
   done
 
@@ -118,12 +118,15 @@ function aws-session-load {
   local format input="$1"
 
   if [ -z "$input" ]; then
-    local -a list=(`ls -t $HOME/.aws/cli/cache/`)
-    read -t 15 -p "Choose cached credentials from [ *${list[*]} ]:  " || return
-    [ -n "$REPLY" ] && input="$REPLY" || input="${list[0]}"
-    input="$HOME/.aws/cli/cache/$input"
+    local -a list=( `find $HOME/.aws/cli/cache/ -type f -mtime -1` )
+	if [ -n "${list[*]}" ]; then
+      input="${list[0]}"
+      echo; printf ' %s\n' ${list[@]:1} | sort | column; echo
+      read -t 15 -p "Choose cached credentials from [ *${list[*]} ... ]:  " || return
+      [ -n "$REPLY" ] && input="$REPLY"
+    fi
   fi
-  [ -f "$input" ] && input="$( <"$input" )"     # alt: 'cat'
+  [ -f "$input" ] && input=$( <"$input" ) || return
   [ "${input:0:1}" = '{' ] && format='json'
 
   case "${format:=text}" in
