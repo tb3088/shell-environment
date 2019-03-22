@@ -226,7 +226,7 @@ function aws-session {
   local mfa=`aws configure get mfa_serial`
   if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
     # not reached, aws-profile should have caught it
-    log_PANIC "unknown profile ($AWS_PROFILE) ${AWS_CONFIG_FILE:+in $AWS_CONFIG_FILE}"
+    log_ERROR "unknown profile ($AWS_PROFILE, $AWS_CONFIG_FILE)"
     return
   fi
 
