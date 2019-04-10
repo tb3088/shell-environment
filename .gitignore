@@ -19,6 +19,7 @@ go
 .minttyrc
 .npm/
 .packer.d
+.pex/
 .rnd
 .screen_exchange
 .serverauth.*
