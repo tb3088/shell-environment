@@ -1,0 +1,2 @@
+# drop symlinks or files to alter Bash completion symantics.
+# WARN do not add items to GIT unless platform neutral or failure resistant!
