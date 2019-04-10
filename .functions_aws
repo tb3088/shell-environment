@@ -65,9 +65,7 @@ function aws-profile {
 
   local v
   for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
-    if [ -n "${!v}" ]; then
-      [ -f "${!v}" ] || { log_ERROR "file not found ($v=${!v})"; return; }
-    fi
+    [ -n "${!v}" ] && { [ -f "${!v}" ] || { log_ERROR "file not found ($v=${!v})"; return; }; }
   done
 
   local profile=$1 config=${AWS_CONFIG_FILE:-$HOME/.aws/config}
@@ -79,8 +77,9 @@ function aws-profile {
     [ ${#list[@]} -ge 1 ] || { log_ERROR "no profiles (${config/$HOME/\~})"; return; }
 
     [ ${#list[@]} -gt 1 ] && { echo; printf ' %s\n' ${list[@]} | sort | column; echo; }
+
     read -t 12 -p "Choose PROFILE [ *${list[0]} ... ]:  " || return
-    [ -n "$REPLY" ] && profile="$REPLY" || profile="${list[0]}"
+    profile=${REPLY:-${list[0]}}
   fi
 
   [ "$profile" = "$AWS_PROFILE" ] && return 0
@@ -97,12 +96,13 @@ function aws-profile {
 
   ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
 
-  AWS_PROFILE="$profile"
+  AWS_PROFILE=$profile
   unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
   ${DEBUG:+ runv} aws-addPath
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    local _creds="${AWS_CONFIG_FILE%/*}/credentials"
-    [ -f "$_creds" ] && : ${AWS_SHARED_CREDENTIALS_FILE:="$_creds"}
+    local _creds=${AWS_CONFIG_FILE%/*}/credentials
+    [ -f "$_creds" ] &&
+        : ${AWS_SHARED_CREDENTIALS_FILE:=$_creds}
   fi
 
   [ -n "${AWS_DEFAULT_REGION:=$region}" ] || {
@@ -123,8 +123,7 @@ function aws-session-load {
     [ ${#list[@]} -gt 1 ] && { echo; printf ' %s\n' ${list[@]} | column; echo; }
 
     read -t 8 -p "Choose SESSION [ *${list[0]} ... ]:  " || return
-    [ -n "$REPLY" ] && input="$REPLY" || input="${list[0]}"
-    input="$cache_dir/$input"
+    input=$cache_dir/${REPLY:-${list[0]}}
   fi
 
   [ -f "$input" ] && input=$( <"$input" ) || return
@@ -226,7 +225,7 @@ function aws-session {
   local mfa=`aws configure get mfa_serial`
   if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
     # not reached, aws-profile should have caught it
-    log_PANIC "unknown profile ($AWS_PROFILE) ${AWS_CONFIG_FILE:+in $AWS_CONFIG_FILE}"
+    log_ERROR "unknown profile ($AWS_PROFILE, $AWS_CONFIG_FILE)"
     return
   fi
 
