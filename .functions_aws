@@ -68,7 +68,7 @@ function aws-profile {
     [ -n "${!v}" ] && { [ -f "${!v}" ] || { log_ERROR "file not found ($v=${!v})"; return; }; }
   done
 
-  local profile=$1 config=${AWS_CONFIG_FILE:-$HOME/.aws/config}
+  local profile=$1 config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
   shift
 
   if [ -z "$profile" ]; then
@@ -91,7 +91,8 @@ function aws-profile {
   region=`AWS_CONFIG_FILE="$config" aws configure get region --profile "$profile" 2> >(tail -n 1)`
 
   if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
-    log_ERROR "profile not found ($profile, ${config/$HOME/\~})"; return
+    RC=1 log_ERROR "profile not found ($profile, ${config/$HOME/\~})"
+    return
   fi
 
   ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
@@ -113,23 +114,27 @@ function aws-profile {
 
 
 function aws-session-load {
-  local format input=$1 cache_dir=$HOME/.aws/cli/cache
+  local format='text'
+  local input=$1
+  local cache_dir="$HOME"/.aws/cli/cache
 
   if [ -z "$input" ]; then
     local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mtime -1` )
+    local REPLY
 
     [ ${#list[@]} -ge 1 ] || { log_ERROR "no cached sessions ($cache_dir)"; return; }
 
-    [ ${#list[@]} -gt 1 ] && { echo; printf ' %s\n' ${list[@]} | column; echo; }
-
-    read -t 8 -p "Choose SESSION [ ${list[0]}* ... ]:  " || return
+    [ ${#list[@]} -gt 1 ] && {
+        echo; printf ' %s\n' ${list[@]} | column; echo
+        read -t 8 -p "Choose cashed SESSION [ ${list[0]}* ... ]:  " || return
+    }
     input=$cache_dir/${REPLY:-${list[0]}}
   fi
 
   [ -f "$input" ] && input=$( <"$input" ) || return
-  [ "${input:0:1}" = '{' ] && format='json'
+  jq . <<< "$input" &>/dev/null && format='json' || true
 
-  case "${format:=text}" in
+  case "$format" in
     text)   local header rest IFS
             log_DEBUG "$input"
             IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
@@ -139,7 +144,7 @@ function aws-session-load {
             log_DEBUG `jq -MS .Credentials <<< "$input"`
             for field in `keys __aws_session`; do
               envvar=`value __aws_session $field`
-              local -n nref="$envvar"
+              local -n nref=$envvar
               nref=`jq -r .Credentials.$field <<< "$input"`
             done
             log_INFO `jq -r .AssumedRoleUser <<< "$input"`
@@ -178,20 +183,19 @@ function aws-session {
                 log_WARN "'jq' not found. skipping option (-$opt) ..."
                 continue
               }
-            ;;&
+            ;&
             #FIXME first valid != desired AWS_PROFILE
       c)    for f in "$HOME"/.aws/cli/cache/*; do
-              [ -f "$f" ] || continue
               expires=$(date --date `jq -r .Credentials.Expiration "$f"` '+%s')
               [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
 
-              output="$( <"$f" )"
+              output=$( <"$f" )
               break
             done
             ;;
       f)    force=1 ;;
-      p)    profile="$OPTARG" ;;
-      r)    role="$OPTARG" ;;
+      p)    profile=$OPTARG ;;
+      r)    role=$OPTARG ;;
       T)    duration=$OPTARG ;;
       t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || log_WARN "invalid Token ($OPTARG)"
             ;;
@@ -210,9 +214,9 @@ function aws-session {
     if [[ $1 =~ [0-9]{6} ]]; then
       token=$1
     elif [[ $1 =~ ^arn:aws:iam: ]]; then
-      role="$1"
+      role=$1
     elif [[ $1 =~ ^[a-zA-Z]+ ]]; then
-      profile="$1"
+      profile=$1
     else
       log_WARN "unknown argument ($1)"
       break
@@ -225,7 +229,7 @@ function aws-session {
   local mfa=`aws configure get mfa_serial`
   if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
     # not reached, aws-profile should have caught it
-    log_ERROR "unknown profile ($AWS_PROFILE, $AWS_CONFIG_FILE)"
+    RC=1 log_ERROR "unknown profile ($AWS_PROFILE, $AWS_CONFIG_FILE)"
     return
   fi
 
@@ -257,7 +261,6 @@ function aws-session {
             --output text
     ) || return
   fi
-#  [ -n "$output" ] || return
 
   aws-session-load "$output"
   [ $write -eq 1 ] && aws-session-write
