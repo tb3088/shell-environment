@@ -173,11 +173,11 @@ function confirm() {
 }
 
 
-# Does NOT support recursion since fails easily or in unintended ways.
-# Using SED with BOL, EOL or whitespace detection isn't reliable either.
 declare -F copy_function >/dev/null ||
 function copy_function() {
   # Does NOT support recursion since fails easily or in unintended ways.
+  # Using SED with BOL, EOL or whitespace detection isn't reliable either.
+
   local readonly source=`declare -f "${1:?}"`
   local -i overwrite
 
@@ -210,18 +210,16 @@ function runv() {
 
 function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
-
 function join_string() {
-  local quote=
+  local quote escape
+  local delim=$1; shift
+  [ -n "${escape+x}" ] || escape=${delim:-${IFS:0:1}}
 
   # escape whitespaces if no quote char. even delimiter is eligible (rare)
-  [ -n "$quote" ] || set -- "${@// /\\ }"
+  [ -n "$quote" ] || { [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"; }
 
-  delim="${1:?}"; shift
-  [ $# -ne 0 ] || return
-
-  printf "${quote}%s${quote}" "$1"; shift
-  printf "${delim}${quote}%s${quote}" "$@"
+  printf "${quote}%s${quote}" $1
+  printf "${delim}${quote}%s${quote}" "${@:2}"
 
   # or process all but last and tack it on with ${@:1:$# -1}?
   # alternate implementation using just 'echo'
@@ -229,7 +227,6 @@ function join_string() {
 #    for elem in "$@"; do
 #        echo -n "${delim}${quote}${elem}${quote}"
 #    done
-  echo
 }
 
 
