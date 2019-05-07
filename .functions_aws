@@ -120,13 +120,13 @@ function aws-session-load {
   local cache_dir="$HOME"/.aws/cli/cache
 
   if [ -z "$input" ]; then
-    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mmin -$((60 * ${HOURS:-1}))` )
+    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))` )
 
     [ ${#list[@]} -ge 1 ] || log_ERROR "no cached sessions ($cache_dir)"; return
 
     [ ${#list[@]} -gt 1 ] && {
         echo; printf ' %s\n' "${list[@]}" | column; echo
-        read -t 12 -p "Choose cashed SESSION [ ${list[0]}* ... ]:  " || return
+        read -t 12 -p "Choose cached SESSION [ ${list[0]}* ... ]:  " || return
       }
     input=$cache_dir/${REPLY:-${list[0]}}
   fi
