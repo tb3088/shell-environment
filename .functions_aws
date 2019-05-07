@@ -46,12 +46,12 @@ declare -Ar __aws_regions=(
 #public-ipv4
 
 function aws-region {
-  local region=${1:-'us-east-1'}
+  local region=$1
 
-  if [ -z "$1" ]; then
+  if [ -z "$region" ]; then
     echo; printf ' %s\n' ${!__aws_regions[@]} | sort | column; echo
-    read -t 8 -p "Choose REGION from [ us-east-1* ... ]:  " || return
-    [ -n "$REPLY" ] && region="$REPLY"
+    read -t 8 -p "Choose REGION [ us-east-1* ... ]:  " || return
+    region=${REPLY:-'us-east-1'}
   fi
 
   [ -n "${__aws_regions[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
@@ -74,14 +74,12 @@ function aws-profile {
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' $config | sort` )
 
-    if [ ${#list[@]} -ge 1 ]; then
-      echo
-      printf '  %s\n' "${list[@]}" | column
-      echo
-      read -t 12 -p "Choose PROFILE [ ${list[0]}* ... ]:  " || return
-    else
-      log_ERROR "no profiles defined (${config/$HOME/\~})"; return
-    fi
+    [ ${#list[@]} -ge 1 ] || log_ERROR "no profiles defined (${config/$HOME/\~})"; return
+
+    [ ${#list[@]} -gt 1 ] && {
+        echo; printf ' %s\n' "${list[@]}" | column; echo
+        read -t 12 -p "Choose PROFILE [ ${list[0]}* ... ]:  " || return
+      }
     profile=${REPLY:-${list[0]}}
   fi
 
@@ -122,35 +120,35 @@ function aws-session-load {
   local cache_dir="$HOME"/.aws/cli/cache
 
   if [ -z "$input" ]; then
-    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mtime -1` )
-    local REPLY
+    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -daystart -mmin -$((60 * ${HOURS:-1}))` )
 
-    [ ${#list[@]} -ge 1 ] || { log_ERROR "no cached sessions ($cache_dir)"; return; }
+    [ ${#list[@]} -ge 1 ] || log_ERROR "no cached sessions ($cache_dir)"; return
 
     [ ${#list[@]} -gt 1 ] && {
-        echo; printf ' %s\n' ${list[@]} | column; echo
-        read -t 8 -p "Choose cashed SESSION [ ${list[0]}* ... ]:  " || return
-    }
+        echo; printf ' %s\n' "${list[@]}" | column; echo
+        read -t 12 -p "Choose cashed SESSION [ ${list[0]}* ... ]:  " || return
+      }
     input=$cache_dir/${REPLY:-${list[0]}}
   fi
 
-  [ -f "$input" ] && input=$( <"$input" ) || return
-  jq . <<< "$input" &>/dev/null && format='json' || true
+  [ -f "$input" ] && { input=$( <"$input" ) || return; }
+  jq . <<< "$input" &>/dev/null && format='json'
 
   case "$format" in
-    text)   local header rest IFS
+    text)   # see 'aws-session()' call to 'aws sts'
+            local header rest IFS
             log_DEBUG "$input"
             IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
                 AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
     json)   local field; local -u envvar
-            log_DEBUG `jq -MS .Credentials <<< "$input"`
+            log_DEBUG `jq -MS '.Credentials' <<< "$input"`
             for field in `keys __aws_session`; do
               envvar=`value __aws_session $field`
               local -n nref=$envvar
-              nref=`jq -r .Credentials.$field <<< "$input"`
+              nref=`jq -r --arg field "$field" '.Credentials.$field' <<< "$input"`
             done
-            log_INFO `jq -r .AssumedRoleUser <<< "$input"`
+            log_INFO `jq -r '.AssumedRoleUser' <<< "$input"`
             ;;
     *)      RC=2 log_ERROR "unsupported format ($format)"
             return
@@ -189,10 +187,11 @@ function aws-session {
             ;&
             #FIXME first valid != desired AWS_PROFILE
       c)    for f in "$HOME"/.aws/cli/cache/*; do
-              expires=$(date --date `jq -r .Credentials.Expiration "$f"` '+%s')
+              [ -f "$f" ] || continue
+              expires=$(date --date `jq -r '.Credentials.Expiration' "$f"` '+%s')
               [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
 
-              output=$( <"$f" )
+              output=$f
               break
             done
             ;;
@@ -311,17 +310,16 @@ function aws-route53-export {
   local zoneid=${1:?}
 
   grep -qE '([A-Z]|[0-9]){12,}' <<< "$zoneid" ||
-        zoneid=$(aws route53 list-hosted-zones --output=json |
-            jq -r ".HostedZones[] | select(.Name == \"$1\".) | .Id" |
-            cut -d'/' -f3)
+      zoneid=$( aws route53 list-hosted-zones --output=json |
+          jq -r --arg v1 "$1" '.HostedZones[] | select(.Name == $v1.) | .Id' | cut -d'/' -f3 )
 
   for zone in $zoneid; do
     echo -e "; $zone\n"
 
     #TODO use printf() with width
     aws route53 list-resource-record-sets --hosted-zone-id=${zone:?} --output=json |
-        jq -jr '.ResourceRecordSets[] | "\(.Name) \t\(.TTL) \t\(.Type) \t\(.ResourceRecords[].Value)\n"'
-    echo -e "\n"
+        jq -jr '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
+    echo
   done
 }
 
