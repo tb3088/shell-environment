@@ -175,7 +175,7 @@ function aws-session {
   local -ir now=`date '+%s'`
   local -i duration=${AWS_SESSION_DURATION:-3600} write=0 force=0
   # Bash 'integer' doesn't handle leading ZEROs
-  local cmd output role profile token
+  local cmd cache output role profile token mfa
 
   local OPTIND opt
   while getopts ':cfp:r:T:t:W' opt 2>/dev/null; do
@@ -184,14 +184,13 @@ function aws-session {
                 log_WARN "'jq' not found. skipping option (-$opt) ..."
                 continue
               }
-            ;&
-            #FIXME first valid != desired AWS_PROFILE
-      c)    for f in "$HOME"/.aws/cli/cache/*; do
+            for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
               expires=$(date --date `jq -r '.Credentials.Expiration' "$f"` '+%s')
               [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
 
-              output=$f
+              #FIXME first valid != desired AWS_PROFILE, is $profile set?
+              cache=$f
               break
             done
             ;;
@@ -205,8 +204,8 @@ function aws-session {
             write=1
             ;;
       :)    RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
-      \?)   log_ERROR "invalid option '-$OPTARG'" ;&
-      h)    #TODO usage
+      \?)   log_ERROR "invalid option (-$OPTARG)" ;&
+      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
   done
@@ -220,33 +219,36 @@ function aws-session {
     elif [[ $1 =~ ^[a-zA-Z]+ ]]; then
       profile=$1
     else
-      log_WARN "unknown argument ($1)"
+      log_WARN "unknown format ($1)"
       break
     fi
     shift
   done
 
   aws-profile "${profile:-$AWS_PROFILE}" || return
+  #AWS_DEFAULT_PROFILE has been reset
 
-  local mfa=`aws configure get mfa_serial`
-  if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
-    # not reached, aws-profile should have caught it
-    RC=1 log_ERROR "unknown profile ($AWS_PROFILE, $AWS_CONFIG_FILE)"
+  mfa=`aws configure get mfa_serial`
+  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
+    # not reached, aws-profile() should have caught it
+    RC=1 log_CRITICAL "unknown profile ($profile, $AWS_CONFIG_FILE)"
     return
   fi
 
-  if [ -n "${role:=`aws configure get role_arn`}" ]; then
+  : ${role:=`aws configure get role_arn`}
+  if [ -n "$role" ]; then
     # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
     local session_name="${role#*:role/}"
     local session_suffix="${AWS_PROFILE}.$$"
     session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
     session_name="${session_name//:/.}"
-    cmd="assume-role --role-arn=$role --role-session-name=$session_name"
+    cmd=( "assume-role"  "--role-arn=$role" "--role-session-name=$session_name" )
   else
     cmd='get-session-token'
   fi
 
-  if [ -z "$output" -o $force -eq 1 ]; then
+  if [ -z "$cache" -o $force -eq 1 ]; then
+    unset cache
     output=$(
         local field
         local -u key
@@ -257,14 +259,16 @@ function aws-session {
           unset $key
         done
 
-        ${DEBUG:+ runv} aws sts ${DEBUG:+ --debug} $cmd \
-            ${mfa:+ --serial-number=$mfa ${token:+ --token-code=$token}} \
+        ${DEBUG:+ runv} aws sts ${DEBUG:+ --debug} "${cmd[@]}" \
+            ${mfa:+ --serial-number="$mfa" ${token:+ --token-code=$token}} \
             ${duration:+ --duration-seconds=$duration} \
             --output text
-    ) || return
+    ) || { [ $? -eq 255 ] || return; }
+#FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
+#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
   fi
 
-  aws-session-load "$output"
+  aws-session-load "${cache:-output}" || return
   [ $write -eq 1 ] && aws-session-write
 
   log_INFO `aws-printenv`
