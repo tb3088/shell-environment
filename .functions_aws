@@ -72,13 +72,16 @@ function aws-profile {
   shift
 
   if [ -z "$profile" ]; then
-    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]$/, "", $2); printf("%s ", $2); }' $config` )
+    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' $config | sort` )
 
-    [ ${#list[@]} -ge 1 ] || { log_ERROR "no profiles (${config/$HOME/\~})"; return; }
-
-    [ ${#list[@]} -gt 1 ] && { echo; printf ' %s\n' ${list[@]} | sort | column; echo; }
-
-    read -t 12 -p "Choose PROFILE [ ${list[0]}* ... ]:  " || return
+    if [ ${#list[@]} -ge 1 ]; then
+      echo
+      printf '  %s\n' "${list[@]}" | column
+      echo
+      read -t 12 -p "Choose PROFILE [ ${list[0]}* ... ]:  " || return
+    else
+      log_ERROR "no profiles defined (${config/$HOME/\~})"; return
+    fi
     profile=${REPLY:-${list[0]}}
   fi
 
