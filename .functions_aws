@@ -68,13 +68,13 @@ function aws-profile {
     [ -n "${!v}" ] && { [ -f "${!v}" ] || { log_ERROR "file not found ($v=${!v})"; return; }; }
   done
 
-  local profile=$1 config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
-  shift
+  local profile=$1
+  local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
 
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' $config | sort` )
 
-    [ ${#list[@]} -ge 1 ] || log_ERROR "no profiles defined (${config/$HOME/\~})"; return
+    [ ${#list[@]} -ge 1 ] || { log_ERROR "no profiles defined (${config/$HOME/\~})"; return; }
 
     [ ${#list[@]} -gt 1 ] && {
         echo; printf ' %s\n' "${list[@]}" | column; echo
@@ -122,7 +122,7 @@ function aws-session-load {
   if [ -z "$input" ]; then
     local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))` )
 
-    [ ${#list[@]} -ge 1 ] || log_ERROR "no cached sessions ($cache_dir)"; return
+    [ ${#list[@]} -ge 1 ] || { log_ERROR "no cached sessions ($cache_dir)"; return; }
 
     [ ${#list[@]} -gt 1 ] && {
         echo; printf ' %s\n' "${list[@]}" | column; echo
@@ -263,12 +263,14 @@ function aws-session {
             ${mfa:+ --serial-number="$mfa" ${token:+ --token-code=$token}} \
             ${duration:+ --duration-seconds=$duration} \
             --output text
-    ) || { [ $? -eq 255 ] || return; }
+    ) || return
 #FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
 #An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
+# if the token is wrong you get:
+#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
   fi
 
-  aws-session-load "${cache:-output}" || return
+  aws-session-load "${cache:-$output}" || return
   [ $write -eq 1 ] && aws-session-write
 
   log_INFO `aws-printenv`
