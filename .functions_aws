@@ -120,7 +120,7 @@ function aws-session-load {
   local cache_dir="$HOME"/.aws/cli/cache
 
   if [ -z "$input" ]; then
-    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -daystart -mmin -$((60 * ${HOURS:-1}))` )
+    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mmin -$((60 * ${HOURS:-1}))` )
 
     [ ${#list[@]} -ge 1 ] || log_ERROR "no cached sessions ($cache_dir)"; return
 
