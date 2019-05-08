@@ -146,7 +146,7 @@ function aws-session-load {
             for field in `keys __aws_session`; do
               envvar=`value __aws_session $field`
               local -n nref=$envvar
-              nref=`jq -r --arg field "$field" '.Credentials.$field' <<< "$input"`
+              nref=`jq -r --arg field "$field" '.Credentials[$field]' <<< "$input"`
             done
             log_INFO `jq -r '.AssumedRoleUser' <<< "$input"`
             ;;
@@ -313,7 +313,7 @@ function aws-rmPath {
 
 function aws-route53-export {
   which jq &>/dev/null || { log_ERROR "'jq' not installed"; return; }
-  local zoneid=${1:?}
+  local -u zoneid=${1:?}
 
   grep -qE '([A-Z]|[0-9]){12,}' <<< "$zoneid" ||
       zoneid=$( aws route53 list-hosted-zones --output=json |
