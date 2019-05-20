@@ -371,6 +371,16 @@ function value() { local -n nref=$1; echo "${nref[${2:?}]}"; }
 #TODO
 # array functions; push, pop, delete, replace, truncate
 
+
+declare -F is_file &>/dev/null ||
+function is_file() {
+  while [ "$1" ]; do
+     [ -f "$1" ] || { log_ERROR "file not found ($1)"; return; }
+     shift
+  done
+}
+
+
 source ${BASH_SOURCE}_logging
 
 # vim: expandtab:ts=4:sw=4

@@ -63,16 +63,19 @@ function aws-profile {
 
   [ "$1" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
 
-  local v
-  for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
-    [ -n "${!v}" ] && { [ -f "${!v}" ] || { log_ERROR "file not found ($v=${!v})"; return; }; }
-  done
+#  local v
+#  for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
+#    is_file "${!v}" || return
+#  done
 
-  local profile=$1
-  local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
+  local profile region config
+  : ${profile:=$1}
+  : ${region:=$2}
+  : ${config:=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}}
+  is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
   if [ -z "$profile" ]; then
-    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' $config | sort` )
+    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config" | sort` )
 
     [ ${#list[@]} -ge 1 ] || { log_ERROR "no profiles defined (${config/$HOME/\~})"; return; }
 
@@ -83,22 +86,26 @@ function aws-profile {
     profile=${REPLY:-${list[0]}}
   fi
 
-  [ "$profile" = "$AWS_PROFILE" ] && return 0
+  local _region
+  _region=`aws configure get region --profile "${profile:?}" 2> >(tail -n 1)`
 
   # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
   # stacktrace on empty values of AWS_PROFILE.
-
-  local region
-  region=`AWS_CONFIG_FILE="$config" aws configure get region --profile "$profile" 2> >(tail -n 1)`
-
-  if [[ $? -eq 255 || "$region" =~ ProfileNotFound ]]; then
+  if [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]]; then
     RC=1 log_ERROR "profile not found ($profile, ${config/$HOME/\~})"
     return
   fi
+  : ${region:=$_region}
+
+  # possible short-circuit
+  [ "$profile" = "$AWS_PROFILE" -a "${region:?}" = "$AWS_DEFAULT_REGION" ] && return
+
 
   ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
 
   AWS_PROFILE=$profile
+  aws-region "$region" || return
+
   unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
   ${DEBUG:+ runv} aws-addPath
   if [ -n "$AWS_CONFIG_FILE" ]; then
@@ -107,9 +114,6 @@ function aws-profile {
         : ${AWS_SHARED_CREDENTIALS_FILE:=$_creds}
   fi
 
-  [ -n "${AWS_DEFAULT_REGION:=$region}" ] || {
-        aws-region || log_WARN "region or AWS_DEFAULT_REGION not set ($profile, ${config/$HOME/\~})"
-	}
   export ${!AWS_*}
 }
 
@@ -226,7 +230,6 @@ function aws-session {
   done
 
   aws-profile "${profile:-$AWS_PROFILE}" || return
-  #AWS_DEFAULT_PROFILE has been reset
 
   mfa=`aws configure get mfa_serial`
   if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
