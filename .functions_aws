@@ -98,7 +98,7 @@ function aws-profile {
   : ${region:=$_region}
 
   # possible short-circuit
-  [ "$profile" = "$AWS_PROFILE" -a "${region:?}" = "$AWS_DEFAULT_REGION" ] && return
+  [ "$profile" = "$AWS_PROFILE" -a "${region:-unset}" = "$AWS_DEFAULT_REGION" ] && return
 
 
   ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
