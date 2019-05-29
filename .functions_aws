@@ -58,15 +58,10 @@ function aws-region {
 }
 
 function aws-profile {
-  # NOTE 'aws configure get' does NOT follow 'source_profile' keyword
-  # nor fall-thru to 'default' unless profile is ''.
-
-  [ "$1" = 'RESET' ] && { aws-rmPath; unset ${!AWS_*}; return; }
-
-#  local v
-#  for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE; do
-#    is_file "${!v}" || return
-#  done
+  if [ "$1" = 'RESET' ]; then
+    aws-rmPath; unset ${!AWS_*}
+    return
+  fi
 
   local profile region config
   : ${profile:=$1}
@@ -86,11 +81,12 @@ function aws-profile {
     profile=${REPLY:-${list[0]}}
   fi
 
-  local _region
-  _region=`aws configure get region --profile "${profile:?}" 2> >(tail -n 1)`
-
+  # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
+  # nor fall-thru to 'default' unless profile is unspecified.
+  #
   # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
   # stacktrace on empty values of AWS_PROFILE.
+  local _region=`aws configure get region --profile "${profile:?}" 2> >(tail -n 1)`
   if [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]]; then
     RC=1 log_ERROR "profile not found ($profile, ${config/$HOME/\~})"
     return
@@ -98,8 +94,7 @@ function aws-profile {
   : ${region:=$_region}
 
   # possible short-circuit
-  [ "$profile" = "$AWS_PROFILE" -a "${region:-unset}" = "$AWS_DEFAULT_REGION" ] && return
-
+  [ "$profile" = "$AWS_PROFILE" -a "${region:-$AWS_DEFAULT_REGION}" = "${AWS_DEFAULT_REGION:-unset}" ] && return
 
   ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
 
@@ -142,8 +137,10 @@ function aws-session-load {
     text)   # see 'aws-session()' call to 'aws sts'
             local header rest IFS
             log_DEBUG "$input"
-            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
-                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
+#FIXME something very wrong in 'text' mode
+log_ERROR "code is broken ($FUNCNAME)"; return
+#            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
+#                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
     json)   local field; local -u envvar
             log_DEBUG `jq -MS '.Credentials' <<< "$input"`
@@ -177,12 +174,12 @@ function aws-session {
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
   local -ir now=`date '+%s'`
-  local -i duration=${AWS_SESSION_DURATION:-3600} write=0 force=0
+  local -i duration write=0 force=0
   # Bash 'integer' doesn't handle leading ZEROs
   local cmd cache output role profile token mfa
 
   local OPTIND opt
-  while getopts ':cfp:r:T:t:W' opt 2>/dev/null; do
+  while getopts ':cfp:r:T:t:W' opt; do
     case "$opt" in
       c)    which jq &>/dev/null || {
                 log_WARN "'jq' not found. skipping option (-$opt) ..."
@@ -202,7 +199,7 @@ function aws-session {
       p)    profile=$OPTARG ;;
       r)    role=$OPTARG ;;
       T)    duration=$OPTARG ;;
-      t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || log_WARN "invalid Token ($OPTARG)"
+      t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || { log_ERROR "invalid Token ($OPTARG)"; return; }
             ;;
       W)    # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
             write=1
@@ -214,6 +211,9 @@ function aws-session {
     esac
   done
   shift $((OPTIND-1))
+
+  #BUG! STS service rejects duration > 3600 despite documentation
+  [ ${duration:-0} -gt 3600 ] && unset duration
 
   while [ "${1+x}" ]; do
     if [[ $1 =~ [0-9]{6} ]]; then
@@ -231,21 +231,22 @@ function aws-session {
 
   aws-profile "${profile:-$AWS_PROFILE}" || return
 
-  mfa=`aws configure get mfa_serial`
-  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
-    # not reached, aws-profile() should have caught it
-    RC=1 log_CRITICAL "unknown profile ($profile, $AWS_CONFIG_FILE)"
-    return
-  fi
+#  mfa=`aws configure get mfa_serial`
+#  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
+#    # not reached, aws-profile() should have caught it
+#    RC=1 log_CRITICAL "unknown profile ($profile, $AWS_CONFIG_FILE)"
+#    return
+#  fi
 
-  : ${role:=`aws configure get role_arn`}
+  : ${role:=`aws configure get role_arn 2>/dev/null`}
+
   if [ -n "$role" ]; then
     # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
     local session_name="${role#*:role/}"
     local session_suffix="${AWS_PROFILE}.$$"
     session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
     session_name="${session_name//:/.}"
-    cmd=( "assume-role"  "--role-arn=$role" "--role-session-name=$session_name" )
+    cmd=( "assume-role" "--role-arn=$role" "--role-session-name=$session_name" )
   else
     cmd='get-session-token'
   fi
@@ -265,7 +266,7 @@ function aws-session {
         ${DEBUG:+ runv} aws sts ${DEBUG:+ --debug} "${cmd[@]}" \
             ${mfa:+ --serial-number="$mfa" ${token:+ --token-code=$token}} \
             ${duration:+ --duration-seconds=$duration} \
-            --output text
+            --output json
     ) || return
 #FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
 #An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
