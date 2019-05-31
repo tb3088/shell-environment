@@ -20,12 +20,12 @@ makefile text
 
 # Python
 *.pxd   text
-*.py 	text
-*.pyc 	text
-*.pyw 	text
-*.pyx  	text
+*.py	text
+*.pyc	text
+*.pyw	text
+*.pyx	text
 *.db	binary
-*.p 	binary
+*.p	binary
 *.pkl 	binary
 *.pyc 	binary
 *.pyd	binary
