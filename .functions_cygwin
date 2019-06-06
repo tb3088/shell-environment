@@ -1,8 +1,7 @@
 # force override unless pre-empted
 
-declare -r PATHSEP=';' 2>/dev/null
+declare -r PATHSEP=';'
 
-unset -f convert_path 2>/dev/null &&
 function convert_path() {
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
   # This *magical* behavior does NOT extend to other PATH-like variables!
@@ -48,7 +47,7 @@ function convert_path() {
 readonly -f convert_path
 
 
-unset -f sudo 2>/dev/null &&
+which sudo 2>/dev/null ||
 function sudo() {
   local opt who cmd line env shell flags preserve=''
   #FIXME local -A env
@@ -95,7 +94,6 @@ function sudo() {
 readonly -f sudo
 
 
-unset -f is_windows 2>/dev/null &&
 function is_windows() {
   # detects if path or binary is Cygwin or native Windows
   [ "${1:0:1}" = '/' ] && return [[ "$1" =~ ^/cygdrive ]]

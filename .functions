@@ -1,10 +1,20 @@
-# use soft-override
+# $Id$
 
-: ${PATHSEP=':'}
+: ${PATHSEP=':'}	# soft override
+[ `id -u` -eq 0 ] || : ${SUDO:=sudo}
+[ "`ps -p 1 -o comm= 2>/dev/null`" != 'systemd' ]
+SYSTEMD=$?
 
-declare -F is_windows >/dev/null ||
-function is_windows() { false; }
+shopt -s extglob
 
+function runv() {
+  # mimic 'set -x'
+
+  >&2 printf "%s %s\n" `printf '%.0s+' {1..$SHLVL}` "$*"
+  [ -n "$NOOP" ] || "$@"
+}
+
+function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
 declare -F convert_path >/dev/null ||
 function convert_path() {
@@ -28,7 +38,6 @@ function convert_path() {
 # you can correctly guess something not in the data stream (eg. high-order non-printing char?)
 # otherwise have to feed it to AWK/SED for magic
 
-declare -F contains >/dev/null ||
 function contains() {
   local delim method
   : ${delim=${PATHSEP:?}}
@@ -48,7 +57,6 @@ function contains() {
 }
 
 
-declare -F addPath >/dev/null ||
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
   # but does NOT sub-divide arguments!
@@ -89,7 +97,6 @@ function addPath() {
 }
 
 
-declare -F rmPath >/dev/null ||
 function rmPath() {
   local k v flag delim
 
@@ -136,10 +143,68 @@ function define() {
 }
 
 
-#TODO /etc/init.d/functions typically defines
-declare -F pidof >/dev/null ||
+which pidof &>/dev/null ||
 function pidof() {
     ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+}
+
+
+function replace_file() {
+  # replace file and optionally take backup
+  local orig="${1:?}"
+  local new="${2:?}"
+  shift 2
+
+#FIXME use getopt() for '-b'. and break on '--' and set filename(s) from remainder
+# see --* handling from ec2-validate.sh and packer wrapper.
+#TODO? use _xxx format so can be overriden from cmdline?
+  local mode uid gid context flags
+
+# TODO Selinux Context with '%C' and --context=$context. check with 'getenforce' first
+  #FIXME test for symlink and output %N ('link' -> 'real dest'), parse and strip quotes?
+  # non-priv can stat restricted files if can walk intervening paths
+  read -r mode uid gid context \
+      < <(stat --format='%a %U %G' "$orig" 2>/dev/null)
+
+  # clear parameters if our own
+  [ "$uid" = "`id -nu`" ] && unset uid
+  [ "$gid" = "`id -ng`" ] && unset gid
+
+  ${DEBUG:+runv} ${uid:+$SUDO} install ${VERBOSE:+ -v} ${mode:+ -m $mode} \
+      ${uid:+ -o $uid} ${gid:+ -g $gid} ${context:+ --context=$context} \
+      ${flags:- -b} "$new" "$orig"
+}
+
+
+function whereis_function() {
+  shopt -s extdebug
+  declare -F "${1:?}" | cut -d' ' -f3
+  shopt -u extdebug
+}
+
+
+function list_functions() {
+  local file
+
+  while [ -n "$1" ]; do
+    file=`readlink -qe "$1"` || { error "file not found ($1)"; continue; }
+	( source "$file" &>/dev/null; file="$file" list_functions )
+	shift
+  done
+
+  shopt -s extdebug
+  declare -F `compgen -A function` | {
+      [ -n "$file" ] && awk -v fname="$file" '$3 == fname { print $1 }' || awk '{ printf("%-15s\t%s\n", $1, $3) }'
+	}
+  shopt -u extdebug
+
+#NOTE
+# This doesn't work if "$file" sources other files - answer is polluted.
+#
+#  env -i /bin/bash --noprofile --norc <<_EOF
+#        source "$file" &>/dev/null
+#        compgen -A function    #alt: declare -F | cut -d' ' -f3
+#_EOF
 }
 
 
@@ -159,13 +224,11 @@ function getcert() {
 }
 
 
-declare -F pause >/dev/null ||
 function pause() {
   [ $# -eq 0 ] && read -p 'Press [ENTER] to continue ...' || read -p "$*"
 }
 
 
-declare -F confirm >/dev/null ||
 function confirm() {
   read -n 1 -t 15 -p 'Are you sure (y/N)? '
   echo
@@ -173,7 +236,6 @@ function confirm() {
 }
 
 
-declare -F copy_function >/dev/null ||
 function copy_function() {
   # Does NOT support recursion since fails easily or in unintended ways.
   # Using SED with BOL, EOL or whitespace detection isn't reliable either.
@@ -193,22 +255,10 @@ function copy_function() {
 }
 
 
-declare -F rename_function >/dev/null ||
 function rename_function() {
   copy_function "${1:?}" "${2:?}" && unset -f "$1"
 }
 
-
-declare -F runv >/dev/null ||
-function runv() {
-  # mimic 'set -x'
-
-  >&2 printf "%s %s\n" `printf '%.0s+' {1..$SHLVL}` "$*"
-  [ -n "$NOOP" ] || "$@"
-}
-
-
-function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
 function join_string() {
   local quote escape
@@ -231,7 +281,6 @@ function join_string() {
 
 
 function join_quote() { quote=\' join_string "$@"; }
-
 
 # function __parse_options() {
     # local option{,2} arg IFS='
@@ -296,7 +345,7 @@ function userinfo() {
 }
 
 
-declare -F lstree >/dev/null ||
+which lstree 2>/dev/null ||
 function lstree() {
   local OPTIND opt      # IMPORTANT !!
   local filter= type= reverse= flags=()
@@ -336,7 +385,6 @@ _EOF
 }
 
 
-declare -F min >/dev/null ||
 function min() {
   local flag=() values=()
 
@@ -350,29 +398,17 @@ function min() {
   printf "%s\n" ${values[@]} | sort "${flag[@]}" | head -n 1
 }
 
+function max()  { min -r "$@"; }
 
-declare -F max >/dev/null ||
-function max() { min -r "$@"; }
-#  local flag
-#
-#  [[ $1 = -[a-zA-Z] ]] && { flag=$1; shift; }
-#  printf "%s\n" "$@" | sort $flag | tail -n 1
+function keys() { local -n nref=${1:?}; echo "${!nref[@]}"; }
 
+function values() { local -n nref=${1:?}; echo "${nref[@]}"; }
 
-declare -F keys >/dev/null ||
-function keys() { local -n nref=$1; echo "${!nref[@]}"; }
+function value()  { local -n nref=${1:?}; echo "${nref[${2:?}]}"; }
 
-declare -F values >/dev/null ||
-function values() { local -n nref=$1; echo "${nref[@]}"; }
-
-declare -F value >/dev/null ||
-function value() { local -n nref=$1; echo "${nref[${2:?}]}"; }
-
-#TODO
-# array functions; push, pop, delete, replace, truncate
+#TODO array functions; push, pop, delete, replace, truncate
 
 
-declare -F is_file &>/dev/null ||
 function is_file() {
   while [ "$1" ]; do
      [ -f "$1" ] || { log_ERROR "file not found ($1)"; return; }
@@ -380,7 +416,41 @@ function is_file() {
   done
 }
 
+declare -F is_windows >/dev/null ||
+function is_windows() { false; }
 
-source ${BASH_SOURCE}_logging
+function expand_dvq() {
+  # standardize behavior keyed off of 'special' variables
+  local v level
+
+  for v in DEBUG VERBOSE QUIET NOOP; do
+    local -n vref="__${v,,}"
+    c=${v:0:1}; c=${c,,}
+
+    # String compare is more robust than Integer
+    [ -z "${!v}" -o "${!v}" = "0" ] && continue
+
+    level=`printf "%d" ${!v} 2>/dev/null` || level=1
+    # {1..$level} doesn't work without eval
+    eval printf -v vref "%0.s$c" {1..$level}
+    # prepend '-' (dash)
+    vref="-${vref}"
+  done
+}
+
+
+source "${BASH_SOURCE}_logging" || {
+  function log()    { echo -e "$*"; }
+
+  function debug()  { [ -n "$DEBUG" ] && log "${FUNCNAME^^}" "$@" || return 0; }
+
+  function info()   { [ -n "${VERBOSE}${DEBUG}" ] && log "${FUNCNAME^^}" "$@" || return 0; }
+
+  function notice() { log "${FUNCNAME^^}" "$@"; }
+
+  function warn()   { >&2 log "${FUNCNAME^^}" "$@"; }
+
+  function error()  { >&2 log "${FUNCNAME^^}" "$@"; [ ${SHLVL:-1} -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }
+}
 
 # vim: expandtab:ts=4:sw=4
