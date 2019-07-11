@@ -60,12 +60,12 @@ if [ -n "$GIT_PROMPT" ]; then
             printf "_branch='%s' _status='%s' _delta=%d ", $i, $(i+1), $(i+2)
             next
         }
-        $1 ~ /M/ { mod++; } 
-        $1 ~ /D/ { del++; } 
-        $1 ~ /A/ { add++; }
-        $1 ~ /?/ { unk++; }
-        $1 ~ /!/ { ign++; }
-        END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1; }
+        $1 ~ /M/ { mod++ }
+        $1 ~ /D/ { del++ }
+        $1 ~ /A/ { add++ }
+        $1 ~ /\?/ { unk++ }
+        $1 ~ /!/ { ign++ }
+        END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1 }
     ' < <( git --no-pager status --untracked-files=all \
             --ignore-submodules --porcelain --branch 2>/dev/null )
   )
