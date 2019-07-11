@@ -4,10 +4,10 @@ for p in puppet{,.bat}; do
     which $p &>/dev/null && return
 done
 
-for v in $PUPPET_BASE `echo "${PROGRAMFILES:-/opt}"/{,puppetlabs/}{p,P}uppet`; do
-  if [ -d "$v/bin" ]; then
+for v in $PUPPET_BASE "${PROGRAMFILES:-/opt}"/{,puppetlabs/}{p,P}uppet; do
+  if [ -d "$v"/bin ]; then
     PUPPET_BASE="$v"
-    addPath "$v/bin"
+    addPath "$v"/bin
     break
   fi
 done
