@@ -1,40 +1,14 @@
+# $Id$
+
+for f in "${BASH_SOURCE}.${OSTYPE:-`uname`}"; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? during $f"
+done
+unset f
+
+#WIP - copy over latest from ami-factory/scripts/
 return 0
 
-#WIP
-shopt -s extglob nullglob
-
-: ${QUIET:=1}
-# standardize behavior keyed off of 'special' variables
-# non-integer values won't expand correctly but also won't blow up
-for v in DEBUG VERBOSE QUIET; do
-  if [ -z "${!v}" -o "${!v}" = "0" ]; then
-    unset -v {,_}$v
-  else
-    c=${v:0:1}; c=${c,,}
-    level=`printf "%d" ${!v} 2>/dev/null` || level=1
-    eval _$v="-`eval printf "%0.s$c" {1..$level}`"
-    export {,_}$v
-  fi
-done
-unset -v v c level
-
-#TODO nearly universal cmdline options
-#NOOP=${NOOP:+ -n}
-
-
-[ `id -u` -eq 0 ] || SUDO=sudo
-[ "`ps -p 1 -o comm= 2>/dev/null`" != 'systemd' ]
-SYSTEMD=$?
-
-#function log()    { echo -e "$*"; }
-#function debug()  { [ -n "$DEBUG" ] && log "${FUNCNAME^^}" "$@" || return 0; }
-#function info()   { [ -n "${VERBOSE}${DEBUG}" ] && log "${FUNCNAME^^}" "$@" || return 0; }
-#function notice() { log "${FUNCNAME^^}" "$@"; }
-#function warn()   { >&2 log "${FUNCNAME^^}" "$@"; }
-#function error()  { >&2 log "${FUNCNAME^^}" "$@"; [ ${SHLVL:-1} -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }
-
-
-function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
 function detect_os() {
   #TODO leverage facter2, chef equiv, and distro if available
@@ -150,54 +124,12 @@ function package_name() {
 }
 
 
-# replace file and optionally take backup
-function replace_file() {
-  local orig="${1:?}"
-  local new="${2:?}"
-  local flags="${3- --backup}"
-  local mode uid gid context
+os.detect
+[ -f "${BASH_SOURCE}.${OS_NAME}" ] && source "${BASH_SOURCE}.${OS_NAME}"
 
-# TODO Selinux Context with '%C' and --context=$context. check with 'getenforce' first
-  #FIXME test for symlink and output %N ('link' -> 'real dest'), parse and strip quotes?
-  # non-priv can stat restricted files if can walk intervening paths
-  read -r mode uid gid context \
-      < <(stat --format='%a %U %G' "$orig" 2>/dev/null)
-
-  # clear parameters if our own
-  [ "$uid" = "`id -nu`" ] && unset uid
-  [ "$gid" = "`id -ng`" ] && unset gid
-
-  ${DEBUG:+runv} ${uid:+$SUDO} install $VERBOSE ${flags} -m ${mode:-644} \
-      ${uid:+ -o $uid} ${gid:+ -g $gid} ${context:+ --context=$context} \
-      "$new" "$orig"
-}
-
-
-function whereis_function() {
-
-  shopt -s extdebug
-  declare -F "${1:?}" | cut -d' ' -f3
-  shopt -u extdebug
-}
-
-
-function list_functions() {
-  local file
-
-  [ -n "$1" -a file=`readlink -qe $1` ] && source "$file" &>/dev/null
-
-  shopt -s extdebug
-  declare -F `compgen -A function` | awk -v f="$file" '$3 ~ f { print $1 }'
-  shopt -u extdebug
-
-#NOTE
-# This doesn't work if "$file" sources other files - answer is polluted.
-#
-#  env -i /bin/bash --noprofile --norc <<_EOF
-#        source "$file" &>/dev/null
-#        compgen -A function    #alt: declare -F | cut -d' ' -f3
-#_EOF
-}
+[ `id -u` -eq 0 ] || : ${SUDO:=sudo}
+[ `ps -p 1 -o comm= 2>/dev/null` != 'systemd' ]
+SYSTEMD=$?
 
 
 # misc notes
@@ -242,5 +174,6 @@ function list_functions() {
 #    # leave ARCH as-is
 #    ;;
 #esac
+
 
 # vim: expandtab:ts=4:sw=4

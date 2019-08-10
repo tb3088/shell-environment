@@ -17,13 +17,17 @@ set -o ignoreeof checkjobs
 # http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
 set -o vi
 
-# case-insensitive filename globbing, '*' matches all files and zero or more directories
-shopt -s nocaseglob globstar extglob
+# ref: https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
+shopt -s globstar extglob
+
+# squelch pattern expansion errors
+shopt -u failglob
 
 # nullglob=off preserves '*' even if no files present. During interactive 
-# this is rather silly but it appears that compgen (aka autocomplete) on Ubuntu(?)
-# stops working if set.
-shopt -u nullglob failglob
+# this is silly, but supposedly compgen (aka autocomplete) on Ubuntu(?)
+# and also TAB-completion could stop if set. (Ed. appears to be bogus)
+#[[ "$-" =~ i ]] || shopt -u nullglob
+shopt -s nullglob
 
 # When changing directory small typos can be ignored by bash
 # for example, cd /vr/lgo/apaache would find /var/log/apache
@@ -42,16 +46,17 @@ HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 # don't search PATH for target of 'source'
 shopt -u sourcepath
 
-for f in "$HOME"/.functions{,_${OSTYPE:-`uname`},.local}; do
+for f in "$HOME"/.functions{,.local}; do
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? in $f"
+  source "$f" || echo >&2 "RC=$? during $f"
 done
 unset f
 
-for f in "$HOME"/.{aliases{,.local},bashrc{.local,_*},dircolors}; do
+#TODO remove unnecessary symlinks, put in SOURCE guards
+for f in "$HOME"/.{bashrc{.local,_*},aliases{,.local},dircolors}; do
   egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? in $f"
+  source "$f" || echo >&2 "RC=$? during $f"
 done
 unset f
 
@@ -69,7 +74,7 @@ fi
 case $- in
   *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
           [ -f "$f" ] || continue
-          source "$f" || echo >&2 "RC=$? in $f"
+          source "$f" || echo >&2 "RC=$? during $f"
         done
         unset f
         ;;

@@ -1,11 +1,11 @@
 # $Id$
 
-: ${PATHSEP=':'}	# soft override
-[ `id -u` -eq 0 ] || : ${SUDO:=sudo}
-[ "`ps -p 1 -o comm= 2>/dev/null`" != 'systemd' ]
-SYSTEMD=$?
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; exit 2; }
+#[[ $BASH_VERSION =~ 4.[34] ]] || { >&2 echo "ERROR bash ~> 4.3 required"; exit 126; }
 
-shopt -s extglob
+shopt -s extglob nullglob
+set -o pipefail
+
 
 function runv() {
   # mimic 'set -x'
@@ -14,19 +14,17 @@ function runv() {
   [ -n "$NOOP" ] || "$@"
 }
 
+
+function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n `tset -q` ]; }
+
 function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
+
 
 declare -F convert_path >/dev/null ||
 function convert_path() {
-  # skeleton, do-nothing but Echo
-  local OPTIND
-  while getopts ":eEnt:" opt; do
-    :
+  while [ -n "${1+X}" ]; do
+    echo "$1"; shift
   done
-  shift $((OPTIND-1))
-
-  [ -n "$1" ] || return 0
-  echo "$1"
 }
 
 
@@ -40,7 +38,7 @@ function convert_path() {
 
 function contains() {
   local delim method
-  : ${delim=${PATHSEP:?}}
+  : ${delim=${PATHSEP:-\:}}
 
   local -r source="${delim}${1:?}${delim}"
   local -r sub="${delim}${2:?}${delim}"
@@ -73,7 +71,7 @@ function addPath() {
   local -n nref=$k
 
   [ "$k" = 'PATH' ] && { delim=':'; flags+=('-E'); }
-  : ${delim:=${PATHSEP:?}}
+  : ${delim:=${PATHSEP:-\:}}
 
   log_TRACE "before" "$k=$nref"
   while [ "${1+x}" ]; do
@@ -105,7 +103,7 @@ function rmPath() {
   local -n nref=$k
 
   [ "$k" = 'PATH' ] && { delim=':'; flag='-E'; }
-  : ${delim:=${PATHSEP:?}}
+  : ${delim:=${PATHSEP:-\:}}
 
   log_TRACE "before" "$nref"
   while [ "${1+x}" ]; do
@@ -155,13 +153,14 @@ function replace_file() {
   local new="${2:?}"
   shift 2
 
-#FIXME use getopt() for '-b'. and break on '--' and set filename(s) from remainder
-# see --* handling from ec2-validate.sh and packer wrapper.
-#TODO? use _xxx format so can be overriden from cmdline?
+  #FIXME use getopt() for '-b'. and break on '--' and set filename(s) from remainder
+  # see --* handling from ec2-validate.sh and packer wrapper.
+  #TODO? use _xxx format so can be overriden from cmdline?
   local mode uid gid context flags
 
-# TODO Selinux Context with '%C' and --context=$context. check with 'getenforce' first
+  # TODO Selinux Context with '%C' and --context=$context. check with 'getenforce' first
   #FIXME test for symlink and output %N ('link' -> 'real dest'), parse and strip quotes?
+
   # non-priv can stat restricted files if can walk intervening paths
   read -r mode uid gid context \
       < <(stat --format='%a %U %G' "$orig" 2>/dev/null)
@@ -341,8 +340,8 @@ function userinfo() {
 }
 
 
-which lstree 2>/dev/null ||
-function lstree() {
+#[ os.is_command tree -o declare -F tree ] &>/dev/null ||
+function tree() {
   local OPTIND opt      # IMPORTANT !!
   local filter= type= reverse= flags=()
   local _find="find"    # alt: 'ls -R'
@@ -374,6 +373,7 @@ _EOF
   shift $((OPTIND-1))
 
   while true; do
+#FIXME squash extra leading '| '
     ${DEBUG:+ runv} $_find ${1:-`pwd`} ${flags[@]} | sed -e '2,$ s/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|-\1/'
     shift
     [ "${1:+x}" ] && echo || break
@@ -394,6 +394,7 @@ function min() {
   printf "%s\n" ${values[@]} | sort "${flag[@]}" | head -n 1
 }
 
+
 function max()  { min -r "$@"; }
 
 function keys() { local -n nref=${1:?}; echo "${!nref[@]}"; }
@@ -412,8 +413,10 @@ function is_file() {
   done
 }
 
+
 declare -F is_windows >/dev/null ||
 function is_windows() { false; }
+
 
 function expand_dvq() {
   # standardize behavior keyed off of 'special' variables
@@ -448,5 +451,12 @@ source "${BASH_SOURCE}_logging" || {
 
   function error()  { >&2 log "${FUNCNAME^^}" "$@"; [ ${SHLVL:-1} -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }
 }
+
+
+for f in "${BASH_SOURCE}"_os; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? during $f"
+done
+unset f
 
 # vim: expandtab:ts=4:sw=4

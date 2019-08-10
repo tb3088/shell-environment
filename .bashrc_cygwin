@@ -1,8 +1,5 @@
 [[ ${OSTYPE:-`uname -o`} == [cC]ygwin ]] || return 0
 
-f="${BASH_SOURCE/bashrc/functions}"
-[ -f "$f" ] && { source "$f" || echo >&2 "RC=$? in $f"; }
-
 #Ref: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
 delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=" winsymlinks:lnk"
 
@@ -14,7 +11,7 @@ else
   alias ps='\ps -f'
 fi
 
-shopt -s nullglob
+shopt -s nocaseglob
 
 # Example of a semi-smart search, but probably best to define in .aliases.local
 # or better yet put $LOCALAPPDATA on $PATH and symlink to actual.

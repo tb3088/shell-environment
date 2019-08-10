@@ -1,6 +1,7 @@
-# force override unless pre-empted
+# $Id$
 
-declare -r PATHSEP=';'
+#PATHSEP=';'
+#readonly PATHSEP
 
 function convert_path() {
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
@@ -11,7 +12,13 @@ function convert_path() {
   # since the $SHELL parser is not so gifted.
   #
   # cygpath only modifies the first occurance of '/cygdrive' or '[A-Z]:'
-  # unless '-p' but delimiter must match input (';' for Windows, ':' for Unix)
+  # unless '-p' but delimiter in input MUST consistently match opposite 
+  # of desired output format (';' for Windows, ':' for Unix). Any intermix
+  # or requesting Windows output from Windows input yields garbage. But
+  # Unix output from Unix input is usually benign.
+  #
+  # EXAMPLE
+  # output as windows, input MUST be unix (:) delimited
 
   local format flags=()
   local -i noop=0 escape
@@ -34,15 +41,16 @@ function convert_path() {
   done
   shift $((OPTIND-1))
 
-  : ${escape:=1}
+  #TODO detect bad input, word-split on PATHSEP?
+  while [ -n "${1+X}" ]; do
+    log_TRACE "raw:    '$1'"
+    # damn Windows! unescape whitespace
+    local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
+    log_TRACE "cooked: '$p'"
 
-  local p
-  [ -n "$1" ] || return 0
-  log_TRACE "raw:    '$1'"
-  # damn Windows! unescape whitespace
-  p=`cygpath -p $format ${flags[@]} -- "${1//\\ / }"`
-  log_TRACE "cooked: '$p'"
-  [ $escape -eq 1 ] && echo "${p// /\\ }" || echo "$p"
+    [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
+    shift
+  done
 }
 readonly -f convert_path
 
@@ -101,7 +109,6 @@ function is_windows() {
   bin=`which "${1:?}" 2>/dev/null` || return
   [ "$bin" != "${bin#/cygdrive}" ]
 }
-readonly -f is_windows
 
 
 # TODO use procps
