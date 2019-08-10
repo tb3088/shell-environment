@@ -1,8 +1,6 @@
 #TODO how to keep system Ruby from fighting embedded?
 
-for p in puppet{,.bat}; do
-    which $p &>/dev/null && return
-done
+which puppet{,.bat} &>/dev/null && return
 
 for v in $PUPPET_BASE "${PROGRAMFILES:-/opt}"/{,puppetlabs/}{p,P}uppet; do
   if [ -d "$v"/bin ]; then
