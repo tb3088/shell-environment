@@ -8,7 +8,9 @@ which ec2-version &>/dev/null || {
 link=`which aws_bash_completer 2>/dev/null` &&
   for bc in {/etc/,"$HOME"/.}bash_completion.d; do
     [ -e "$bc/${link##*/}" ] && break
-    [[ "$bc" =~ ^/etc ]] && continue
+
+    # skip since not 'root'
+    [[ "$bc" =~ ^/etc  && `id -u` -eq 0 ]] || continue
 
     mkdir -p "$bc"
     ln -s "$link" "$bc"/
@@ -21,4 +23,4 @@ export AWS_SESSION_DURATION=$((3600 * 8))
 alias aws-clearenv='unset ${!AWS_*}'
 alias aws-printenv='for v in ${!AWS_*}; do echo "$v=${!v}"; done; unset v'
 
-source ${BASH_SOURCE/bashrc/functions}
+${DEBUG:+ runv} source ${BASH_SOURCE/bashrc/functions}

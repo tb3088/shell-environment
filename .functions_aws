@@ -8,28 +8,58 @@ declare -Ar __aws_session=(
     [Expiration]='aws_session_expire'
 )
 
-# aws ec2 describe-regions --output text | awk '{print $NF}'
-# aws ec2 describe-availability-zones --region $REGION --output text | awk '{print $NF}'
-declare -p __aws_regions &>/dev/null ||
-declare -Ar __aws_regions=(
-  [ap-northeast-2]=`echo ap-northeast-2{a,c}`
-  [ap-northeast-1]=`echo ap-northeast-1{a,c,d}`
-  [ap-south-1]=`echo ap-south-1{a..b}`
-  [ap-southeast-1]=`echo ap-southeast-1{a..c}`
-  [ap-southeast-2]=`echo ap-southeast-2{a..c}`
-  [ca-central-1]=`echo ca-central-1{a..b}`
-  [eu-central-1]=`echo eu-central-1{a..c}`
-  [eu-north-1]=`echo eu-north-1{a..c}`
-  [eu-west-1]=`echo eu-west-1{a..c}`
-  [eu-west-2]=`echo eu-west-2{a..c}`
-  [eu-west-3]=`echo eu-west-3{a..c}`
-  [sa-east-1]=`echo sa-east-1{a,c}`
-  [us-east-1]=`echo us-east-1{a..f}`
-  [us-east-2]=`echo us-east-2{a..c}`
-  [us-west-1]=`echo us-west-1{a,c}`
-  [us-west-2]=`echo us-west-2{a..c}`
-)
+#ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
+is_array __aws_regions &>/dev/null ||
+declare -a __aws_regions=( `aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' --output text --region us-east-1 2>/dev/null` )
+#alt: `aws ec2 describe-regions --output text --region us-east-1 | awk '{print $NF}'`
 
+[ ${#__aws_regions[@]} -ge 16 ] ||
+__aws_regions=(
+    ap-northeast-{1,2}
+    ap-south-1
+    ap-southeast-{1,2}
+    ca-central-1
+    eu-central-1
+    eu-north-1
+    eu-west-{1,2,3}
+    sa-east-1
+    us-east-{1,2}
+    us-west-{1,2}
+  )
+readonly __aws_regions
+
+is_hash __aws_availability_zones &>/dev/null ||
+declare -A __aws_availability_zones
+
+[ ${#__aws_availability_zones[@]} -ge 16 ] ||
+for region in ${__aws_regions[@]}; do
+  __aws_availability_zones[$region]=`aws ec2 describe-availability-zones \
+      --region $region \
+      --query 'AvailabilityZones[].{ Name:ZoneName }' \
+      --output text 2>/dev/null` || break
+  #alt: ... | ${JQ[@]:-jq} --raw-output '.AvailabilityZones[].ZoneName'`
+done
+
+[ ${#__aws_availability_zones[@]} -ge 16 ] ||
+__aws_availability_zones=(
+    [ap-northeast-2]=`printf "%s\n" ap-northeast-2{a,c}`
+    [ap-northeast-1]=`printf "%s\n" ap-northeast-1{a,c,d}`
+    [ap-south-1]=`printf "%s\n" ap-south-1{a..b}`
+    [ap-southeast-1]=`printf "%s\n" ap-southeast-1{a..c}`
+    [ap-southeast-2]=`printf "%s\n" ap-southeast-2{a..c}`
+    [ca-central-1]=`printf "%s\n" ca-central-1{a..b}`
+    [eu-central-1]=`printf "%s\n" eu-central-1{a..c}`
+    [eu-north-1]=`printf "%s\n" eu-north-1{a..c}`
+    [eu-west-1]=`printf "%s\n" eu-west-1{a..c}`
+    [eu-west-2]=`printf "%s\n" eu-west-2{a..c}`
+    [eu-west-3]=`printf "%s\n" eu-west-3{a..c}`
+    [sa-east-1]=`printf "%s\n" sa-east-1{a,c}`
+    [us-east-1]=`printf "%s\n" us-east-1{a..f}`
+    [us-east-2]=`printf "%s\n" us-east-2{a..c}`
+    [us-west-1]=`printf "%s\n" us-west-1{a,c}`
+    [us-west-2]=`printf "%s\n" us-west-2{a..c}`
+)
+readonly __aws_availability_zones
 
 #function is-aws
 
@@ -45,7 +75,7 @@ declare -Ar __aws_regions=(
 #local-ipv4
 #public-ipv4
 
-function aws-region {
+function aws.region {
   local region=$1
 
   if [ -z "$region" ]; then
@@ -57,7 +87,7 @@ function aws-region {
   [ -n "${__aws_regions[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
 }
 
-function aws-profile {
+function aws.profile {
   if [ "$1" = 'RESET' ]; then
     aws-rmPath; unset ${!AWS_*}
     return
@@ -99,7 +129,7 @@ function aws-profile {
   ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
 
   AWS_PROFILE=$profile
-  aws-region "$region" || return
+  aws.region "$region" || return
 
   unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
   ${DEBUG:+ runv} aws-addPath
@@ -229,11 +259,11 @@ function aws-session {
     shift
   done
 
-  aws-profile "${profile:-$AWS_PROFILE}" || return
+  aws.profile "${profile:-$AWS_PROFILE}" || return
 
 #  mfa=`aws configure get mfa_serial`
 #  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
-#    # not reached, aws-profile() should have caught it
+#    # not reached, aws.profile() should have caught it
 #    RC=1 log_CRITICAL "unknown profile ($profile, $AWS_CONFIG_FILE)"
 #    return
 #  fi
