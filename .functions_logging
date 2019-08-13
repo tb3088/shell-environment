@@ -105,7 +105,7 @@ function __log_level {
   [ -n "$1" ] || return 1
 
   local -u key=$1
-  key=${key#log_}; key=${key#log.}
+  key=${key#LOG_}; key=${key#LOG.}
   local result=${__log_levels[$key]}
 
   [ -n "$result" ] || return 1
@@ -124,10 +124,10 @@ function log() {
   if level=`__log_level ${level:-$LOG_LEVEL}`; then
     :                       # LOG_LEVEL=<level> log "msg"
   # legacy invocation style
-  elif level=`__log_level $1`; then
+  elif level=`__log_level "$1"`; then
     shift                   # log <level> "msg"
   else                      # level() or log_LEVEL() "msg"
-    level=`__log_level ${FUNCNAME[1]}` && offset+=1
+    level=`__log_level "${FUNCNAME[1]}"` && offset+=1
   fi
 
   # set mask on externalities
