@@ -358,13 +358,14 @@ function tree() {
       \?)   RC=2 log_ERROR "unknown option '-$OPTARG'" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
-  A simple imitation of tree(1) - http://mama.indstate.edu/users/ice/tree/tree.1.html
 
   -d            list Directories only
   -l            follow symbolic links
   -L <level>    maximum traverse depth
   -P <pattern>  must escape any wildcards
-  -x            stay on single filesystem
+  -x            stay on current filesystem
+
+ref: http://mama.indstate.edu/users/ice/tree/tree.1.html
 _EOF
             return ${RC:-2}
             ;;
@@ -373,10 +374,9 @@ _EOF
   shift $((OPTIND-1))
 
   while true; do
-#FIXME squash extra leading '| '
-    ${DEBUG:+ runv} $_find ${1:-`pwd`} ${flags[@]} | sed -e '2,$ s/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|-\1/'
+    ${DEBUG:+ runv} $_find ${1:-.} ${flags[@]} | sed -e '2,$ s/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|-\1/'
     shift
-    [ "${1:+x}" ] && echo || break
+    [ -n "$1" ] && echo || break
   done
 }
 
