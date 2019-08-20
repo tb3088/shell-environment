@@ -6,13 +6,14 @@ declare -Ar __aws_session=(
     [SecretAccessKey]='aws_secret_access_key'
     [SessionToken]='aws_session_token'
     [Expiration]='aws_session_expire'
-)
+  )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
 is_array __aws_regions &>/dev/null ||
-declare -a __aws_regions=( `aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' --output text --region us-east-1 2>/dev/null` )
-#alt: `aws ec2 describe-regions --output text --region us-east-1 | awk '{print $NF}'`
+declare -a __aws_regions
 
+# `aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' --output text --region us-east-1 2>/dev/null`
+#alt: `aws ec2 describe-regions --output text --region us-east-1 | awk '{print $NF}'`
 [ ${#__aws_regions[@]} -ge 16 ] ||
 __aws_regions=(
     ap-northeast-{1,2}
@@ -31,34 +32,32 @@ readonly __aws_regions
 is_hash __aws_availability_zones &>/dev/null ||
 declare -A __aws_availability_zones
 
-[ ${#__aws_availability_zones[@]} -ge 16 ] ||
-for region in ${__aws_regions[@]}; do
-  __aws_availability_zones[$region]=`aws ec2 describe-availability-zones \
-      --region $region \
-      --query 'AvailabilityZones[].{ Name:ZoneName }' \
-      --output text 2>/dev/null` || break
-  #alt: ... | ${JQ[@]:-jq} --raw-output '.AvailabilityZones[].ZoneName'`
-done
-
+#for region in ${__aws_regions[@]}; do
+#  __aws_availability_zones[$region]=`aws ec2 describe-availability-zones \
+#      --region $region \
+#      --query 'AvailabilityZones[].{ Name:ZoneName }' \
+#      --output text 2>/dev/null` || break
+#  #alt: ... | ${JQ[@]:-jq} --raw-output '.AvailabilityZones[].ZoneName'`
+#done
 [ ${#__aws_availability_zones[@]} -ge 16 ] ||
 __aws_availability_zones=(
-    [ap-northeast-2]=`printf "%s\n" ap-northeast-2{a,c}`
-    [ap-northeast-1]=`printf "%s\n" ap-northeast-1{a,c,d}`
-    [ap-south-1]=`printf "%s\n" ap-south-1{a..b}`
-    [ap-southeast-1]=`printf "%s\n" ap-southeast-1{a..c}`
-    [ap-southeast-2]=`printf "%s\n" ap-southeast-2{a..c}`
-    [ca-central-1]=`printf "%s\n" ca-central-1{a..b}`
-    [eu-central-1]=`printf "%s\n" eu-central-1{a..c}`
-    [eu-north-1]=`printf "%s\n" eu-north-1{a..c}`
-    [eu-west-1]=`printf "%s\n" eu-west-1{a..c}`
-    [eu-west-2]=`printf "%s\n" eu-west-2{a..c}`
-    [eu-west-3]=`printf "%s\n" eu-west-3{a..c}`
-    [sa-east-1]=`printf "%s\n" sa-east-1{a,c}`
-    [us-east-1]=`printf "%s\n" us-east-1{a..f}`
-    [us-east-2]=`printf "%s\n" us-east-2{a..c}`
-    [us-west-1]=`printf "%s\n" us-west-1{a,c}`
-    [us-west-2]=`printf "%s\n" us-west-2{a..c}`
-)
+    [ap-northeast-2]=`printf "%s " ap-northeast-2{a,c}`
+    [ap-northeast-1]=`printf "%s " ap-northeast-1{a,c,d}`
+    [ap-south-1]=`printf "%s" ap-south-1{a..b}`
+    [ap-southeast-1]=`printf "%s " ap-southeast-1{a..c}`
+    [ap-southeast-2]=`printf "%s " ap-southeast-2{a..c}`
+    [ca-central-1]=`printf "%s " ca-central-1{a..b}`
+    [eu-central-1]=`printf "%s " eu-central-1{a..c}`
+    [eu-north-1]=`printf "%s " eu-north-1{a..c}`
+    [eu-west-1]=`printf "%s " eu-west-1{a..c}`
+    [eu-west-2]=`printf "%s " eu-west-2{a..c}`
+    [eu-west-3]=`printf "%s " eu-west-3{a..c}`
+    [sa-east-1]=`printf "%s " sa-east-1{a,c}`
+    [us-east-1]=`printf "%s " us-east-1{a..f}`
+    [us-east-2]=`printf "%s " us-east-2{a..c}`
+    [us-west-1]=`printf "%s " us-west-1{a,c}`
+    [us-west-2]=`printf "%s " us-west-2{a..c}`
+  )
 readonly __aws_availability_zones
 
 #function is-aws
