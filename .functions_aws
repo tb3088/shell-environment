@@ -43,7 +43,7 @@ declare -A __aws_availability_zones
 __aws_availability_zones=(
     [ap-northeast-2]=`printf "%s " ap-northeast-2{a,c}`
     [ap-northeast-1]=`printf "%s " ap-northeast-1{a,c,d}`
-    [ap-south-1]=`printf "%s" ap-south-1{a..b}`
+    [ap-south-1]=`printf "%s " ap-south-1{a..b}`
     [ap-southeast-1]=`printf "%s " ap-southeast-1{a..c}`
     [ap-southeast-2]=`printf "%s " ap-southeast-2{a..c}`
     [ca-central-1]=`printf "%s " ca-central-1{a..b}`
