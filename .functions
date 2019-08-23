@@ -20,12 +20,10 @@ function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n `tset -q` ]; }
 
 function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
-
 declare -F convert_path >/dev/null ||
 function convert_path() {
-  while [ -n "${1+X}" ]; do
-    echo "$1"; shift
-  done
+  [ -n "$1" ] || return
+  echo "$@"
 }
 
 
@@ -63,29 +61,29 @@ function addPath() {
 #TODO use join_string() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`join_string $1 $2 $delim`
 
-  local k v flags=() delim
+  local k v delim flags=()
   local -i prepend
   local -ir _prepend=${prepend:-0}
 
-  [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
+  [ $# -eq 1 ] && k='PATH' || { k=$1; shift; }
   [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
-  local -n nref=$k
 
   [ "$k" = 'PATH' ] && { delim=':'; flags+=('-E'); }
+
   : ${delim:=${PATHSEP:-\:}}
 
-  log_TRACE "before" "$k=$nref"
-  while [ "${1+x}" ]; do
-    [ -n "$1" ] || continue
+  local -n nref=$k
 
+  log_TRACE "before ($delim)" "$k=$nref"
+  while [ -n "$1" ]; do
+#    [ -n "$1" ] || continue
     prepend=$_prepend           # restore state
-    v="$1"
-    # leading '-' means prepend
-    [ "${1:0:1}" = '-' ] && { prepend=1; v="${1:1}"; }
 
+    # leading '-' means prepend
+    [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; }
     # do *NOT* prefix with '${DEBUG:+ runv}'
-    v=`convert_path ${flags[@]} "$v"`
-    delim="$delim" contains "$nref" "$v" || {   # pedant
+    v=`convert_path ${flags[@]} "${v:-$1}"`
+    delim=$delim contains "$nref" "$v" || {   # pedant
         [ $prepend -eq 1 ] && nref="$v${delim}${nref}" || nref+="${delim}$v"
       }
 
