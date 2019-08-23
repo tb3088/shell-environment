@@ -1,11 +1,25 @@
 
 if which git &>/dev/null; then
-  function git_branch() {
+  function git.current() {
      git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
   }
 
-  function git_check() {
-    git diff --stat origin/$(git_branch) 2>/dev/null
+#  function git.diff-check() {
+#    git diff --stat origin/$( git.current ) 2>/dev/null
+#  }
+  function git.mirror() {
+    local src dst branch
+    : ${src:=${1:?}}
+    : ${dst:=${2:?}}
+
+    # alt: uses local as intermediary and will DESTROY any updates present in $dst
+    # git clone --mirror $src_url
+    # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
+
+    for br in `git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`; do
+      ${DEBUG:+runv} git push "$dst" "${br}:refs/heads/${br/$src\/}"
+      ${DEBUG:+runv} git push "$dst" "${br}:refs/tags/${br/$src\/}"
+    done
   }
 
   alias gsb='git status -sb'
