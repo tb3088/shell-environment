@@ -88,7 +88,7 @@ function aws.region {
 
 function aws.profile {
   if [ "$1" = 'RESET' ]; then
-    aws-rmPath; unset ${!AWS_*}
+    aws.rmPath; unset ${!AWS_*}
     return
   fi
 
@@ -125,13 +125,13 @@ function aws.profile {
   # possible short-circuit
   [ "$profile" = "$AWS_PROFILE" -a "${region:-$AWS_DEFAULT_REGION}" = "${AWS_DEFAULT_REGION:-unset}" ] && return
 
-  ${DEBUG:+ runv} aws-rmPath    # cleanup previous environment
+  ${DEBUG:+ runv} aws.rmPath    # cleanup previous environment
 
   AWS_PROFILE=$profile
   aws.region "$region" || return
 
   unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
-  ${DEBUG:+ runv} aws-addPath
+  ${DEBUG:+ runv} aws.addPath
   if [ -n "$AWS_CONFIG_FILE" ]; then
     local _creds=${AWS_CONFIG_FILE%/*}/credentials
     [ -f "$_creds" ] &&
@@ -142,7 +142,7 @@ function aws.profile {
 }
 
 
-function aws-session-load {
+function aws.session-load {
   local format='text'
   local input=$1
   local cache_dir="$HOME"/.aws/cli/cache
@@ -163,7 +163,7 @@ function aws-session-load {
   jq . <<< "$input" &>/dev/null && format='json'
 
   case "$format" in
-    text)   # see 'aws-session()' call to 'aws sts'
+    text)   # see 'aws.session()' call to 'aws sts'
             local header rest IFS
             log_DEBUG "$input"
 #FIXME something very wrong in 'text' mode
@@ -183,12 +183,12 @@ log_ERROR "code is broken ($FUNCNAME)"; return
     *)      RC=2 log_ERROR "unsupported format ($format)"
             return
   esac
-  log_INFO `aws-printenv`
+  log_INFO `aws.printenv`
   export ${!AWS_*}
 }
 
 
-function aws-session-write {
+function aws.session-write {
     local field; local -u envvar
 
     for field in `keys __aws_session`; do
@@ -198,7 +198,7 @@ function aws-session-write {
 }
 
 
-function aws-session {
+function aws.session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
@@ -286,7 +286,7 @@ function aws-session {
         local field
         local -u key
 
-# FIXME use same pattern as aws-session-load with 'keys' and 'values'
+# FIXME use same pattern as aws.session-load with 'keys' and 'values'
         for field in "${!__aws_session[@]}"; do
           key="${__aws_session[$field]}"
           unset $key
@@ -303,15 +303,15 @@ function aws-session {
 #An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
   fi
 
-  aws-session-load "${cache:-$output}" || return
-  [ $write -eq 1 ] && aws-session-write
+  aws.session-load "${cache:-$output}" || return
+  [ $write -eq 1 ] && aws.session-write
 
-  log_INFO `aws-printenv`
+  log_INFO `aws.printenv`
   export ${!AWS_*}
 }
 
 
-function aws-addPath {
+function aws.addPath {
   local v f
   local -i delete
 
@@ -339,12 +339,12 @@ function aws-addPath {
 }
 
 
-function aws-rmPath {
-  delete=1 aws-addPath "$@"
+function aws.rmPath {
+  delete=1 aws.addPath "$@"
 }
 
 
-function aws-route53-export {
+function aws.route53-export {
   which jq &>/dev/null || { log_ERROR "'jq' not installed"; return; }
   local -u zoneid=${1:?}
 
