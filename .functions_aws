@@ -78,12 +78,12 @@ function aws.region {
   local region=$1
 
   if [ -z "$region" ]; then
-    echo; printf ' %s\n' ${!__aws_regions[@]} | sort | column; echo
+    echo; printf ' %s\n' ${__aws_regions[@]} | sort | column; echo
     read -t 8 -p "Choose REGION [ us-east-1* ... ]:  " || return
     region=${REPLY:-'us-east-1'}
   fi
 
-  [ -n "${__aws_regions[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
+  [ -n "${__aws_availability_zones[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
 }
 
 function aws.profile {
