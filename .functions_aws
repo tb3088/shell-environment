@@ -142,6 +142,12 @@ function aws.profile {
 }
 
 
+function aws.printenv() {
+  local v
+  for v in ${!AWS_*}; do echo "$v=${!v}"; done
+}
+
+
 function aws.session-load {
   local format='text'
   local input=$1

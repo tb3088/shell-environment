@@ -20,7 +20,6 @@ unset link
 # assume-role session credentials expire in 1h (default)
 export AWS_SESSION_DURATION=$((3600 * 8))
 
-alias aws-clearenv='unset ${!AWS_*}'
-alias aws-printenv='for v in ${!AWS_*}; do echo "$v=${!v}"; done; unset v'
+alias aws.clearenv='unset ${!AWS_*}'
 
 ${DEBUG:+ runv} source ${BASH_SOURCE/bashrc/functions}
