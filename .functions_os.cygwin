@@ -17,8 +17,8 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
   #
-  # EXAMPLE
-  # output as windows, input MUST be unix (:) delimited
+  # In other words:
+  # if output as windows, input MUST be unix (:) delimited
 
   local format flags=()
   local -i noop=0 escape
@@ -42,15 +42,15 @@ function convert_path() {
   shift $((OPTIND-1))
 
   #TODO detect bad input, word-split on PATHSEP?
-  while [ -n "${1+X}" ]; do
-    log_TRACE "raw:    '$1'"
-    # damn Windows! unescape whitespace
-    local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
-    log_TRACE "cooked: '$p'"
+  # do NOT handle more than 1 arg!
+  [ -n "$1" ] || return
 
-    [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
-    shift
-  done
+  log_TRACE "raw:    '$1'"
+  # damn Windows! unescape whitespace
+  local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
+  log_TRACE "cooked: '$p'"
+
+  [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
 }
 readonly -f convert_path
 
