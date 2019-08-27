@@ -7,8 +7,11 @@ if which git &>/dev/null; then
 #  function git.diff-check() {
 #    git diff --stat origin/$( git.current ) 2>/dev/null
 #  }
+
   function git.mirror() {
-    local src dst branch
+    local src dst branch interactive
+    [ "$1" = '-i' ] && { interactive=1; shift; }
+
     : ${src:=${1:?}}
     : ${dst:=${2:?}}
 
@@ -17,9 +20,15 @@ if which git &>/dev/null; then
     # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
 
     for br in `git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`; do
-      ${DEBUG:+runv} git push "$dst" "${br}:refs/heads/${br/$src\/}"
-      ${DEBUG:+runv} git push "$dst" "${br}:refs/tags/${br/$src\/}"
+      if [ ${interactive:-0} -eq 1 ]; then
+        read -t 8 -p "Copy BRANCH '${br#*/}' [y/N]:  " || return
+        [ ${REPLY^^} = 'Y' ] && git push "$dst" "${br}:refs/heads/${br#*/}"
+      else
+        ${DEBUG:+runv} git push "$dst" --all
+      fi
     done
+    ${DEBUG:+runv} git push "$dst" --tags
+    #alt: ... 'refs/tags/*:refs/tags/*'
   }
 
   alias gsb='git status -sb'
