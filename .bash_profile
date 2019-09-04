@@ -51,12 +51,8 @@ if [ -n "$GIT_PROMPT" ]; then
     set -e -o pipefail
     awk '
         NR==1 {
-            sub(/\(no branch\)/, "")
-            for (i=2; i<NF; i++)
-                if ($i ~ /[[:alnum:]].*\.{3,}[[:alnum:]].*/)
-                    break
-
-            gsub(/[\[\],]/, "", $(i+1))
+            sub(/\(no branch\)/, ""); gsub(/[\[\],]/, "")
+            i=2
             printf "_branch='%s' _status='%s' _delta=%d ", $i, $(i+1), $(i+2)
             next
         }
