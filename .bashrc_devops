@@ -10,7 +10,17 @@ if which git &>/dev/null; then
 
   function git.mirror() {
     local src dst branch interactive
-    [ "$1" = '-i' ] && { interactive=1; shift; }
+
+    local OPTIND opt
+    while getopts 'i' opt; do
+      case "$opt" in
+        i)	interactive=1 ;;
+
+      	:)  RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
+        \?) RC=2 log_ERROR "invalid option (-$OPTARG)" ; return ;;
+      esac
+    done
+    shift $((OPTIND-1))
 
     : ${src:=${1:?}}
     : ${dst:=${2:?}}
@@ -19,14 +29,15 @@ if which git &>/dev/null; then
     # git clone --mirror $src_url
     # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
 
-    for br in `git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`; do
-      if [ ${interactive:-0} -eq 1 ]; then
+    if [ ${interactive:-0} -eq 1 ]; then
+      for br in `git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`; do
         read -t 8 -p "Copy BRANCH '${br#*/}' [y/N]:  " || return
         [ ${REPLY^^} = 'Y' ] && git push "$dst" "${br}:refs/heads/${br#*/}"
-      else
-        ${DEBUG:+runv} git push "$dst" --all
-      fi
-    done
+      done
+    else
+      ${DEBUG:+runv} git push "$dst" --all
+    fi
+
     ${DEBUG:+runv} git push "$dst" --tags
     #alt: ... 'refs/tags/*:refs/tags/*'
   }
