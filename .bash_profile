@@ -93,9 +93,15 @@ if [ -n "$GIT_PROMPT" ]; then
 fi
 
   if [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ]; then
-    local _config
-    _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config%/*}; _config=${_config#.aws/}
+    local _config=${AWS_CONFIG_FILE#$HOME/}
+    _config=${_config%/*}; _config=${_config#.aws/}
     _prompt+="\n${UL}AWS:$RS ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}$RS / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}$RS"
+
+    if [ "$AWS_SESSION_EXPIRE" ]; then
+      local _session
+      [ `date -d $AWS_SESSION_EXPIRE '+%s' 2>/dev/null` -gt `date '+%s'` ] && _session=`date -d $AWS_SESSION_EXPIRE '+%R'`
+      _prompt+="  (${_session:-${BRED}expired$RS})"
+    fi
   fi
 
   #TODO use array with IFS
