@@ -25,24 +25,37 @@ if which git &>/dev/null; then
       esac
     done
     shift $((OPTIND-1))
+#TODO spit out 'git remotes' and prompt for src and dst with read()
+    : ${src:=$1}
+    : ${dst:=$2}
+    shift 2
 
-    : ${src:=${1:?}}
-    : ${dst:=${2:?}}
+    ${DEBUG:+runv} git fetch ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
+        --multiple --prune ${src:?} ${dst:?} || return
 
     # alt: uses local as intermediary and will DESTROY any updates present in $dst
     # git clone --mirror $src_url
     # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
 
-    if [ ${interactive:-0} -eq 1 ]; then
-      for br in `git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`; do
-        read -t 8 -p "Copy BRANCH '${br#*/}' [y/N]:  " || return
-        [ -n "${REPLY}" -a ${REPLY^^} = 'Y' ] && git push "$dst" "${br}:refs/heads/${br#*/}"
-      done
-    else
-      ${DEBUG:+runv} git push "$dst" --all
-    fi
+    echo -e "\nBranches ..."
+    for br in ${@:-`git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`}
+    do
+      if [ ${interactive:-0} -eq 1 ]; then
+        read -t 8 -n 1 -p "Copy '${br#*/}' [y/N]:  " || return
+        [ -z "${REPLY}" ] || echo
+        [ "${REPLY^^}" = 'Y' ] || continue
+      else
+        echo "  $br"
+      fi
+      ${DEBUG:+runv} git push ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
+            ${PRUNE:+ --prune} \
+            "$dst" \
+            "${br}:refs/heads/${br#*/}"
+    done
 
-    ${DEBUG:+runv} git push "$dst" --tags
+    echo -e "\n\nTags ..."
+    ${DEBUG:+runv} git push ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
+        "$dst" --tags
     #alt: ... 'refs/tags/*:refs/tags/*'
   }
 
