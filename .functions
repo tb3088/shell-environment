@@ -16,13 +16,56 @@ function runv() {
 }
 
 
-function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n `tset -q` ]; }
+function is_interactive() {
+  [[ $- =~ i ]] || tty -s || [ -n `tset -q` ]
+}
+
+
+function is_type() {
+  # ignore blank arguments. return on first error
+
+  local type
+  while [ $# -ne 0 ]; do
+    if [ -n "$1" ]; then
+	  [[ `declare -p "$1" | awk '{ print $2; }'` =~ ${type:?} ]] || return
+	fi
+	shift
+  done
+}
+
+function is_array()   { type=a is_type "$@"; }
+function is_hash()    { type=A is_type "$@"; }
+function is_int()     { type=i is_type "$@"; }
+function is_integer() { type=i is_type "$@"; }
+function is_string()  { type='-' is_type "$@"; }
+
+
+function is_file() {
+  # ignore blank arguments. return on first error
+
+  while [ $# -ne 0 ]; do
+    if [ -n "$1" ]; then
+	  [ -f "$1" ] || { log_ERROR "file not found ($1)"; return; }
+	fi
+    shift
+  done
+}
+
+
+declare -F is_windows >/dev/null ||
+function is_windows() {
+  # deliberate NOOP
+  false
+}
+
 
 function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
 
+
 declare -F convert_path >/dev/null ||
 function convert_path() {
-  [ -n "$1" ] || return
+  [ $# -ne 0 ] || return
+  # deliberate NOOP
   echo "$@"
 }
 
@@ -72,25 +115,34 @@ function addPath() {
 
   : ${delim:=${PATHSEP:-\:}}
 
-  local -n nref=$k
+  local -n kval=$k
 
-  log_TRACE "before ($delim)" "$k=$nref"
-  while [ -n "$1" ]; do
-#    [ -n "$1" ] || continue
-    prepend=$_prepend           # restore state
+  log_TRACE "$k before (delim=$delim)" "$kval"
+  while [ $# -ne 0 ]; do
+    [ -n "$1" ] || { shift; continue; }
+
+	# restore initial state
+    prepend=$_prepend
 
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; }
-    # do *NOT* prefix with '${DEBUG:+ runv}'
+
+    # do *NOT* prefix call to convert_path() with '${DEBUG:+ runv}'
     v=`convert_path ${flags[@]} "${v:-$1}"`
-    delim=$delim contains "$nref" "$v" || {   # pedant
-        [ $prepend -eq 1 ] && nref="$v${delim}${nref}" || nref+="${delim}$v"
+
+    delim=$delim contains "$kval" "$v" || {
+        [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
       }
 
     shift
   done
-  #TODO strip double $delim
-  log_TRACE "after" "$k=$nref"
+
+  # remove duplicate and dangling delimiter
+  kval=${kval//$delim$delim}
+  kval=${kval##$delim}
+  kval=${kval%%$delim}
+
+  log_TRACE "$k after" "$kval"
 }
 
 
@@ -99,19 +151,19 @@ function rmPath() {
 
   [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
   [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
-  local -n nref=$k
+  local -n kval=$k
 
   [ "$k" = 'PATH' ] && { delim=':'; flag='-E'; }
   : ${delim:=${PATHSEP:-\:}}
 
-  log_TRACE "before" "$nref"
-  while [ "${1+x}" ]; do
-    [ -n "$1" ] || continue
+  log_TRACE "$k before" "$kval"
+  while [ $# -ne 0 ]; do
+    [ -n "$1" ] || { shift; continue; }
 
     #alt: nref=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "$nref"`
-    nref=$(
+    kval=$(
         IFS=$delim
-        read -ra items <<< "$nref"
+        read -ra items <<< "$kval"
         for i in ${!items[@]}; do
           [ "${items[i]}" = "$1" ] && unset 'items[i]'
         done
@@ -119,12 +171,13 @@ function rmPath() {
     )
     shift
   done
-  #TODO strip double $delim
-  log_TRACE "after" "$nref"
 
-  # trim dangling $delim
-#  eval $k=\"\${$k/#${delim}}\"
-#  eval $k=\"\${$k/%${delim}}\"
+  # remove duplicate and dangling delimiter
+  kval=${kval//$delim$delim}
+  kval=${kval##$delim}
+  kval=${kval%%$delim}
+
+  log_TRACE "$k after" "$kval"
 }
 
 
@@ -176,7 +229,7 @@ function replace_file() {
 
 function whereis_function() {
   shopt -s extdebug
-  declare -F "${1:?}" | cut -d' ' -f3
+  declare -F ${1:?} | awk '{ print $3; }'
   shopt -u extdebug
 }
 
@@ -186,14 +239,13 @@ function list_functions() {
 
   while [ -n "$1" ]; do
     file=`readlink -qe "$1"` || { error "file not found ($1)"; continue; }
-	( source "$file" &>/dev/null; file="$file" list_functions )
+	# use sub-shell to not contaminate current
+	( source "$file" &>/dev/null; file="$file" $FUNCNAME )
 	shift
   done
 
   shopt -s extdebug
-  declare -F `compgen -A function` | {
-      [ -n "$file" ] && awk -v fname="$file" '$3 == fname { print $1 }' || awk '{ printf("%-15s\t%s\n", $1, $3) }'
-	}
+  declare -F `compgen -A function` | awk -v fn="$file" '$3 ~ fn { printf("%-15s\t%s\n", $1, $3) }'
   shopt -u extdebug
 
 #NOTE
@@ -403,18 +455,6 @@ function values() { local -n nref=${1:?}; echo "${nref[@]}"; }
 function value()  { local -n nref=${1:?}; echo "${nref[${2:?}]}"; }
 
 #TODO array functions; push, pop, delete, replace, truncate
-
-
-function is_file() {
-  while [ "$1" ]; do
-     [ -f "$1" ] || { log_ERROR "file not found ($1)"; return; }
-     shift
-  done
-}
-
-
-declare -F is_windows >/dev/null ||
-function is_windows() { false; }
 
 
 function expand_dvq() {

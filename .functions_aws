@@ -9,13 +9,11 @@ declare -Ar __aws_session=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-is_array __aws_regions &>/dev/null ||
-declare -a __aws_regions
-
 # `aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' --output text --region us-east-1 2>/dev/null`
 #alt: `aws ec2 describe-regions --output text --region us-east-1 | awk '{print $NF}'`
-[ ${#__aws_regions[@]} -ge 16 ] ||
-__aws_regions=(
+
+is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
+declare -ar __aws_regions=(
     ap-northeast-{1,2}
     ap-south-1
     ap-southeast-{1,2}
@@ -27,10 +25,7 @@ __aws_regions=(
     us-east-{1,2}
     us-west-{1,2}
   )
-readonly __aws_regions
 
-is_hash __aws_availability_zones &>/dev/null ||
-declare -A __aws_availability_zones
 
 #for region in ${__aws_regions[@]}; do
 #  __aws_availability_zones[$region]=`aws ec2 describe-availability-zones \
@@ -39,8 +34,9 @@ declare -A __aws_availability_zones
 #      --output text 2>/dev/null` || break
 #  #alt: ... | ${JQ[@]:-jq} --raw-output '.AvailabilityZones[].ZoneName'`
 #done
-[ ${#__aws_availability_zones[@]} -ge 16 ] ||
-__aws_availability_zones=(
+
+is_hash __aws_availability_zones &>/dev/null && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
+declare -Ar __aws_availability_zones=(
     [ap-northeast-2]=`printf "%s " ap-northeast-2{a,c}`
     [ap-northeast-1]=`printf "%s " ap-northeast-1{a,c,d}`
     [ap-south-1]=`printf "%s " ap-south-1{a..b}`
@@ -58,22 +54,286 @@ __aws_availability_zones=(
     [us-west-1]=`printf "%s " us-west-1{a,c}`
     [us-west-2]=`printf "%s " us-west-2{a..c}`
   )
-readonly __aws_availability_zones
 
-#function is-aws
 
-#function aws-whoami or aws-metadata ${instance:-self}
-#curl -s 'http://169.254.169.254/' && {
-#AWS_METADATA_URL='http://169.254.169.254/'
-#declare -A ec2_metadata=()
-#latest/meta-data/placement/availability-zone
-#ami-id
-#hostname
-#instance-id
-#instance-type
-#local-ipv4
-#public-ipv4
+function aws.region {
+  local region=$1
 
+  if [ -z "$region" ]; then
+    echo; printf ' %s\n' ${__aws_regions[@]} | sort | column; echo
+    read -t 8 -p "Choose REGION [ us-east-1* ... ]:  " || return
+    region=${REPLY:-'us-east-1'}
+  fi
+
+  [ -n "${__aws_availability_zones[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
+}
+
+
+function aws.profile {
+  if [ "$1" = 'RESET' ]; then
+    aws.rmPath
+	unset ${!AWS_*}
+    return
+  fi
+
+  local profile region config
+  : ${profile:=$1}
+  : ${region:=$2}
+  : ${config:=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}}
+  is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
+
+  if [ -z "$profile" ]; then
+    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config" | sort` )
+
+    [ ${#list[@]} -ge 1 ] || { log_ERROR "no profiles defined ($config)"; return; }
+
+    [ ${#list[@]} -gt 1 ] && {
+        echo; printf ' %s\n' "${list[@]}" | column; echo
+        read -t 12 -p "Choose PROFILE [ ${list[0]}* ... ]:  " || return
+      }
+    profile=${REPLY:-${list[0]}}
+  fi
+
+  # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
+  # nor fall-thru to 'default' unless profile is unspecified.
+  #
+  # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
+  # stacktrace on empty values of AWS_PROFILE.
+  #
+  # BUG! 'aws configure' emits to STDERR instead of STDOUT
+  local _region=`aws configure get region ${profile:+ --profile "$profile"} 2>&1 | tail -n 1`
+  if [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]]; then
+    RC=1 log_ERROR "$_region ($config)"
+    return
+  fi
+  : ${region:=$_region}
+
+  # possible short-circuit
+  [ "$profile" = "$AWS_PROFILE" -a "${region:-$AWS_DEFAULT_REGION}" = "${AWS_DEFAULT_REGION:-unset}" ] && return
+
+  ${DEBUG:+ runv} aws.rmPath    # cleanup previous environment
+
+  AWS_PROFILE=$profile
+  aws.region "$region" || return
+
+  unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
+  ${DEBUG:+ runv} aws.addPath
+  if [ -n "$AWS_CONFIG_FILE" ]; then
+    local _creds=${AWS_CONFIG_FILE%/*}/credentials
+    [ -f "$_creds" ] &&
+        : ${AWS_SHARED_CREDENTIALS_FILE:=$_creds}
+  fi
+
+  export ${!AWS_*}
+}
+
+
+function aws.printenv() {
+  local v
+  for v in ${!AWS_*}; do echo "$v=${!v}"; done
+}
+
+
+function aws.session-load {
+  local format='text'
+  local input=$1
+  local cache_dir="$HOME"/.aws/cli/cache
+
+  if [ -z "$input" ]; then
+    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))` )
+
+    [ ${#list[@]} -ge 1 ] || { log_ERROR "no cached sessions ($cache_dir)"; return; }
+
+    [ ${#list[@]} -gt 1 ] && {
+        echo; printf ' %s\n' "${list[@]}" | column; echo
+        read -t 12 -p "Choose cached SESSION [ ${list[0]}* ... ]:  " || return
+      }
+    input=$cache_dir/${REPLY:-${list[0]}}
+  fi
+
+  [ -f "$input" ] && { input=$( <"$input" ) || return; }
+  jq . <<< "$input" &>/dev/null && format='json'
+
+  case "$format" in
+    text)   # see 'aws.session()' call to 'aws sts'
+            local header rest IFS
+            log_DEBUG "$input"
+#FIXME something very wrong in 'text' mode
+log_ERROR "code is broken ($FUNCNAME)"; return
+#            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
+#                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
+            ;;
+    json)   local field; local -u envvar
+            log_DEBUG `jq -MS '.Credentials' <<< "$input"`
+            for field in `keys __aws_session`; do
+              envvar=`value __aws_session $field`
+              local -n nref=$envvar
+              nref=`jq -r --arg field "$field" '.Credentials[$field]' <<< "$input"`
+            done
+            log_INFO `jq -r '.AssumedRoleUser' <<< "$input"`
+            ;;
+    *)      RC=2 log_ERROR "unsupported format ($format)"
+            return
+  esac
+  log_INFO `aws.printenv`
+  export ${!AWS_*}
+}
+
+
+function aws.session-write {
+    local field; local -u envvar
+
+    for field in `keys __aws_session`; do
+      envvar=`value __aws_session $field`
+      ${DEBUG:+ runv} aws configure set "${envvar,,}" "${!envvar}"
+    done
+}
+
+
+function aws.session {
+  # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
+  #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
+
+  local -ir now=`date '+%s'`
+  local -i duration write=0 force=0
+  # Bash 'integer' doesn't handle leading ZEROs
+  local cmd cache output role profile token mfa
+
+  local OPTIND opt
+  while getopts ':cfp:r:T:t:W' opt; do
+    case "$opt" in
+      c)    which jq &>/dev/null || {
+                log_WARN "'jq' not found. skipping option (-$opt) ..."
+                continue
+              }
+            for f in "$HOME"/.aws/cli/cache/*; do
+              [ -f "$f" ] || continue
+              expires=$(date --date `jq -r '.Credentials.Expiration' "$f"` '+%s')
+              [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
+
+              #FIXME first valid != desired AWS_PROFILE, is $profile set?
+              cache=$f
+              break
+            done
+            ;;
+      f)    force=1 ;;
+      p)    profile=$OPTARG ;;
+      r)    role=$OPTARG ;;
+      T)    duration=$OPTARG ;;
+      t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || { log_ERROR "invalid Token ($OPTARG)"; return; }
+            ;;
+      W)    # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
+            write=1
+            ;;
+      :)    RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
+      \?)   log_ERROR "invalid option (-$OPTARG)" ;&
+      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND-1))
+
+  #BUG! STS service rejects duration > 3600 despite documentation
+  [ ${duration:-0} -gt 3600 ] && unset duration
+
+  while [ "${1+x}" ]; do
+    if [[ $1 =~ [0-9]{6} ]]; then
+      token=$1
+    elif [[ $1 =~ ^arn:aws:iam: ]]; then
+      role=$1
+    elif [[ $1 =~ ^[a-zA-Z]+ ]]; then
+      profile=$1
+    else
+      log_WARN "unknown format ($1)"
+      break
+    fi
+    shift
+  done
+
+  aws.profile "${profile:-$AWS_PROFILE}" || return
+
+#  mfa=`aws configure get mfa_serial`
+#  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
+#    # not reached, aws.profile() should have caught it
+#    RC=1 log_CRITICAL "unknown profile ($profile, $AWS_CONFIG_FILE)"
+#    return
+#  fi
+
+  : ${role:=`aws configure get role_arn 2>/dev/null`}
+
+  if [ -n "$role" ]; then
+    # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
+    local session_name="${role#*:role/}"
+    local session_suffix="${AWS_PROFILE}.$$"
+    session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
+    session_name="${session_name//:/.}"
+    cmd=( "assume-role" "--role-arn=$role" "--role-session-name=$session_name" )
+  else
+    cmd='get-session-token'
+  fi
+
+  if [ -z "$cache" -o $force -eq 1 ]; then
+    unset cache
+    output=$(
+        local field
+        local -u key
+
+# FIXME use same pattern as aws.session-load with 'keys' and 'values'
+        for field in "${!__aws_session[@]}"; do
+          key="${__aws_session[$field]}"
+          unset $key
+        done
+
+        ${DEBUG:+ runv} aws sts ${DEBUG:+ --debug} "${cmd[@]}" \
+            ${mfa:+ --serial-number="$mfa" ${token:+ --token-code=$token}} \
+            ${duration:+ --duration-seconds=$duration} \
+            --output json
+    ) || return
+#FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
+#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
+# if the token is wrong you get:
+#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
+  fi
+
+  aws.session-load "${cache:-$output}" || return
+  [ $write -eq 1 ] && aws.session-write
+
+  log_INFO `aws.printenv`
+  export ${!AWS_*}
+}
+
+
+function aws.addPath {
+  local v f
+  local -i delete
+
+  for v in "$@" \
+        ${AWS_CONFIG_FILE:+`eval echo $(dirname "$AWS_CONFIG_FILE")${AWS_PROFILE:+"{/$AWS_PROFILE,}"}`} \
+        ${AWS_PROFILE:+`echo "$HOME"/.{aws,ssh}/$AWS_PROFILE`}; do
+    [ -n "$v" ] || continue
+    [ "$v" = '.' ] && v=`pwd`
+
+    for f in "$v"/bin; do
+      if [ ${delete:-0} -eq 1 ]; then
+        ${DEBUG:+ runv} rmPath "$f"
+      else
+        [ -d "$f" ] || continue
+        ${DEBUG:+ runv} addPath -"$f"
+      fi
+    done
+
+    [ -n "$SSH_AUTH_SOCK" ] &&
+      for f in `eval echo "$v"/${AWS_DEFAULT_REGION:+"{$AWS_DEFAULT_REGION/,}"}{id_*,*.pem,*.pub}`; do
+        [ -f "$f" ] || continue
+        ${DEBUG:+ runv} ssh-add ${delete:+ -d} "$f" &>/dev/null
+      done
+  done
+}
+
+
+function aws.rmPath {
+  delete=1 aws.addPath "$@"
+}
 
 
 function aws.route53-export {
@@ -103,5 +363,19 @@ function aws.route53-export {
 # also support -j and auto-detect on 1st char = '{'
 # aws kms  decrypt --ciphertext-blob fileb://<(sed -e 's/^kmscrypt:://' post | base64 -d) --query Plaintext --output text
 # }
+
+#function is-aws
+
+#function aws-whoami or aws-metadata ${instance:-self}
+#curl -s 'http://169.254.169.254/' && {
+#AWS_METADATA_URL='http://169.254.169.254/'
+#declare -A ec2_metadata=()
+#latest/meta-data/placement/availability-zone
+#ami-id
+#hostname
+#instance-id
+#instance-type
+#local-ipv4
+#public-ipv4
 
 # vim: expandtab:ts=4:sw=2

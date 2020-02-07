@@ -42,15 +42,18 @@ function convert_path() {
   shift $((OPTIND-1))
 
   #TODO detect bad input, word-split on PATHSEP?
-  # do NOT handle more than 1 arg!
-  [ -n "$1" ] || return
+  
+  while [ $# -ne 0 ]; do
+	[ -n "$1" ] || { echo; shift; continue; }
 
-  log_TRACE "raw:    '$1'"
-  # damn Windows! unescape whitespace
-  local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
-  log_TRACE "cooked: '$p'"
+	log_TRACE "raw:    '$1'"
+	# damn Windows! unescape whitespace
+	local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
+	log_TRACE "cooked: '$p'"
 
-  [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
+	[ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
+	shift
+  done
 }
 readonly -f convert_path
 
