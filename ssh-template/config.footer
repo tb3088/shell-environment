@@ -1,0 +1,21 @@
+host github.com
+  KexAlgorithms +diffie-hellman-group-exchange-sha1
+
+host *
+#  User XXX
+#  IdentityFile ~/.ssh/id_rsa
+  ForwardAgent no
+  GatewayPorts no
+  HashKnownHosts yes
+
+  # since AWS hosts auto-scale/relaunch, 'no' is permissible
+  # though use of HostKeyAlias is strongly suggested
+  StrictHostKeyChecking ask
+#  CheckHostIP no
+
+  ServerAliveInterval 90
+  ServerAliveCountMax 3
+
+#TODO rewrite '%h' to key off VPC subnet applicable to AZ
+  ProxyCommand ${SSH:-ssh} ${SSH_CONFIG:+ -F "$SSH_CONFIG"} ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} -W %h:%p relay${REGION:+.$REGION}.direct
+

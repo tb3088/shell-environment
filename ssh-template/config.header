@@ -1,0 +1,35 @@
+#  Include ~/.ssh/crypto.conf
+#  Include ~/.ssh/nist.conf
+
+
+host openvpn.*
+  # OpenVPN Access Server
+  User openvpnas
+  LocalForward 1943 localhost:943
+
+host gateway.* openvpn.*
+  ProxyCommand none
+#  IdentityFile ~/.aws/xxx.pem
+  IdentitiesOnly yes
+  # 'yes' is more secure but requires pre-populating
+  StrictHostKeyChecking ask
+
+host !relay* *.bastion
+  ProxyCommand ${SSH:-ssh} ${SSH_CONFIG:+ -F "$SSH_CONFIG"} ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} -W %h:%p relay${REGION:+.$REGION}.via-bastion
+
+host relay*.via-bastion
+  # OpenVPN Access Server and client
+#  LocalForward 2943 0.0.0.0:1943
+#  LocalForward 2443 0.0.0.0:443
+
+host *.via-bastion
+  # reset both variables
+  ProxyCommand env SSH_KNOWN_HOSTS= SSH_CONFIG= PROFILE=bastion ${SSH:-ssh} -W %h:%p relay${REGION:+.$REGION}
+
+host relay relay.*
+  User relay
+  StrictHostKeyChecking yes
+
+host *.direct
+  ProxyCommand none
+
