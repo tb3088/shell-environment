@@ -138,7 +138,7 @@ function addPath() {
   done
 
   # remove duplicate and dangling delimiter
-  kval=${kval//$delim$delim}
+  kval=${kval//$delim$delim/$delim}
   kval=${kval##$delim}
   kval=${kval%%$delim}
 
@@ -173,7 +173,7 @@ function rmPath() {
   done
 
   # remove duplicate and dangling delimiter
-  kval=${kval//$delim$delim}
+  kval=${kval//$delim$delim/$delim}
   kval=${kval##$delim}
   kval=${kval%%$delim}
 
