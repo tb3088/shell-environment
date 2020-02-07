@@ -41,9 +41,9 @@ which curl &>/dev/null &&
   alias myip='curl -sk https://diagnostic.opendns.com/myip'
 
 which nslookup &>/dev/null &&
-  nslookup myip.opendns.com resolver1.opendns.com.
+  alias myip='nslookup myip.opendns.com resolver1.opendns.com.'
 
 which dig &>/dev/null &&
-  dig +short myip.opendns.com @resolver1.opendns.com.
+  alias myip='dig +short myip.opendns.com @resolver1.opendns.com.'
 
 # vim: expandtab:ts=4:sw=4
