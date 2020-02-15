@@ -354,6 +354,26 @@ function aws.route53-export {
   done
 }
 
+
+function aws.sshkeys {
+  local -u format
+  local status
+
+  : ${format:=ssh}
+  : ${status:=Active}
+
+  while [ "$1" ];do
+    for kid in `aws iam list-ssh-public-keys --user-name "$1" |
+          jq -r --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId'`; do
+
+      aws iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
+          jq -r '.SSHPublicKey | .SSHPublicKeyBody + " " + .UserName | @sh'
+    done
+    shift
+  done
+}
+
+
 # function aws-kms-crypt (de/en) are simple 1 liner calls to kms-crypt
 # -e for encrypt, -d for decrypt. -B to pipe results to base64 -d. must NOT decode (ie. consume the already base64-encoded
 # cyphertext as-is for assignment to Bash variables. Pipes, however have no such limitation.
@@ -377,5 +397,12 @@ function aws.route53-export {
 #instance-type
 #local-ipv4
 #public-ipv4
+
+#function aws.ssh takes after 18f script that probes for region, VPC, and then instance
+
+#function s3.restore
+#aws s3 ls s3://<bucket_name> | awk '{print $4}' | xargs -L 1 aws s3api restore-object --restore-request Days=<days> --bucket <bucket_name> --key
+# or better
+# s3cmd restore --recursive s3://mybucketname/ 
 
 # vim: expandtab:ts=4:sw=2
