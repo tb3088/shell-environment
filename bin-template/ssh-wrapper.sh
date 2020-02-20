@@ -8,47 +8,47 @@
 # symlink to this wrapper will automatically set PROFILE
 
 shopt -s nullglob extglob
-#source ~/.functions_logging 2>/dev/null || true
+declare -F log >/dev/null || source ~/.functions
 
-declare -F log >/dev/null ||
-function log() { echo "$*"; }
-
-declare -F debug >/dev/null ||
-function debug() {
-    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-        log_${FUNCNAME^^} "$@"
-    else
-        [ -z "$DEBUG" ] || log "${FUNCNAME^^}" "$@"
-    fi
-}
-
-declare -F info >/dev/null ||
-function info() {
-    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-        log_${FUNCNAME^^} "$@"
-    else
-        [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME^^}" "$@"
-    fi
-}
-
-declare -F warn >/dev/null ||
-function warn() {
-    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-        log_${FUNCNAME^^} "$@"
-    else
-        >&2 log "${FUNCNAME^^}" "$@"
-    fi
-}
-
-declare -F error >/dev/null ||
-function error() {
-    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-        log_${FUNCNAME^^} "$@"
-    else
-        >&2 log "${FUNCNAME^^}" "$@"
-        [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] && return ${RC:-1} || exit ${RC:-1}
-    fi
-}
+#declare -F log >/dev/null ||
+#function log() { echo "$*"; }
+#
+#declare -F debug >/dev/null ||
+#function debug() {
+#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
+#        log_${FUNCNAME^^} "$@"
+#    else
+#        [ -z "$DEBUG" ] || log "${FUNCNAME^^}" "$@"
+#    fi
+#}
+#
+#declare -F info >/dev/null ||
+#function info() {
+#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
+#        log_${FUNCNAME^^} "$@"
+#    else
+#        [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME^^}" "$@"
+#    fi
+#}
+#
+#declare -F warn >/dev/null ||
+#function warn() {
+#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
+#        log_${FUNCNAME^^} "$@"
+#    else
+#        >&2 log "${FUNCNAME^^}" "$@"
+#    fi
+#}
+#
+#declare -F error >/dev/null ||
+#function error() {
+#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
+#        log_${FUNCNAME^^} "$@"
+#    else
+#        >&2 log "${FUNCNAME^^}" "$@"
+#        [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] && return ${RC:-1} || exit ${RC:-1}
+#    fi
+#}
 
 declare -F runv >/dev/null ||
 function runv() { >&2 echo "+ $*"; "$@"; }
@@ -147,12 +147,12 @@ function _ssh() {
     esac
     local -n vv=$v
 
-    [ -n "${vv}" -a -f "${vv}" ] || error "file $v (${vv}) not found!"
+    [ -n "${vv}" -a -f "${vv}" ] || log.error "file $v (${vv}) not found!"
   done
 
   # TODO? convert to function since identical
   [ -n "$SSH_CONFIG" ] || {
-    debug "looking for SSH_CONFIG"
+    log.debug "looking for SSH_CONFIG"
 
     # NOTICE: This level of search can take a while, flavor to taste.
     for _file in `[ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist` \
@@ -162,7 +162,7 @@ function _ssh() {
         # discard match on '.aws/config' since that is reserved
         [ "$_file" = "${AWS_CONFIG_FILE:-$HOME/.aws/config}" ] && continue
 
-        debug "    $_file"
+        log.debug "    $_file"
         [ -f "$_file" ] && { SSH_CONFIG="$_file"; break; }
     done
     : ${SSH_CONFIG:?not found}
@@ -170,10 +170,10 @@ function _ssh() {
 
   # UserKnownHostFile shouldn't be defined inside 'config' because brittle
   [ -n "$SSH_KNOWN_HOSTS" ] || {
-    debug "assuming SSH_KNOWN_HOSTS co-located with SSH_CONFIG"
+    log.debug "assuming SSH_KNOWN_HOSTS co-located with SSH_CONFIG"
 
     _file="${SSH_CONFIG/config/known_hosts}"
-    debug "    $_file"
+    log.debug "    $_file"
     [ -f "$_file" ] && SSH_KNOWN_HOSTS="$_file" || : ${SSH_KNOWN_HOSTS:?not found}
   }
 
@@ -182,7 +182,7 @@ function _ssh() {
   for v in DEBUG VERBOSE REGION ${!CLOUD_*} ${!SSH_*}; do
     [ -n "${!v}" ] || continue
 
-    info "$v=${!v}"
+    log.info "$v=${!v}"
     _env+=("$v=${!v}")
   done
 
@@ -216,7 +216,7 @@ function init_logs() {
     2)  LOG_MASK='INFO' ;;
     1)  LOG_MASK='NOTICE' ;;
     0|'') unset LOG_MASK ;;     # defaults to >NOTICE
-    *)  error "invalid level ($_level) from VERBOSE or DEBUG"
+    *)  log.error "invalid level ($_level) from VERBOSE or DEBUG"
   esac
   [ -n "$DEBUG" ] && LOG_MASK='DEBUG'
 }
@@ -240,7 +240,7 @@ for p in SSH SCP SFTP SCREEN; do
 
     pp=`$WHICH ${p,,} 2>/dev/null`
     # screen not found is benign
-    [ -n "$pp" -o "$p" = 'SCREEN' ] && info "$p=$pp" || error "missing binary ($p)"
+    [ -n "$pp" -o "$p" = 'SCREEN' ] && log.info "$p=$pp" || log.error "missing binary ($p)"
 done
 
 
@@ -250,14 +250,14 @@ _prog="${BASH_SOURCE##*/}"
 _progdir=$( cd `dirname "$BASH_SOURCE"`; pwd )
 _PROG=`readlink -e "$BASH_SOURCE"` || {
     # impossible error
-    error "broken link ($BASH_SOURCE)"
+    log.error "broken link ($BASH_SOURCE)"
 }
 _PROGDIR="${_PROG%/*}"
 _PROG="${_PROG##*/}"
 [ "${_prog%.*}" = "${_PROG%.*}" ] || PROFILE="$_prog"
 
 BASEDIR="${_progdir%/bin}"          # rather arbitrary...
-debug "BASEDIR = $BASEDIR"
+log.debug "BASEDIR = $BASEDIR"
 
 _args=()
 
@@ -284,13 +284,13 @@ while getopts ':dvqE:F:i:W:' _opt; do
                 _args+=("${@:$((OPTIND++)):1}")
         esac
         ;;
-    :)  RC=2 error "missing argument (-$OPTARG)" ;;
-    *)  RC=2 warn "unhandled option (-$sw)"
+    :)  RC=2 log.error "missing argument (-$OPTARG)" ;;
+    *)  RC=2 log.warn "unhandled option (-$sw)"
   esac
 done
 shift $((OPTIND-1))
 
-[ -n "$1" ] || RC=2 error 'insufficient arguments'
+[ -n "$1" ] || RC=2 log.error 'insufficient arguments'
 
 init_logs
 
@@ -306,7 +306,7 @@ for s in ${NO_SCREEN:-git rsync}; do
   fi
 done
 
-[ -n "$SSH_CONFIG" ] && info "SSH_CONFIG=$SSH_CONFIG" || info "PROFILE=$PROFILE"
+[ -n "$SSH_CONFIG" ] && log.info "SSH_CONFIG=$SSH_CONFIG" || log.info "PROFILE=$PROFILE"
 
 : ${CLOUD:='aws'}
 declare -n CLOUD_PROFILE=${CLOUD^^}_PROFILE
