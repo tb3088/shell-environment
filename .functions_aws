@@ -1,5 +1,7 @@
 # $Id$
 
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; exit 2; }
+
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
     [AccessKeyId]='aws_access_key_id'
@@ -56,6 +58,7 @@ declare -Ar __aws_availability_zones=(
   )
 
 
+declare -F aws.region >/dev/null ||
 function aws.region {
   local region=$1
 
@@ -69,6 +72,7 @@ function aws.region {
 }
 
 
+declare -F aws.profile >/dev/null ||
 function aws.profile {
   if [ "$1" = 'RESET' ]; then
     aws.rmPath
@@ -134,6 +138,7 @@ function aws.printenv() {
 }
 
 
+declare -F aws.session-load >/dev/null ||
 function aws.session-load {
   local format='text'
   local input=$1
@@ -180,6 +185,7 @@ log_ERROR "code is broken ($FUNCNAME)"; return
 }
 
 
+declare -F aws.session-write >/dev/null ||
 function aws.session-write {
     local field; local -u envvar
 
@@ -190,6 +196,7 @@ function aws.session-write {
 }
 
 
+declare -F aws.session >/dev/null ||
 function aws.session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
@@ -303,6 +310,7 @@ function aws.session {
 }
 
 
+declare -F aws.addPath >/dev/null ||
 function aws.addPath {
   local v f
   local -i delete
@@ -331,11 +339,13 @@ function aws.addPath {
 }
 
 
+declare -F aws.rmPath >/dev/null ||
 function aws.rmPath {
   delete=1 aws.addPath "$@"
 }
 
 
+declare -F aws.route53-export >/dev/null ||
 function aws.route53-export {
   which jq &>/dev/null || { log_ERROR "'jq' not installed"; return; }
   local -u zoneid=${1:?}
@@ -355,6 +365,7 @@ function aws.route53-export {
 }
 
 
+declare -F aws.sshkey >/dev/null ||
 function aws.sshkeys {
 # Example: $FUNCNAME `aws iam get-group --group-name <group> | jq -r '.Users[].UserName'`
   local -u format
@@ -405,5 +416,6 @@ function aws.sshkeys {
 #aws s3 ls s3://<bucket_name> | awk '{print $4}' | xargs -L 1 aws s3api restore-object --restore-request Days=<days> --bucket <bucket_name> --key
 # or better
 # s3cmd restore --recursive s3://mybucketname/ 
+
 
 # vim: expandtab:ts=4:sw=2
