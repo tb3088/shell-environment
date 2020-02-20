@@ -477,19 +477,21 @@ function expand_dvq() {
 }
 
 
-source "${BASH_SOURCE}_logging" || {
-  function log()    { echo -e "$*"; }
+if [ -f "${BASH_SOURCE}_logging" ]; then
+  source "${BASH_SOURCE}_logging" || echo >&2 "RC=$? during ${BASH_SOURCE}_logging"
+else
+  function log        { while [ "$1" ]; do >&2 echo -e "${level:+$level\t}$1"; shift; done; }
 
-  function debug()  { [ -n "$DEBUG" ] && log "${FUNCNAME^^}" "$@" || return 0; }
+  function log_DEBUG  { [ -n "$DEBUG" ] && level=${FUNCNAME#log_} log "$@" || return 0; }
 
-  function info()   { [ -n "${VERBOSE}${DEBUG}" ] && log "${FUNCNAME^^}" "$@" || return 0; }
+  function log_INFO   { [ -n "${VERBOSE}${DEBUG}" ] && level=${FUNCNAME#log_} log "$@" || return 0; }
 
-  function notice() { log "${FUNCNAME^^}" "$@"; }
+  function log_NOTICE { level=${FUNCNAME#log_} log "$@"; }
 
-  function warn()   { >&2 log "${FUNCNAME^^}" "$@"; }
+  function log_WARN   { level=${FUNCNAME#log_} log "$@"; }
 
-  function error()  { >&2 log "${FUNCNAME^^}" "$@"; [ ${SHLVL:-1} -eq 1 ] && return ${RC:-1} || exit ${RC:-1}; }
-}
+  function log_ERROR  { RC=$?; level=${FUNCNAME#log_} log "$@"; [ ${SHLVL:-1} -eq 1 ] && return $RC || exit $RC; }
+fi
 
 
 for f in "${BASH_SOURCE}"_os; do
