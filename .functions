@@ -482,15 +482,16 @@ if [ -f "${BASH_SOURCE}_logging" ]; then
 else
   function log        { while [ "$1" ]; do >&2 echo -e "${level:+$level\t}$1"; shift; done; }
 
-  function log_DEBUG  { [ -n "$DEBUG" ] && level=${FUNCNAME#log_} log "$@" || return 0; }
+  function log.debug  { declare -u level; [ -n "$DEBUG" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
 
-  function log_INFO   { [ -n "${VERBOSE}${DEBUG}" ] && level=${FUNCNAME#log_} log "$@" || return 0; }
+  function log.info   { declare -u level; [ -n "${VERBOSE}${DEBUG}" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
 
-  function log_NOTICE { level=${FUNCNAME#log_} log "$@"; }
+  function log.notice { declare -u level; level=${FUNCNAME#log.} log "$@"; }
 
-  function log_WARN   { level=${FUNCNAME#log_} log "$@"; }
+  function log.warn   { declare -u level; level=${FUNCNAME#log.} log "$@"; }
 
-  function log_ERROR  { RC=$?; level=${FUNCNAME#log_} log "$@"; [ ${SHLVL:-1} -eq 1 ] && return $RC || exit $RC; }
+  function log.error  { RC=$?; declare -u level; level=${FUNCNAME#log.} log "$@";
+    [ ${SHLVL:-1} -eq 1 ] && return $RC || exit $RC; }
 fi
 
 
