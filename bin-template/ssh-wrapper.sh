@@ -10,46 +10,6 @@
 shopt -s nullglob extglob
 declare -F log >/dev/null || source ~/.functions
 
-#declare -F log >/dev/null ||
-#function log() { echo "$*"; }
-#
-#declare -F debug >/dev/null ||
-#function debug() {
-#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-#        log_${FUNCNAME^^} "$@"
-#    else
-#        [ -z "$DEBUG" ] || log "${FUNCNAME^^}" "$@"
-#    fi
-#}
-#
-#declare -F info >/dev/null ||
-#function info() {
-#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-#        log_${FUNCNAME^^} "$@"
-#    else
-#        [ -z "${VERBOSE}${DEBUG}" ] || log "${FUNCNAME^^}" "$@"
-#    fi
-#}
-#
-#declare -F warn >/dev/null ||
-#function warn() {
-#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-#        log_${FUNCNAME^^} "$@"
-#    else
-#        >&2 log "${FUNCNAME^^}" "$@"
-#    fi
-#}
-#
-#declare -F error >/dev/null ||
-#function error() {
-#    if declare -F log_${FUNCNAME^^} >/dev/null ; then
-#        log_${FUNCNAME^^} "$@"
-#    else
-#        >&2 log "${FUNCNAME^^}" "$@"
-#        [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] && return ${RC:-1} || exit ${RC:-1}
-#    fi
-#}
-
 declare -F runv >/dev/null ||
 function runv() { >&2 echo "+ $*"; "$@"; }
 
