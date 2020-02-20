@@ -185,7 +185,7 @@ readonly -f log
 export   -f log
 
 
-declare -F __log_print ||
+declare -F __log_print >/dev/null ||
 function __log_print() {
   local line
 

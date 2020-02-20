@@ -13,7 +13,7 @@ if [ -z "$SSH_AUTH_SOCK" -a `which ssh-agent 2>/dev/null` ]; then
 fi
 if [[ "$-" == *i* ]] || tty -s; then
   #FIXME technically could pipe in password from file
-  [ -n "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
+  [ -n "$SSH_AUTH_SOCK" ] && ssh-add ~/.ssh/{id_?sa,*.pem} 2>/dev/null
 fi
 
 
@@ -127,9 +127,9 @@ PS1="\n${PS_PREFIX}\n\! "${PS_SCREEN}'\$ '
 declare -F __prompt &>/dev/null && PROMPT_COMMAND=__prompt
 
 
-for f in "$HOME"/.{bash_profile.local,bashrc}; do
+for f in ~/.bash{_profile.local,rc}; do
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? in $f"
+  source "$f" || echo >&2 "RC=$? during $f"
 done
 unset f
 
