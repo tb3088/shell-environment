@@ -38,7 +38,7 @@ declare -Ar __log_levels=(
 [ -n "${LOG_FACILITIES[*]}" ] ||
 declare -ar LOG_FACILITIES=(
     auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
-)
+  )
 
 #FIXME rename to log.mask, if $1 set, then set, otherwise emit current setting
 function log.mask {
@@ -74,13 +74,14 @@ function log.mask {
 
 
 function __log_exit() {
-  local rc=${RC:-$?}
+  : ${RC:=$?}
+
   >&2 log "$@"
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
         [[ `/bin/ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
-    return $rc
+    return $RC
   fi
-  exit $rc
+  exit $RC
 }
 
 for k in "${!__log_levels[@]}"; do
@@ -92,13 +93,12 @@ for k in "${!__log_levels[@]}"; do
     [4-8])  eval function log_$k '{ >&2 log "$@"; }' ;;
   esac
   readonly -f "log_$k"
+  export -f "log_$k"
 
   # legacy and future naming style
-  copy_function "log_$k" "${k,,}"
   copy_function "log_$k" "log.$k"
 done
 unset k
-unset -f __log_exit
 
 
 function __log_level {
@@ -106,8 +106,8 @@ function __log_level {
 
   local -u key=$1
   key=${key#LOG_}; key=${key#LOG.}
-  local result=${__log_levels[$key]}
 
+  local result=${__log_levels[$key]}
   [ -n "$result" ] || return 1
 
   # returns numeric value only
@@ -117,27 +117,32 @@ function __log_level {
 
 declare -F log >/dev/null ||
 function log() {
-  local -r ts=`date '+%Y-%m-%dT%H:%M:%S'`
-  local -a format=( ${LOG_FORMAT[@]:-'%-5s' '\t%s'} )
   local -i level mask offset=1
+  local format=${LOG_FORMAT:-'%-5s\t%s'}
 
   if level=`__log_level ${level:-$LOG_LEVEL}`; then
-    :                       # LOG_LEVEL=<level> log "msg"
-  # legacy invocation style
+    # LOG_LEVEL=<level> log "msg"
+    :
   elif level=`__log_level "$1"`; then
-    shift                   # log <level> "msg"
-  else                      # level() or log_LEVEL() "msg"
-    level=`__log_level "${FUNCNAME[1]}"` && offset+=1
+    # log <level> "msg"
+    shift
+  else
+    # inside recursion from <level>() or log_<LEVEL>()
+    level=`__log_level "${FUNCNAME[1]}"` && : $((offset++))
   fi
 
-  # set mask on externalities
   if mask=`__log_level ${mask:-$LOG_MASK}`; then
+    :
+  else
+    # set mask on externalities
     [ -n "$VERBOSE" ] && mask=`__log_level 'INFO'`
-    [ -n "$DEBUG" ] && {
-        mask=`__log_level 'DEBUG'`
-        #FIXME handle large values that overrun MAX(__log_levels)
-        [ $(($DEBUG - 1)) -gt 0 ] && mask+=$(($DEBUG - 1))
-      }
+    if [ -n "$DEBUG" ]; then
+      mask=`__log_level 'DEBUG'`
+
+      # increase level if (DEBUG > 1)
+      local -i _mask=$((mask + DEBUG - 1))
+      [ $_mask -gt $mask ] && _mask=`__log_level $_mask` && mask=$_mask
+    fi
   fi
 
   # sanity check
@@ -149,25 +154,41 @@ function log() {
 
   if [ -n "$LOG_STACKTRACE" -a "${FUNCNAME[1]}" != "$FUNCNAME" ]; then
     local -a msg=()
-    local -i i
-    for i in ${!FUNCNAME[@]}; do
-      [ $i -eq 0 ] && continue          # skip self
-      msg+=("callstack: ${BASH_SOURCE[i]}/${FUNCNAME[i]}()")
+
+    for ((i=${#FUNCNAME[@]}-1; i>0; i--))  do
+      msg+=("callstack: ${BASH_SOURCE[i]}/${FUNCNAME[i]}")
     done
-    LOG_MASK='TRACE' log_TRACE "${msg[@]}"
+    # prevent recursion loop
+    mask='TRACE' level='TRACE' offset=2 $FUNCNAME "${msg[@]}"
   fi
 
-  local line fn level_name="${__log_levels[$level]}"
-  [ $level -ge `__log_level 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] && fn="${FUNCNAME[offset]}() "
+  local fname=
+  local level_name=${__log_levels[$level]}
 
-  while [ "${1+x}" ]; do                # blank lines allowed
-    printf -v line "${LOG_TIMESTAMP:+$ts }${format[*]}" "$level_name" "$fn$1"
-    line=`echo -e "$line"`              # primitive escape sequences
-    tee -a $LOGFILE <<< "$line"
-    [ -n "$SYSLOG" ] && ${LOGGER:-logger --priority user.${level_name,,}} -- "$line"
+  # embed FUNCNAME if DEBUG or higher
+  [ $level -ge `__log_level 'DEBUG'` -a -n "${FUNCNAME[offset]}" ] &&
+      [ "${FUNCNAME[1]}" != "$FUNCNAME" ] && fname="(${FUNCNAME[offset]}) "
+
+  [ $# -gt 0 ] && __log_print "$@" ||
+      while IFS= read -r; do
+        __log_print "$REPLY"
+      done
+}
+readonly -f log
+
+
+function __log_print() {
+  local line
+
+  while [ "${1:x}" ]; do
+    printf -v line "${LOG_TIMESTAMP:+`date '+%FT%T.%3N'` }${format}" "$level_name" "${fname}$1"
+    # allow primitive escape sequences
+    echo -e "$line" | tee ${LOGFILE:+ -a "$LOGFILE"}
+    [ -n "$SYSLOG" ] && which "${LOGGER:=logger}" >/dev/null &&
+        "$LOGGER" --priority user.${level_name,,} -- "$line"
     shift
   done
 }
-readonly -f log
+readonly -f __log_print
 
 # vim: expandtab:ts=4:sw=4
