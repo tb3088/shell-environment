@@ -7,12 +7,10 @@
 #
 # symlink to this wrapper will automatically set PROFILE
 
+source "$HOME"/.functions
+declare -F log runv >/dev/null || exit
+
 shopt -s nullglob extglob
-declare -F log >/dev/null || source ~/.functions
-
-declare -F runv >/dev/null ||
-function runv() { >&2 echo "+ $*"; "$@"; }
-
 
 function genlist() {
   # Example list
