@@ -356,6 +356,7 @@ function aws.route53-export {
 
 
 function aws.sshkeys {
+# Example: $FUNCNAME `aws iam get-group --group-name <group> | jq -r '.Users[].UserName'`
   local -u format
   local status
 
@@ -367,7 +368,7 @@ function aws.sshkeys {
           jq -r --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId'`; do
 
       aws iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
-          jq -r '.SSHPublicKey | .SSHPublicKeyBody + " " + .UserName | @sh'
+          jq -r '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
     done
     shift
   done
