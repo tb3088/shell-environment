@@ -11,7 +11,7 @@
 # syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
 
 [ -n "${__log_levels[*]}" ] ||
-declare -Ar __log_levels=(
+declare -Arx __log_levels=(
     [EMERG]=0   [PANIC]=0
     [0]='EMERG'
     [ALERT]=1
@@ -36,7 +36,7 @@ declare -Ar __log_levels=(
 )
 
 [ -n "${LOG_FACILITIES[*]}" ] ||
-declare -ar LOG_FACILITIES=(
+declare -arx LOG_FACILITIES=(
     auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
   )
 
@@ -46,6 +46,8 @@ function log.mask {
 
   [ -n "${__log_levels[${1:-x}]}" ] && LOG_MASK="$1" || log_ERROR "invalid level ($1)"
 }
+readonly -f log.mask
+export   -f log.mask
 
 
 #TODO function __log_verbose __log_debug() {
@@ -93,14 +95,17 @@ for k in "${!__log_levels[@]}"; do
     [4-8])  eval function log_$k '{ >&2 log "$@"; }' ;;
   esac
   readonly -f "log_$k"
-  export -f "log_$k"
 
   # legacy and future naming style
-  copy_function "log_$k" "log.$k"
+  copy_function "log_$k" "log.${k,,}"
+  readonly -f "log.${k,,}"
+  export   -f "log.${k,,}"
 done
 unset k
+unset -f __log_exit
 
 
+declare -F __log_level >/dev/null ||
 function __log_level {
   [ -n "$1" ] || return 1
 
@@ -113,6 +118,8 @@ function __log_level {
   # returns numeric value only
   [[ $result == [0-8] ]] && echo $result || echo $key
 }
+readonly -f __log_level
+export   -f __log_level
 
 
 declare -F log >/dev/null ||
@@ -175,8 +182,10 @@ function log() {
       done
 }
 readonly -f log
+export   -f log
 
 
+declare -F __log_print ||
 function __log_print() {
   local line
 
@@ -190,5 +199,6 @@ function __log_print() {
   done
 }
 readonly -f __log_print
+export   -f __log_print
 
 # vim: expandtab:ts=4:sw=4
