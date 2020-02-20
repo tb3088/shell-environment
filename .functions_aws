@@ -61,7 +61,7 @@ function aws.region {
 
   if [ -z "$region" ]; then
     echo; printf ' %s\n' ${__aws_regions[@]} | sort | column; echo
-    read -t 8 -p "Choose REGION [ us-east-1* ... ]:  " || return
+    read -t 8 -ep "Choose REGION:  " -i 'us-east-1' || return
     region=${REPLY:-'us-east-1'}
   fi
 
@@ -89,7 +89,7 @@ function aws.profile {
 
     [ ${#list[@]} -gt 1 ] && {
         echo; printf ' %s\n' "${list[@]}" | column; echo
-        read -t 12 -p "Choose PROFILE [ ${list[0]}* ... ]:  " || return
+        read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
       }
     profile=${REPLY:-${list[0]}}
   fi
@@ -146,7 +146,7 @@ function aws.session-load {
 
     [ ${#list[@]} -gt 1 ] && {
         echo; printf ' %s\n' "${list[@]}" | column; echo
-        read -t 12 -p "Choose cached SESSION [ ${list[0]}* ... ]:  " || return
+        read -t 12 -ep "Choose cached SESSION:  " -i "${list[0]}" || return
       }
     input=$cache_dir/${REPLY:-${list[0]}}
   fi
@@ -156,7 +156,7 @@ function aws.session-load {
 
   case "$format" in
     text)   # see 'aws.session()' call to 'aws sts'
-            local header rest IFS
+            local header rest
             log_DEBUG "$input"
 #FIXME something very wrong in 'text' mode
 log_ERROR "code is broken ($FUNCNAME)"; return
