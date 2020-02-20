@@ -47,7 +47,6 @@ function log.mask {
   [ -n "${__log_levels[${1:-x}]}" ] && LOG_MASK="$1" || log_ERROR "invalid level ($1)"
 }
 readonly -f log.mask
-export   -f log.mask
 
 
 #TODO function __log_verbose __log_debug() {
@@ -99,7 +98,6 @@ for k in "${!__log_levels[@]}"; do
   # legacy and future naming style
   copy_function "log_$k" "log.${k,,}"
   readonly -f "log.${k,,}"
-  export   -f "log.${k,,}"
 done
 unset k
 unset -f __log_exit
@@ -119,7 +117,6 @@ function __log_level {
   [[ $result == [0-8] ]] && echo $result || echo $key
 }
 readonly -f __log_level
-export   -f __log_level
 
 
 declare -F log >/dev/null ||
@@ -182,7 +179,6 @@ function log() {
       done
 }
 readonly -f log
-export   -f log
 
 
 declare -F __log_print >/dev/null ||
@@ -199,6 +195,5 @@ function __log_print() {
   done
 }
 readonly -f __log_print
-export   -f __log_print
 
 # vim: expandtab:ts=4:sw=4
