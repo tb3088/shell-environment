@@ -37,11 +37,11 @@ alias rsync="\rsync --cvs-exclude --exclude='.git*'"
 alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{time_starttransfer} Total time: %{time_total} ReturnCode: %{http_code} Download Size: %{size_download} Speed: %{speed_download} \n"'
 
 # increasing order of preference
-which curl &>/dev/null &&
-  alias myip='curl -sk https://diagnostic.opendns.com/myip' || 
-which nslookup &>/dev/null &&
-  alias myip='nslookup myip.opendns.com resolver1.opendns.com.' ||
-which dig &>/dev/null &&
+which curl &>/dev/null && \
+  alias myip='curl -sk https://diagnostic.opendns.com/myip' 
+which nslookup &>/dev/null && \
+  alias myip='nslookup myip.opendns.com resolver1.opendns.com.'
+which dig &>/dev/null && \
   alias myip='dig +short myip.opendns.com @resolver1.opendns.com.' || true
 
 # vim: expandtab:ts=4:sw=4
