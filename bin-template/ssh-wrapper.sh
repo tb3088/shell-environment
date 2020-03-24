@@ -144,14 +144,14 @@ function _ssh() {
     _env+=("$v=${!v}")
   done
 
-  ${DEBUG:+runv} eval ${_screen:+ $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \"} \
+  ${DEBUG:+runv} ${_screen:+ eval $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \'} \
         env "${_env[@]}" \
         ${!_cmd} ${SSH_VERBOSE:- -q} \
         ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
         ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
         ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
         $SSH_OPTS \
-        "$@" ${_screen:+ || sleep 15\"}
+        "$@" ${_screen:+ || sleep 15\'}
 }
 
 
