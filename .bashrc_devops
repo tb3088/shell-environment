@@ -66,4 +66,6 @@ fi
 alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
 alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
 
+alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
+
 # vim: expandtab:ts=4:sw=4
