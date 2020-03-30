@@ -1,5 +1,16 @@
 #!/bin/bash
 
+# Assumed directory structure:
+# ssh-simple.sh
+# <env1>.sh -> ssh-simple.sh
+#   ./<env1>/
+#   ./<env1>/config
+#
+# <env2>.sh -> ssh-simple.sh
+#   ./<env2>/
+#   ./<env2>/config
+
+#SSH_CONFIG=
 : ${REGION:=${AWS_DEFAULT_REGION:-us-east-1}}
 
 config=`readlink -e $BASH_SOURCE`
