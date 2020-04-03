@@ -1,4 +1,4 @@
-# $Id$
+#ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; exit 2; }
 
@@ -11,8 +11,7 @@ declare -Ar __aws_session=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# `aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' --output text --region us-east-1 2>/dev/null`
-#alt: `aws ec2 describe-regions --output text --region us-east-1 | awk '{print $NF}'`
+# aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' | jq -r '.[].Name'
 
 is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
@@ -28,13 +27,11 @@ declare -ar __aws_regions=(
     us-west-{1,2}
   )
 
-
 #for region in ${__aws_regions[@]}; do
 #  __aws_availability_zones[$region]=`aws ec2 describe-availability-zones \
 #      --region $region \
-#      --query 'AvailabilityZones[].{ Name:ZoneName }' \
-#      --output text 2>/dev/null` || break
-#  #alt: ... | ${JQ[@]:-jq} --raw-output '.AvailabilityZones[].ZoneName'`
+#      --query 'AvailabilityZones[].{ Name:ZoneName }' --output text`
+#  #alt: ... | jq --raw-output '.AvailabilityZones[].ZoneName | @sh'`
 #done
 
 is_hash __aws_availability_zones &>/dev/null && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
@@ -58,14 +55,46 @@ declare -Ar __aws_availability_zones=(
   )
 
 
+function ec2.metadata() {
+  local url='http://169.254.169.254/latest/meta-data'
+  local CURL="`which curl` --silent --show-error" || return 2
+
+  local -A mapping=(
+      [az]=placement/availability-zone
+      [availability-zone]=placement/availability-zone
+      [self]=instance-id
+      [type]=instance-type
+    )
+
+  curl -sS "$url/${mapping[$1]:-$1}"
+}
+#latest/meta-data/placement/availability-zone
+#ami-id
+#hostname
+#instance-id
+#instance-type
+#local-ipv4
+#public-ipv4
+
+
+# safety fall-back in case AWS_DEFAULT_REGION not set
+__aws_region=`aws configure get region`
+: ${__aws_region:=`aws configure get region --profile default 2>/dev/null`}
+: ${__aws_region:=`ec2.metadata availability-zone | sed 's/[a-z]$//'`}
+: ${__aws_region:=us-east-1}
+
+
+function is_aws() { ec2.metadata self &>/dev/null }
+
+
 declare -F aws.region >/dev/null ||
 function aws.region {
-  local region=$1
+  local region
 
-  if [ -z "$region" ]; then
+  if [ -z "$1" ]; then
     echo; printf ' %s\n' ${__aws_regions[@]} | sort | column; echo
     read -t 8 -ep "Choose REGION:  " -i 'us-east-1' || return
-    region=${REPLY:-'us-east-1'}
+    region=$REPLY
   fi
 
   [ -n "${__aws_availability_zones[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
@@ -95,7 +124,7 @@ function aws.profile {
         echo; printf ' %s\n' "${list[@]}" | column; echo
         read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
       }
-    profile=${REPLY:-${list[0]}}
+    profile=$REPLY
   fi
 
   # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
@@ -153,7 +182,7 @@ function aws.session-load {
         echo; printf ' %s\n' "${list[@]}" | column; echo
         read -t 12 -ep "Choose cached SESSION:  " -i "${list[0]}" || return
       }
-    input=$cache_dir/${REPLY:-${list[0]}}
+    input=$cache_dir/$REPLY
   fi
 
   [ -f "$input" ] && { input=$( <"$input" ) || return; }
@@ -367,7 +396,7 @@ function aws.route53-export {
 
 declare -F aws.sshkey >/dev/null ||
 function aws.sshkeys {
-# Example: $FUNCNAME `aws iam get-group --group-name <group> | jq -r '.Users[].UserName'`
+  # Example: $FUNCNAME `aws iam get-group --group-name <group> | jq -r '.Users[].UserName'`
   local -u format
   local status
 
@@ -396,19 +425,84 @@ function aws.sshkeys {
 # aws kms  decrypt --ciphertext-blob fileb://<(sed -e 's/^kmscrypt:://' post | base64 -d) --query Plaintext --output text
 # }
 
-#function is-aws
 
-#function aws-whoami or aws-metadata ${instance:-self}
-#curl -s 'http://169.254.169.254/' && {
-#AWS_METADATA_URL='http://169.254.169.254/'
-#declare -A ec2_metadata=()
-#latest/meta-data/placement/availability-zone
-#ami-id
-#hostname
-#instance-id
-#instance-type
-#local-ipv4
-#public-ipv4
+function aws.describe() {
+  #output: JSON
+
+  local AWS="aws ${AWS_DEFAULT_REGION:- --region $__aws_region} --output json"
+  local JQ='jq --exit-status'; JQR="$JQ --raw-output"
+  local type
+  local -a filter
+
+  resource=${1:?resource}; shift
+
+  case $resource in
+#    asg|autoscaling-group)
+    s3|*bucket)
+            $AWS s3api list-buckets $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)' ;;
+    *bucket-policy)
+            $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
+
+#   ebs|volume) describe-volumes
+#    ec2|*instance)
+#    elastic-ip)
+#    internet-gateway
+#    nat-gateway
+    tag)    filter+=( "Name=key,Values=${2:?key}" )
+            ;&
+    tags)   filter+=(
+                "Name=resource-type,Values=${type:-instance}"
+                "Name=resource-id,Values=${1:?resource-id}"
+              )
+            $AWS describe-tags --filters "${filter[@]}"
+            ;;
+#    route)
+#    subnet)
+    vpc)    $AWS ec2 describe-vpcs --vpc-id ${1:?vpc id} | $JQ '.Vpcs[]' ;;
+#    vpc-endpoint
+#        describe-vpc-endpoint-services
+#        describe-vpc-endpoints
+#        describe-vpc-endpoint-connection-notifications
+#        describe-vpc-endpoint-connections
+#        describe-vpc-endpoint-service-configurations
+#        describe-vpc-endpoint-service-permissions
+#        describe-vpc-endpoint-services
+#    target-group)
+#    elb|lb|load-blancer)
+#    security-group)
+#   launch-config)
+
+    *)      >&2 echo "unsupported keyword"; return 2
+  esac
+
+}
+
+
+function asg.suspend() {
+  asg=${1:?ASG name}; shift
+  aws autoscaling enter-standby --should-decrement-desired-capacity --auto-scaling-group-name "$asg" ${1:+ --instance-ids "$@"}
+}
+
+
+function asg.resume() {
+  asg=${1:?ASG name}; shift
+  aws autoscaling exit-standby --auto-scaling-group-name "$asg" ${1:+ --instance-ids "$@"}
+}
+
+
+function asg.scale-zero() {
+  min=0 desired=0 asg.capacity "$@"
+}
+
+
+function asg.set-capacity() {
+  [ "${min}${desired}${max}" ] || return 2
+
+  aws autoscaling update-auto-scaling-group \
+      ${min:+ --min-size $min} ${desired:+ --desired-capacity $desired} ${max:+ --max-size $max} \
+	  --auto-scaling-group-name "${1:?ASG name}"
+}
+
 
 #function aws.ssh takes after 18f script that probes for region, VPC, and then instance
 
