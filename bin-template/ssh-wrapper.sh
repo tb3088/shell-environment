@@ -180,23 +180,13 @@ function init_logs() {
 }
 
 
-case "${OSTYPE:-`uname`}" in
-  [cC]ygwin|CYGWIN*)
-        WHICH='\which --skip-functions --skip-alias'
-        ;;
-  [dD]arwin*)
-        WHICH='\which -s'
-        ;;
-  *)    WHICH='which'
-esac
-
 # Check for essential binaries
 for p in SSH SCP SFTP SCREEN; do
     declare -n pp=$p
     # skip variables set to anything, even '' so as to not clobber aliases
-    [ -n "${pp+x}" ] && continue
+    [ -n "$pp" ] && continue
 
-    pp=`$WHICH ${p,,} 2>/dev/null`
+    pp=`type -p ${p,,}`
     # screen not found is benign
     [ -n "$pp" -o "$p" = 'SCREEN' ] && log.info "$p=$pp" || log.error "missing binary ($p)"
 done
