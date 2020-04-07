@@ -170,13 +170,11 @@ function log() {
   local level_name=${__log_levels[$level]}
 
   # embed FUNCNAME if DEBUG or higher
-  [ $level -ge `__log_level 'DEBUG'` -a -n "${FUNCNAME[offset]}" ] &&
-      [ "${FUNCNAME[1]}" != "$FUNCNAME" ] && fname="(${FUNCNAME[offset]}) "
+  if [ $level -ge `__log_level 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ]; then
+    fname="(${FUNCNAME[offset]}) "
+  fi
 
-  [ $# -gt 0 ] && __log_print "$@" ||
-      while IFS= read -r; do
-        __log_print "$REPLY"
-      done
+  [ $# -gt 0 ] && __log_print "$@" || while IFS= read -r; do __log_print "$REPLY"; done
 }
 readonly -f log
 
@@ -189,8 +187,9 @@ function __log_print() {
     printf -v line "${LOG_TIMESTAMP:+`date '+%FT%T.%3N'` }${format}" "$level_name" "${fname}$1"
     # allow primitive escape sequences
     echo -e "$line" | tee ${LOGFILE:+ -a "$LOGFILE"}
-    [ -n "$SYSLOG" ] && which "${LOGGER:=logger}" >/dev/null &&
-        "$LOGGER" --priority user.${level_name,,} -- "$line"
+    if [ -n "$SYSLOG" ] && type -p "${LOGGER:=logger}" >/dev/null; then
+      "$LOGGER" --priority user.${level_name,,} -- "$line"
+    fi
     shift
   done
 }

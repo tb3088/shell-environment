@@ -1,8 +1,4 @@
-case ${OSTYPE:-`uname`} in
-    [dD]arwin*)
-        ;;
-    *)  return 0
-esac
+[[ ${OSTYPE:-`uname -o`} =~ [dD]arwin ]] || return 0
 
 alias ls='\ls -hAF -G'
 #alias subl='open -a "Sublime Text 2"'

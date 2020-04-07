@@ -58,7 +58,7 @@ function convert_path() {
 readonly -f convert_path
 
 
-which sudo 2>/dev/null ||
+type -p sudo &>/dev/null ||
 function sudo() {
   local opt who cmd line env shell flags preserve=''
   #FIXME local -A env
@@ -68,7 +68,7 @@ function sudo() {
   while getopts ':ieEu:X' opt 2>/dev/null; do
     case "$opt" in
       i)    initial=1; unset preserve ;;
-      e)    cmd=`which ${EDITOR:-vi} 2>/dev/null` || {
+      e)    cmd=`type -p ${EDITOR:-vi} 2>/dev/null` || {
                 log_ERROR "invalid EDITOR (${EDITOR:-vi})"
                 return
               }
@@ -109,7 +109,7 @@ function is_windows() {
   # detects if path or binary is Cygwin or native Windows
   [ "${1:0:1}" = '/' ] && return [[ "$1" =~ ^/cygdrive ]]
 
-  bin=`which "${1:?}" 2>/dev/null` || return
+  bin=`type -p "${1:?}" 2>/dev/null` || return
   [ "$bin" != "${bin#/cygdrive}" ]
 }
 

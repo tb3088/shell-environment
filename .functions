@@ -193,7 +193,7 @@ function define() {
 }
 
 
-which pidof &>/dev/null ||
+type -p pidof &>/dev/null ||
 function pidof() {
     ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }

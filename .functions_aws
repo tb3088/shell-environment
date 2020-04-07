@@ -56,8 +56,8 @@ declare -Ar __aws_availability_zones=(
 
 
 function ec2.metadata() {
+  local CURL="`type -p curl` --silent --show-error" || return 2
   local url='http://169.254.169.254/latest/meta-data'
-  local CURL="`which curl` --silent --show-error" || return 2
 
   local -A mapping=(
       [az]=placement/availability-zone
@@ -77,14 +77,14 @@ function ec2.metadata() {
 #public-ipv4
 
 
+function is_aws() { ec2.metadata self &>/dev/null; }
+
+
 # safety fall-back in case AWS_DEFAULT_REGION not set
 __aws_region=`aws configure get region`
 : ${__aws_region:=`aws configure get region --profile default 2>/dev/null`}
 : ${__aws_region:=`ec2.metadata availability-zone | sed 's/[a-z]$//'`}
 : ${__aws_region:=us-east-1}
-
-
-function is_aws() { ec2.metadata self &>/dev/null }
 
 
 declare -F aws.region >/dev/null ||
@@ -97,7 +97,7 @@ function aws.region {
     region=$REPLY
   fi
 
-  [ -n "${__aws_availability_zones[$region]}" ] && export AWS_DEFAULT_REGION=$region || log_ERROR "invalid region ($region)"
+  [ -n "${__aws_availability_zones[$region]}" ] && export AWS_DEFAULT_REGION=$region || log.error "invalid region ($region)"
 }
 
 
@@ -118,7 +118,7 @@ function aws.profile {
   if [ -z "$profile" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config" | sort` )
 
-    [ ${#list[@]} -ge 1 ] || { log_ERROR "no profiles defined ($config)"; return; }
+    [ ${#list[@]} -ge 1 ] || { log.error "no profiles defined ($config)"; return; }
 
     [ ${#list[@]} -gt 1 ] && {
         echo; printf ' %s\n' "${list[@]}" | column; echo
@@ -136,7 +136,7 @@ function aws.profile {
   # BUG! 'aws configure' emits to STDERR instead of STDOUT
   local _region=`aws configure get region ${profile:+ --profile "$profile"} 2>&1 | tail -n 1`
   if [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]]; then
-    RC=1 log_ERROR "$_region ($config)"
+    RC=1 log.error "$_region ($config)"
     return
   fi
   : ${region:=$_region}
@@ -176,7 +176,7 @@ function aws.session-load {
   if [ -z "$input" ]; then
     local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))` )
 
-    [ ${#list[@]} -ge 1 ] || { log_ERROR "no cached sessions ($cache_dir)"; return; }
+    [ ${#list[@]} -ge 1 ] || { log.error "no cached sessions ($cache_dir)"; return; }
 
     [ ${#list[@]} -gt 1 ] && {
         echo; printf ' %s\n' "${list[@]}" | column; echo
@@ -191,25 +191,25 @@ function aws.session-load {
   case "$format" in
     text)   # see 'aws.session()' call to 'aws sts'
             local header rest
-            log_DEBUG "$input"
+            log.debug "$input"
 #FIXME something very wrong in 'text' mode
-log_ERROR "code is broken ($FUNCNAME)"; return
+log.error "code is broken ($FUNCNAME)"; return
 #            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
 #                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
     json)   local field; local -u envvar
-            log_DEBUG `jq -MS '.Credentials' <<< "$input"`
+            log.debug `jq -MS '.Credentials' <<< "$input"`
             for field in `keys __aws_session`; do
               envvar=`value __aws_session $field`
               local -n nref=$envvar
               nref=`jq -r --arg field "$field" '.Credentials[$field]' <<< "$input"`
             done
-            log_INFO `jq -r '.AssumedRoleUser' <<< "$input"`
+            log.info `jq -r '.AssumedRoleUser' <<< "$input"`
             ;;
-    *)      RC=2 log_ERROR "unsupported format ($format)"
+    *)      RC=2 log.error "unsupported format ($format)"
             return
   esac
-  log_INFO `aws.printenv`
+  log.info `aws.printenv`
   export ${!AWS_*}
 }
 
@@ -238,8 +238,8 @@ function aws.session {
   local OPTIND opt
   while getopts ':cfp:r:T:t:W' opt; do
     case "$opt" in
-      c)    which jq &>/dev/null || {
-                log_WARN "'jq' not found. skipping option (-$opt) ..."
+      c)    type -p jq &>/dev/null || {
+                log.warn "'jq' not found. skipping option (-$opt) ..."
                 continue
               }
             for f in "$HOME"/.aws/cli/cache/*; do
@@ -256,13 +256,13 @@ function aws.session {
       p)    profile=$OPTARG ;;
       r)    role=$OPTARG ;;
       T)    duration=$OPTARG ;;
-      t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || { log_ERROR "invalid Token ($OPTARG)"; return; }
+      t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || { log.error "invalid Token ($OPTARG)"; return; }
             ;;
       W)    # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
             write=1
             ;;
-      :)    RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
-      \?)   log_ERROR "invalid option (-$OPTARG)" ;&
+      :)    RC=2 log.error "missing argument (-$OPTARG)"; return ;;
+      \?)   log.error "invalid option (-$OPTARG)" ;&
       h)    >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
@@ -280,7 +280,7 @@ function aws.session {
     elif [[ $1 =~ ^[a-zA-Z]+ ]]; then
       profile=$1
     else
-      log_WARN "unknown format ($1)"
+      log.warn "unknown format ($1)"
       break
     fi
     shift
@@ -291,7 +291,7 @@ function aws.session {
 #  mfa=`aws configure get mfa_serial`
 #  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
 #    # not reached, aws.profile() should have caught it
-#    RC=1 log_CRITICAL "unknown profile ($profile, $AWS_CONFIG_FILE)"
+#    RC=1 log.critical "unknown profile ($profile, $AWS_CONFIG_FILE)"
 #    return
 #  fi
 
@@ -334,7 +334,7 @@ function aws.session {
   aws.session-load "${cache:-$output}" || return
   [ $write -eq 1 ] && aws.session-write
 
-  log_INFO `aws.printenv`
+  log.info `aws.printenv`
   export ${!AWS_*}
 }
 
@@ -376,7 +376,7 @@ function aws.rmPath {
 
 declare -F aws.route53-export >/dev/null ||
 function aws.route53-export {
-  which jq &>/dev/null || { log_ERROR "'jq' not installed"; return; }
+  type -p jq || { log.error "'jq' not installed"; return; }
   local -u zoneid=${1:?}
 
   grep -qE '([A-Z]|[0-9]){12,}' <<< "$zoneid" ||

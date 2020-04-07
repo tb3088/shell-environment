@@ -8,11 +8,9 @@ delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks'
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 
-if which procps &>/dev/null; then
-  alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
-else
-  alias ps='\ps -f'
-fi
+type -p procps &>/dev/null &&
+    alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}' ||
+        alias ps='\ps -f'
 
 shopt -s nocaseglob
 

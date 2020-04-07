@@ -1,21 +1,17 @@
-which chef &>/dev/null && return
-
-# Work-in-Progress
 return 0
 
-echo "processing .bashrc.chef top"
-
+type -p chef &>/dev/null || {
 #TODO attempt to find binary like this
 #which notepad++ &>/dev/null || {
 #    bin='Notepad++/notepad++.exe'
 #    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
 #      [ -x "${!dir}/$bin" ] && { alias npp="run \"\$$dir/$bin\""; break; }
 #    done
-#  }
 #    : ${PUPPET_BASE:="${PROGRAMFILES:-/opt}/puppetlabs/puppet"}
+  }
 
 
-function chef_env() {
+function chef.env() {
   [ -n "$1" ] && CHEF_ENV=$1
   : ${CHEF_ENV:?}
   CHEF_CLIENT_KEY="${_CHEF_HOME:?}/${_CHEF_USER:?}-${CHEF_ENV,,}.pem"

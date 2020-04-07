@@ -1,7 +1,7 @@
 
-if which git &>/dev/null; then
+if type -p git &>/dev/null; then
   function git.current() {
-     git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
+    git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
   }
 
   alias git.diff-stat='git diff --stat'

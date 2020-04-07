@@ -1,13 +1,10 @@
 #TODO how to keep system Ruby from fighting embedded?
 
-which puppet{,.bat} &>/dev/null && return
+type -p puppet{,.bat} &>/dev/null ||
+    for v in $PUPPET_BASE "${PROGRAMFILES:-/opt}"/{,puppetlabs/}{p,P}uppet; do
+      [ -d "$v/bin" ] && { PUPPET_BASE="$v"; addPath "$v/bin"; break; }
+    done
 
-for v in $PUPPET_BASE "${PROGRAMFILES:-/opt}"/{,puppetlabs/}{p,P}uppet; do
-  if [ -d "$v"/bin ]; then
-    PUPPET_BASE="$v"
-    addPath "$v"/bin
-    break
-  fi
-done
+return 0
 
 # vim: expandtab:ts=4:sw=4

@@ -1,8 +1,9 @@
 return 0
 
-which go &>/dev/null || {
+type -p go &>/dev/null || {
     # look for program in common places
     declare -n v
+
     for v in GOROOT SYSTEMDRIVE PROGRAMFILES LOCALAPPDATA; do
         [ -n "$v" ] || continue
         for p in `convert_path "$v"`/go{,lang}{,{,-,_}$GO_VERSION}; do
@@ -10,9 +11,7 @@ which go &>/dev/null || {
         done
     done
     unset -n v
-    unset p
-    which go &>/dev/null || return 0
-}
+  }
 
 #FIXME detect if Windows binary. if so, we can't mangle paths into UNIX-style
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
