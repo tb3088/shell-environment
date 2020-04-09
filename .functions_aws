@@ -1,6 +1,8 @@
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; exit 2; }
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; return 2; }
+type -p jq &>/dev/null || { >&2 echo 'ERROR unknown command (jq)'; return 2; }
+type -p curl &>/dev/null || { >&2 echo 'ERROR unknown command (curl)'; return 2; }
 
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
@@ -56,19 +58,28 @@ declare -Ar __aws_availability_zones=(
 
 
 function ec2.metadata() {
-  local CURL="`type -p curl` --silent --show-error" || return 2
-  local url='http://169.254.169.254/latest/meta-data'
+  local url='http://169.254.169.254/latest/meta-data' mac item
+  local CURL="curl --connect-timeout 2 ${VERBOSE:+ --verbose --progress-bar} --silent"
+
+  # special cases that require recursion etc.
+  case ${item:=$1} in
+    vpc|vpc-id)
+        : ${mac:=`ec2.metadata mac`}
+        item='vpc-id'
+        ;;
+  esac
 
   local -A mapping=(
       [az]=placement/availability-zone
       [availability-zone]=placement/availability-zone
       [self]=instance-id
       [type]=instance-type
+      [vpc-id]=network/interfaces/macs/$mac/vpc-id
     )
 
-  curl -sS "$url/${mapping[$1]:-$1}"
+  # intermediary items (eg. macs) have trailing '/'
+  ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
 }
-#latest/meta-data/placement/availability-zone
 #ami-id
 #hostname
 #instance-id
@@ -238,11 +249,7 @@ function aws.session {
   local OPTIND opt
   while getopts ':cfp:r:T:t:W' opt; do
     case "$opt" in
-      c)    type -p jq &>/dev/null || {
-                log.warn "'jq' not found. skipping option (-$opt) ..."
-                continue
-              }
-            for f in "$HOME"/.aws/cli/cache/*; do
+      c)    for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
               expires=$(date --date `jq -r '.Credentials.Expiration' "$f"` '+%s')
               [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
@@ -376,16 +383,19 @@ function aws.rmPath {
 
 declare -F aws.route53-export >/dev/null ||
 function aws.route53-export {
-  type -p jq || { log.error "'jq' not installed"; return; }
-  local -u zoneid=${1:?}
+  local -u zone_id=${1:?zone id}
+  local domain=${1%.}; domain+='.'
 
-  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zoneid" ||
-      zoneid=$( aws route53 list-hosted-zones --output=json |
-          jq -r --arg v1 "$1" '.HostedZones[] | select(.Name == $v1.) | .Id' | cut -d'/' -f3 )
+  # if doesn't match pattern assume Domain name was specified
+  #FIXME will pick first occurance which is likely not intended, use read() to prompt
+  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
+      aws route53 list-hosted-zones --output=json |
+      jq -r --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
+      cut -d'/' -f3 | head -n 1
+    )
 
-  for zone in $zoneid; do
+  for zone in $zone_id; do
     echo -e "; $zone\n"
-
     #TODO use printf() with width
     aws route53 list-resource-record-sets --hosted-zone-id=${zone:?} --output=json |
         jq -jr '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
@@ -404,9 +414,9 @@ function aws.sshkeys {
   : ${status:=Active}
 
   while [ "$1" ];do
-    for kid in `aws iam list-ssh-public-keys --user-name "$1" |
-          jq -r --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId'`; do
-
+    for kid in $( aws iam list-ssh-public-keys --user-name "$1" |
+        jq -r --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId' )
+    do
       aws iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
           jq -r '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
     done
@@ -427,11 +437,10 @@ function aws.sshkeys {
 
 
 function aws.describe() {
-  #output: JSON
-
+  # all output is in JSON with rare exception
   local AWS="aws ${AWS_DEFAULT_REGION:- --region $__aws_region} --output json"
   local JQ='jq --exit-status'; JQR="$JQ --raw-output"
-  local type
+  local type output
   local -a filter
 
   resource=${1:?resource}; shift
@@ -439,9 +448,9 @@ function aws.describe() {
   case $resource in
 #    asg|autoscaling-group)
     s3|*bucket)
-            $AWS s3api list-buckets $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)' ;;
+            ${DEBUG:+ runv} $AWS s3api list-buckets $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)' ;;
     *bucket-policy)
-            $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
+            ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
 
 #   ebs|volume) describe-volumes
 #    ec2|*instance)
@@ -454,19 +463,18 @@ function aws.describe() {
                 "Name=resource-type,Values=${type:-instance}"
                 "Name=resource-id,Values=${1:?resource-id}"
               )
-            $AWS describe-tags --filters "${filter[@]}"
-            ;;
+            output=`${DEBUG:+ runv} $AWS ec2 describe-tags --filters "${filter[@]}"`
+            ;;&
+
+            # NOTE! 'tag' emits text
+    tag)    ${DEBUG:+ runv} $JQR '.Tags[0].Value' <<< "$output" ;;
+    tags)   ${DEBUG:+ runv} $JQ '.Tags[] | {(.Key): .Value}' <<< "$output" | $JQ -s add ;;
 #    route)
 #    subnet)
-    vpc)    $AWS ec2 describe-vpcs --vpc-id ${1:?vpc id} | $JQ '.Vpcs[]' ;;
+    vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc id} | $JQ '.Vpcs[]' ;;
 #    vpc-endpoint
 #        describe-vpc-endpoint-services
 #        describe-vpc-endpoints
-#        describe-vpc-endpoint-connection-notifications
-#        describe-vpc-endpoint-connections
-#        describe-vpc-endpoint-service-configurations
-#        describe-vpc-endpoint-service-permissions
-#        describe-vpc-endpoint-services
 #    target-group)
 #    elb|lb|load-blancer)
 #    security-group)
@@ -474,7 +482,6 @@ function aws.describe() {
 
     *)      >&2 echo "unsupported keyword"; return 2
   esac
-
 }
 
 
