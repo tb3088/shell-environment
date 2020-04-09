@@ -2,7 +2,7 @@
 
 type -p brew &>/dev/null || {
     : ${HOMEBREW_PREFIX:=/home/linuxbrew/.linuxbrew}
-    [ -d "$HOMEBREW_PREFIX/bin" && { addPath $HOMEBREW_PREFIX/bin; export ${!HOMEBREW_*}; }
+    [ -d "$HOMEBREW_PREFIX/bin" ] && { addPath $HOMEBREW_PREFIX/bin; export ${!HOMEBREW_*}; }
   }
 
 return 0
