@@ -45,7 +45,7 @@ function is_file() {
 
   while [ $# -ne 0 ]; do
     if [ -n "$1" ]; then
-	  [ -f "$1" ] || { log_ERROR "file not found ($1)"; return; }
+	  [ -f "$1" ] || { log.error "file not found ($1)"; return; }
 	fi
     shift
   done
@@ -109,7 +109,7 @@ function addPath() {
   local -ir _prepend=${prepend:-0}
 
   [ $# -eq 1 ] && k='PATH' || { k=$1; shift; }
-  [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
+  [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log.error "invalid variable ($k)"; return; }
 
   [ "$k" = 'PATH' ] && { delim=':'; flags+=('-E'); }
 
@@ -117,7 +117,7 @@ function addPath() {
 
   local -n kval=$k
 
-  log_TRACE "$k before (delim=$delim)" "$kval"
+  log.trace "$k before (delim=$delim)" "$kval"
   while [ $# -ne 0 ]; do
     [ -n "$1" ] || { shift; continue; }
 
@@ -142,7 +142,7 @@ function addPath() {
   kval=${kval##$delim}
   kval=${kval%%$delim}
 
-  log_TRACE "$k after" "$kval"
+  log.trace "$k after" "$kval"
 }
 
 
@@ -150,13 +150,13 @@ function rmPath() {
   local k v flag delim
 
   [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
-  [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log_ERROR "invalid variable ($k)"; return; }
+  [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log.error "invalid variable ($k)"; return; }
   local -n kval=$k
 
   [ "$k" = 'PATH' ] && { delim=':'; flag='-E'; }
   : ${delim:=${PATHSEP:-\:}}
 
-  log_TRACE "$k before" "$kval"
+  log.trace "$k before" "$kval"
   while [ $# -ne 0 ]; do
     [ -n "$1" ] || { shift; continue; }
 
@@ -177,7 +177,7 @@ function rmPath() {
   kval=${kval##$delim}
   kval=${kval%%$delim}
 
-  log_TRACE "$k after" "$kval"
+  log.trace "$k after" "$kval"
 }
 
 
@@ -405,8 +405,8 @@ function tree() {
       P)    flags+=("-name $OPTARG") ;;
       x)    flags+=('-xdev') ;;
 
-      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
-      \?)   RC=2 log_ERROR "unknown option '-$OPTARG'" ;&
+      :)    RC=2 log.error "missing argument to '-$OPTARG'"; return ;;
+      \?)   RC=2 log.error "unknown option '-$OPTARG'" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
 
@@ -478,20 +478,24 @@ function expand_dvq() {
 
 
 if [ -f "${BASH_SOURCE}_logging" ]; then
-  source "${BASH_SOURCE}_logging" || echo >&2 "RC=$? during ${BASH_SOURCE}_logging"
+  source "${BASH_SOURCE}_logging" || >&2 echo "RC=$? during ${BASH_SOURCE}_logging"
 else
-  function log        { while [ "$1" ]; do >&2 echo -e "${level:+$level\t}$1"; shift; done; }
+  function log        { while [ "$1" ]; do >&2 echo -e "${level:+${level^^}\t}$1"; shift; done; }
 
-  function log.debug  { declare -u level; [ -n "$DEBUG" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
+  function log.trace  { [ -n "$DEBUG" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
 
-  function log.info   { declare -u level; [ -n "${VERBOSE}${DEBUG}" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
+  function log.debug  { [ -n "$DEBUG" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
 
-  function log.notice { declare -u level; level=${FUNCNAME#log.} log "$@"; }
+  function log.info   { [ -n "${VERBOSE}${DEBUG}" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
 
-  function log.warn   { declare -u level; level=${FUNCNAME#log.} log "$@"; }
+  function log.notice { level=${FUNCNAME#log.} log "$@"; }
 
-  function log.error  { RC=$?; declare -u level; level=${FUNCNAME#log.} log "$@";
-    [ ${SHLVL:-1} -eq 1 ] && return $RC || exit $RC; }
+  function log.warn   { level=${FUNCNAME#log.} log "$@"; }
+
+  function log.error  { RC=$?; level=${FUNCNAME#log.} log "$@";
+    [ ${SHLVL:-1} -eq 1 ] && return $RC
+    exit $RC
+  }
 fi
 
 

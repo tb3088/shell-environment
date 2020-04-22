@@ -1,8 +1,12 @@
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; return 2; }
-type -p jq &>/dev/null || { >&2 echo 'ERROR unknown command (jq)'; return 2; }
-type -p curl &>/dev/null || { >&2 echo 'ERROR unknown command (curl)'; return 2; }
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR! file must be sourced"; return 2; }
+
+type -p curl &>/dev/null || { >&2 echo 'ERROR! unknown command (curl)'; return 2; }
+type -p aws  &>/dev/null || { >&2 echo 'ERROR! unknown command (aws)'; return 2; }
+type -p jq   &>/dev/null || { >&2 echo 'ERROR! unknown command (jq)'; return 2; }
+type -p log  &>/dev/null || { >&2 echo 'ERROR! unknown command (log), source .functions[_logging]'; return 2; }
+type -p runv &>/dev/null || { >&2 echo 'ERROR! unknown command (runv), source .functions'; return 2; }
 
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
@@ -58,14 +62,19 @@ declare -Ar __aws_availability_zones=(
 
 
 function ec2.metadata() {
-  local url='http://169.254.169.254/latest/meta-data' mac item
+  local url='http://169.254.169.254/latest/meta-data'
   local CURL="curl --connect-timeout 2 ${VERBOSE:+ --verbose --progress-bar} --silent"
+  local item mac
 
   # special cases that require recursion etc.
   case ${item:=$1} in
     vpc|vpc-id)
-        : ${mac:=`ec2.metadata mac`}
+        : ${mac:=`$FUNCNAME mac`}
         item='vpc-id'
+        ;;
+    region)
+        $FUNCNAME availability-zone | sed 's/[a-z]$//'
+        return
         ;;
   esac
 
@@ -77,7 +86,7 @@ function ec2.metadata() {
       [vpc-id]=network/interfaces/macs/$mac/vpc-id
     )
 
-  # intermediary items (eg. macs) have trailing '/'
+  # intermediary items (eg. macs) leave behind trailing '/'
   ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
 }
 #ami-id
@@ -87,18 +96,20 @@ function ec2.metadata() {
 #local-ipv4
 #public-ipv4
 
+# safety fall-back in case AWS_DEFAULT_REGION not set
+__aws_region=`aws configure get region`
+: ${__aws_region:=`aws configure get region --profile default 2>/dev/null`}
+: ${__aws_region:=`ec2.metadata region`}
+: ${__aws_region:=us-east-1}
+
+# all output is in JSON with rare exception
+AWS="aws ${AWS_DEFAULT_REGION:- --region $__aws_region} --output json"
+JQ='jq --exit-status'; JQR="$JQ --raw-output"
+
 
 function is_aws() { ec2.metadata self &>/dev/null; }
 
 
-# safety fall-back in case AWS_DEFAULT_REGION not set
-__aws_region=`aws configure get region`
-: ${__aws_region:=`aws configure get region --profile default 2>/dev/null`}
-: ${__aws_region:=`ec2.metadata availability-zone | sed 's/[a-z]$//'`}
-: ${__aws_region:=us-east-1}
-
-
-declare -F aws.region >/dev/null ||
 function aws.region {
   local region
 
@@ -112,7 +123,6 @@ function aws.region {
 }
 
 
-declare -F aws.profile >/dev/null ||
 function aws.profile {
   if [ "$1" = 'RESET' ]; then
     aws.rmPath
@@ -178,7 +188,6 @@ function aws.printenv() {
 }
 
 
-declare -F aws.session-load >/dev/null ||
 function aws.session-load {
   local format='text'
   local input=$1
@@ -213,9 +222,9 @@ log.error "code is broken ($FUNCNAME)"; return
             for field in `keys __aws_session`; do
               envvar=`value __aws_session $field`
               local -n nref=$envvar
-              nref=`jq -r --arg field "$field" '.Credentials[$field]' <<< "$input"`
+              nref=`$JQR --arg field "$field" '.Credentials[$field]' <<< "$input"`
             done
-            log.info `jq -r '.AssumedRoleUser' <<< "$input"`
+            log.info `$JQR '.AssumedRoleUser' <<< "$input"`
             ;;
     *)      RC=2 log.error "unsupported format ($format)"
             return
@@ -225,7 +234,6 @@ log.error "code is broken ($FUNCNAME)"; return
 }
 
 
-declare -F aws.session-write >/dev/null ||
 function aws.session-write {
     local field; local -u envvar
 
@@ -236,7 +244,6 @@ function aws.session-write {
 }
 
 
-declare -F aws.session >/dev/null ||
 function aws.session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
@@ -251,7 +258,7 @@ function aws.session {
     case "$opt" in
       c)    for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
-              expires=$(date --date `jq -r '.Credentials.Expiration' "$f"` '+%s')
+              expires=$(date --date `$JQR '.Credentials.Expiration' "$f"` '+%s')
               [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
 
               #FIXME first valid != desired AWS_PROFILE, is $profile set?
@@ -346,7 +353,6 @@ function aws.session {
 }
 
 
-declare -F aws.addPath >/dev/null ||
 function aws.addPath {
   local v f
   local -i delete
@@ -375,13 +381,11 @@ function aws.addPath {
 }
 
 
-declare -F aws.rmPath >/dev/null ||
 function aws.rmPath {
   delete=1 aws.addPath "$@"
 }
 
 
-declare -F aws.route53-export >/dev/null ||
 function aws.route53-export {
   local -u zone_id=${1:?zone id}
   local domain=${1%.}; domain+='.'
@@ -390,7 +394,7 @@ function aws.route53-export {
   #FIXME will pick first occurance which is likely not intended, use read() to prompt
   grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
       aws route53 list-hosted-zones --output=json |
-      jq -r --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
+      $JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
       cut -d'/' -f3 | head -n 1
     )
 
@@ -404,9 +408,8 @@ function aws.route53-export {
 }
 
 
-declare -F aws.sshkey >/dev/null ||
 function aws.sshkeys {
-  # Example: $FUNCNAME `aws iam get-group --group-name <group> | jq -r '.Users[].UserName'`
+  # Example: $FUNCNAME `$AWS iam get-group --group-name <group> | $JQR '.Users[].UserName'`
   local -u format
   local status
 
@@ -415,10 +418,10 @@ function aws.sshkeys {
 
   while [ "$1" ];do
     for kid in $( aws iam list-ssh-public-keys --user-name "$1" |
-        jq -r --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId' )
+        $JQR --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId' )
     do
-      aws iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
-          jq -r '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
+      $AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
+          $JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
     done
     shift
   done
@@ -437,9 +440,6 @@ function aws.sshkeys {
 
 
 function aws.describe() {
-  # all output is in JSON with rare exception
-  local AWS="aws ${AWS_DEFAULT_REGION:- --region $__aws_region} --output json"
-  local JQ='jq --exit-status'; JQR="$JQ --raw-output"
   local type output
   local -a filter
 
@@ -452,7 +452,6 @@ function aws.describe() {
     *bucket-policy)
             ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
 
-#   ebs|volume) describe-volumes
 #    ec2|*instance)
 #    elastic-ip)
 #    internet-gateway
@@ -471,6 +470,16 @@ function aws.describe() {
     tags)   ${DEBUG:+ runv} $JQ '.Tags[] | {(.Key): .Value}' <<< "$output" | $JQ -s add ;;
 #    route)
 #    subnet)
+
+#   ebs|volume) describe-volume
+    volume-attachment)
+            ${DEBUG:+ runv} $AWS ec2 describe-volumes --volume-ids ${1:? volume id} |
+                $JQ '.Volumes[].Attachments[0]'
+            ;;
+    volume-status) # ok, creating, ?
+            ${DEBUG:+ runv} $AWS ec2 describe-volume-status --volume-ids ${1:? volume id} |
+                $JQR '.VolumeStatuses[].VolumeStatus.Status'
+            ;;
     vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc id} | $JQ '.Vpcs[]' ;;
 #    vpc-endpoint
 #        describe-vpc-endpoint-services
