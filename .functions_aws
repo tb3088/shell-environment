@@ -2,11 +2,14 @@
 
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR! file must be sourced"; return 2; }
 
-type -p curl &>/dev/null || { >&2 echo 'ERROR! unknown command (curl)'; return 2; }
-type -p aws  &>/dev/null || { >&2 echo 'ERROR! unknown command (aws)'; return 2; }
-type -p jq   &>/dev/null || { >&2 echo 'ERROR! unknown command (jq)'; return 2; }
-type -p log  &>/dev/null || { >&2 echo 'ERROR! unknown command (log), source .functions[_logging]'; return 2; }
-type -p runv &>/dev/null || { >&2 echo 'ERROR! unknown command (runv), source .functions'; return 2; }
+for exe in curl aws jq log runv; do
+  type -p $exe &>/dev/null || { >&2 echo "ERROR! unknown command ($exe)"; return 2; }
+done
+
+# all output is in JSON with rare exception
+# NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
+AWS="eval aws --region \${AWS_DEFAULT_REGION:-\$__aws_region} --output json"
+JQ='jq --exit-status'; JQR="$JQ --raw-output"
 
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
@@ -97,15 +100,14 @@ function ec2.metadata() {
 #public-ipv4
 
 # safety fall-back in case AWS_DEFAULT_REGION not set
-__aws_region=`aws configure get region`
-: ${__aws_region:=`aws configure get region --profile default 2>/dev/null`}
-: ${__aws_region:=`ec2.metadata region`}
-: ${__aws_region:=us-east-1}
+declare -p __aws_region &>/dev/null || {
+    __aws_region=`aws configure get region`
+    : ${__aws_region:=`aws configure get region --profile default 2>/dev/null`}
+    : ${__aws_region:=`ec2.metadata region`}
+    : ${__aws_region:=us-east-1}
 
-# all output is in JSON with rare exception
-AWS="aws ${AWS_DEFAULT_REGION:- --region $__aws_region} --output json"
-JQ='jq --exit-status'; JQR="$JQ --raw-output"
-
+    declare -r __aws_region
+  }
 
 function is_aws() { ec2.metadata self &>/dev/null; }
 
@@ -387,7 +389,7 @@ function aws.rmPath {
 
 
 function aws.route53-export {
-  local -u zone_id=${1:?zone id}
+  local -u zone_id=${1:?zone_id}
   local domain=${1%.}; domain+='.'
 
   # if doesn't match pattern assume Domain name was specified
@@ -417,8 +419,8 @@ function aws.sshkeys {
   : ${status:=Active}
 
   while [ "$1" ];do
-    for kid in $( aws iam list-ssh-public-keys --user-name "$1" |
-        $JQR --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId' )
+    for kid in $( $AWS iam list-ssh-public-keys --user-name "$1" |
+        $JQR --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId //empty' )
     do
       $AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
           $JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
@@ -440,7 +442,7 @@ function aws.sshkeys {
 
 
 function aws.describe() {
-  local type output
+  local type output arn
   local -a filter
 
   resource=${1:?resource}; shift
@@ -450,6 +452,7 @@ function aws.describe() {
     s3|*bucket)
             ${DEBUG:+ runv} $AWS s3api list-buckets $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)' ;;
     *bucket-policy)
+            # last JQ used to un-escape embedded stanza
             ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
 
 #    ec2|*instance)
@@ -462,7 +465,7 @@ function aws.describe() {
                 "Name=resource-type,Values=${type:-instance}"
                 "Name=resource-id,Values=${1:?resource-id}"
               )
-            output=`${DEBUG:+ runv} $AWS ec2 describe-tags --filters "${filter[@]}"`
+            output=`$AWS ec2 describe-tags --filters "${filter[@]}"`
             ;;&
 
             # NOTE! 'tag' emits text
@@ -470,17 +473,21 @@ function aws.describe() {
     tags)   ${DEBUG:+ runv} $JQ '.Tags[] | {(.Key): .Value}' <<< "$output" | $JQ -s add ;;
 #    route)
 #    subnet)
+    target-group)
+            ${DEBUG:+ runv} $AWS elbv2 describe-target-groups |
+                $JQ --arg tg ${1:?target_group_name} '.TargetGroups[] | select(.TargetGroupName == $tg)'
+            ;;
 
 #   ebs|volume) describe-volume
     volume-attachment)
-            ${DEBUG:+ runv} $AWS ec2 describe-volumes --volume-ids ${1:? volume id} |
+            ${DEBUG:+ runv} $AWS ec2 describe-volumes --volume-ids ${1:?volume_id} |
                 $JQ '.Volumes[].Attachments[0]'
             ;;
     volume-status) # ok, creating, ?
-            ${DEBUG:+ runv} $AWS ec2 describe-volume-status --volume-ids ${1:? volume id} |
-                $JQR '.VolumeStatuses[].VolumeStatus.Status'
+            ${DEBUG:+ runv} $AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} |
+                $JQR '.VolumeStatuses[].VolumeStatus.Status //empty'
             ;;
-    vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc id} | $JQ '.Vpcs[]' ;;
+    vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc_id} | $JQ '.Vpcs[]' ;;
 #    vpc-endpoint
 #        describe-vpc-endpoint-services
 #        describe-vpc-endpoints
