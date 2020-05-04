@@ -1,4 +1,4 @@
-*       text=input
+*       text=auto
 *.sh    text eol=lf
 *.csh   text eol=lf
 *.tcsh  text eol=lf
