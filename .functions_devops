@@ -1,0 +1,63 @@
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR! file must be sourced"; return 2; }
+
+for exe in git log runv; do
+  type -p $exe &>/dev/null || { >&2 echo "ERROR! unknown command ($exe)"; return 2; }
+done
+
+GIT="git \${NOOP:+ --dry-run} \${DEBUG:+ --verbose} \${QUIET:+ --quiet}"
+
+function git.current() {
+  git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
+}
+
+alias git.diff-stat='git diff --stat'
+
+function git.add() {
+  for f in `git status -s | awk -v type=${1:-M} '$1 ~ type { print $2 }'`; do
+    git add "$f"
+  done
+}
+
+function git.mirror() {
+  local src dst branch interactive
+
+  local OPTIND opt
+  while getopts 'i' opt; do
+    case "$opt" in
+      i)    interactive=1 ;;
+      :)    RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
+      \?)   RC=2 log_ERROR "invalid option (-$OPTARG)" ; return ;;
+    esac
+  done
+  shift $((OPTIND-1))
+
+#TODO spit out 'git remotes' and prompt for src and dst with read()
+  : ${src:=$1}
+  : ${dst:=$2}
+  shift 2
+
+  ${DEBUG:+runv} git fetch ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
+      --multiple --prune ${src:?} ${dst:?} || return
+
+  # alt: uses local as intermediary and will DESTROY any updates present in $dst
+  # git clone --mirror $src_url
+  # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
+
+  echo -e "\nBranches ..."
+  for br in ${@:-`git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`}; do
+    if [ ${interactive:-0} -eq 1 ]; then
+      read -t 8 -n 1 -p "Copy '${br#*/}' [y/N]:  " || return
+      [ -z "${REPLY}" ] || echo
+      [ "${REPLY^^}" = 'Y' ] || continue
+    else
+      echo "  $br"
+    fi
+    ${DEBUG:+runv} eval $GIT push ${PRUNE:+ --prune} "$dst" "${br}:refs/heads/${br#*/}"
+  done
+
+  echo -e "\n\nTags ..."
+  ${DEBUG:+runv} eval $GIT push "$dst" --tags
+  #alt: ... 'refs/tags/*:refs/tags/*'
+}
+
+# vim: expandtab:ts=4:sw=4

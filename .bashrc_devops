@@ -1,71 +1,11 @@
-
-if type -p git &>/dev/null; then
-  function git.current() {
-    git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
-  }
-
-  alias git.diff-stat='git diff --stat'
-
-  function git.add() {
-    for f in `git status -s | awk -v type=${1:-M} '$1 ~ type { print $2 }'`; do
-      git add "$f"
-    done
-  }
-
-  function git.mirror() {
-    local src dst branch interactive
-
-    local OPTIND opt
-    while getopts 'i' opt; do
-      case "$opt" in
-        i)	interactive=1 ;;
-
-      	:)  RC=2 log_ERROR "missing argument (-$OPTARG)"; return ;;
-        \?) RC=2 log_ERROR "invalid option (-$OPTARG)" ; return ;;
-      esac
-    done
-    shift $((OPTIND-1))
-#TODO spit out 'git remotes' and prompt for src and dst with read()
-    : ${src:=$1}
-    : ${dst:=$2}
-    shift 2
-
-    ${DEBUG:+runv} git fetch ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
-        --multiple --prune ${src:?} ${dst:?} || return
-
-    # alt: uses local as intermediary and will DESTROY any updates present in $dst
-    # git clone --mirror $src_url
-    # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
-
-    echo -e "\nBranches ..."
-    for br in ${@:-`git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`}
-    do
-      if [ ${interactive:-0} -eq 1 ]; then
-        read -t 8 -n 1 -p "Copy '${br#*/}' [y/N]:  " || return
-        [ -z "${REPLY}" ] || echo
-        [ "${REPLY^^}" = 'Y' ] || continue
-      else
-        echo "  $br"
-      fi
-      ${DEBUG:+runv} git push ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
-            ${PRUNE:+ --prune} \
-            "$dst" \
-            "${br}:refs/heads/${br#*/}"
-    done
-
-    echo -e "\n\nTags ..."
-    ${DEBUG:+runv} git push ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
-        "$dst" --tags
-    #alt: ... 'refs/tags/*:refs/tags/*'
-  }
-
-  alias gsb='git status -sb'
-  alias gbl='git show-branch --all --list'
-fi
+alias gsb='git status -sb'
+alias gbl='git show-branch --all --list'
 
 alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
 alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
 
 alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
+
+source ${BASH_SOURCE/bashrc/functions} || return
 
 # vim: expandtab:ts=4:sw=4
