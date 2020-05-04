@@ -1,7 +1,9 @@
-*       text=auto
+*       text=input
 *.sh    text eol=lf
 *.csh   text eol=lf
 *.tcsh  text eol=lf
+*.bash* text eol=lf
+*.func* text eol=lf
 
 # Perl
 *.pl    text eol=lf
