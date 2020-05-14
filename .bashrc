@@ -25,8 +25,8 @@ shopt -u failglob
 
 # nullglob=off preserves '*' even if no files present. During interactive 
 # this is silly, but compgen (aka autocomplete) on Ubuntu(WSL but not Cygwin)
-# TAB-completion might stop if set.
-shopt -s nullglob
+# TAB-completion stops if set.
+[[ `uname -r` =~ Microsoft ]] && shopt -u nullglob || shopt -s nullglob
 
 # When changing directory small typos can be ignored by bash
 # for example, cd /vr/lgo/apaache would find /var/log/apache
