@@ -20,13 +20,15 @@ set -o vi
 # ref: https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
 shopt -s globstar extglob
 
-# squelch pattern expansion errors
 shopt -u failglob
+# squelch pattern expansion errors
+[[ "$-" =~ i ]] || shopt -s failglob
 
+shopt -s nullglob
 # nullglob=off preserves '*' even if no files present. During interactive 
 # this is silly, but compgen (aka autocomplete) on Ubuntu(WSL but not Cygwin)
 # TAB-completion stops if set.
-[[ `uname -r` =~ Microsoft ]] && shopt -u nullglob || shopt -s nullglob
+[[ `uname -r` =~ Microsoft ]] && shopt -u nullglob
 
 # When changing directory small typos can be ignored by bash
 # for example, cd /vr/lgo/apaache would find /var/log/apache
