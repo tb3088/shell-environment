@@ -1,10 +1,8 @@
 # $Id$
 
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; exit 2; }
-#[[ $BASH_VERSION =~ 4.[34] ]] || { >&2 echo "ERROR bash ~> 4.3 required"; exit 126; }
+[[ $BASH_VERSION =~ 4.[34] ]] || { >&2 echo 'ERROR! bash ~> 4.3 required'; exit 126; }
 
-shopt -s extglob nullglob
-[[ "$-" =~ i ]] || shopt -s failglob
 set -o pipefail
 
 
