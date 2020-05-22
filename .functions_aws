@@ -412,6 +412,7 @@ function aws.route53-export {
 
 function aws.sshkeys {
   # Example: $FUNCNAME `$AWS iam get-group --group-name <group> | $JQR '.Users[].UserName'`
+  #TODO rewrite as aws.describe() item
   local -u format
   local status
 
@@ -449,6 +450,8 @@ function aws.describe() {
 
   case $resource in
 #    asg|autoscaling-group)
+    iam-role) ${DEBUG:+ runv} $AWS iam get-role --role-name "${1:?role}" | $JQ '.Role'
+            ;;
     s3|*bucket)
             ${DEBUG:+ runv} $AWS s3api list-buckets $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)' ;;
     *bucket-policy)
@@ -456,6 +459,7 @@ function aws.describe() {
             ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
 
 #    ec2|*instance)
+#    instance-role)
 #    elastic-ip)
 #    internet-gateway
 #    nat-gateway
@@ -489,8 +493,16 @@ function aws.describe() {
             ;;
     vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc_id} | $JQ '.Vpcs[]' ;;
 #    vpc-endpoint
-#        describe-vpc-endpoint-services
-#        describe-vpc-endpoints
+    vpc-endpoint-service)
+            ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoint-services \
+                --service-name com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_region}.${1:?service} |
+                $JQ '.ServiceDetails[]'
+            ;;
+    vpc-endpoint)
+            ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoints \
+                --vpc-endpoint-ids ${1:?endpoint_id} |
+                $JQ '.VpcEndpoints[]'
+            ;;
 #    target-group)
 #    elb|lb|load-blancer)
 #    security-group)
