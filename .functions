@@ -3,6 +3,7 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; exit 2; }
 [[ $BASH_VERSION =~ 4.[34] ]] || { >&2 echo 'ERROR! bash ~> 4.3 required'; exit 126; }
 
+[[ "$-" =~ i ]] || shopt -s nullglob
 set -o pipefail
 
 
@@ -40,6 +41,7 @@ function is_string()  { type='-' is_type "$@"; }
 
 function is_file() {
   # ignore blank arguments. return on first error
+  #TODO? hard-fail mode
 
   while [ $# -ne 0 ]; do
     if [ -n "$1" ]; then
@@ -320,6 +322,7 @@ function join_string() {
   fi
 
   printf "${quote}%s${quote}" "$1"
+  [ $# -gt 1 ] || return 0
   printf "${delim}${quote}%s${quote}" "${@:2}"
 }
 

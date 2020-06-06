@@ -115,13 +115,14 @@ function is_aws() { ec2.metadata self &>/dev/null; }
 function aws.region {
   local region
 
-  if [ -z "$1" ]; then
+  if [ -z "${region:=$1}" ]; then
     echo; printf ' %s\n' ${__aws_regions[@]} | sort | column; echo
-    read -t 8 -ep "Choose REGION:  " -i 'us-east-1' || return
+    read -t 8 -ep "Choose REGION:  " -i ${AWS_DEFAULT_REGION:-$__aws_region} || return
     region=$REPLY
   fi
 
-  [ -n "${__aws_availability_zones[$region]}" ] && export AWS_DEFAULT_REGION=$region || log.error "invalid region ($region)"
+  [ -n "${__aws_availability_zones[$region]}" ] &&
+      export AWS_DEFAULT_REGION=$region || log.error "invalid region ($region)"
 }
 
 
@@ -133,47 +134,50 @@ function aws.profile {
   fi
 
   local profile region config
-  : ${profile:=$1}
-  : ${region:=$2}
+
   : ${config:=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}}
   is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
-  if [ -z "$profile" ]; then
+  if [ -z "${profile:=$1}" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config" | sort` )
 
     [ ${#list[@]} -ge 1 ] || { log.error "no profiles defined ($config)"; return; }
 
-    [ ${#list[@]} -gt 1 ] && {
-        echo; printf ' %s\n' "${list[@]}" | column; echo
-        read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
-      }
+    echo; printf ' %s\n' "${list[@]}" | column; echo
+    read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
     profile=$REPLY
   fi
 
-  # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
-  # nor fall-thru to 'default' unless profile is unspecified.
-  #
-  # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
-  # stacktrace on empty values of AWS_PROFILE.
-  #
-  # BUG! 'aws configure' emits to STDERR instead of STDOUT
-  local _region=`aws configure get region ${profile:+ --profile "$profile"} 2>&1 | tail -n 1`
-  if [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]]; then
-    RC=1 log.error "$_region ($config)"
-    return
+  if [ -z "${region:=$2}" ]; then
+    # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
+    # nor fall-thru to 'default' unless profile is unspecified.
+    #
+    # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
+    # stacktrace on empty values of AWS_PROFILE.
+    #
+    # BUG! 'aws configure' emits to STDERR instead of STDOUT
+    local _region=`aws configure get region --profile "${profile:?}" 2>&1 | tail -n 1`
+
+    if [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]]; then
+      RC=1 log.error "profile not found ($profile, $config)"
+      return
+    fi
+
+    region=$_region
   fi
-  : ${region:=$_region}
 
-  # possible short-circuit
-  [ "$profile" = "$AWS_PROFILE" -a "${region:-$AWS_DEFAULT_REGION}" = "${AWS_DEFAULT_REGION:-unset}" ] && return
+  # possible short-circuit if new values match current
+  [ "$profile" = "$AWS_PROFILE" -a "${region:-unset}" = "$AWS_DEFAULT_REGION" ] && return
 
-  ${DEBUG:+ runv} aws.rmPath    # cleanup previous environment
+  # cleanup previous environment
+  ${DEBUG:+ runv} aws.rmPath
 
   AWS_PROFILE=$profile
   aws.region "$region" || return
 
   unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
   ${DEBUG:+ runv} aws.addPath
+
   if [ -n "$AWS_CONFIG_FILE" ]; then
     local _creds=${AWS_CONFIG_FILE%/*}/credentials
     [ -f "$_creds" ] &&
@@ -441,6 +445,7 @@ function aws.sshkeys {
 # aws kms  decrypt --ciphertext-blob fileb://<(sed -e 's/^kmscrypt:://' post | base64 -d) --query Plaintext --output text
 # }
 
+#TODO break out into 'ec2.describe', 'iam.describe' 'ssm.get'?
 
 function aws.describe() {
   local type output arn
@@ -463,31 +468,33 @@ function aws.describe() {
 #    elastic-ip)
 #    internet-gateway
 #    nat-gateway
-    tag)    filter+=( "Name=key,Values=${2:?key}" )
-            ;&
-    tags)   filter+=(
+
+    ec2.tags|tags)
+            # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
+            filter+=(
                 "Name=resource-type,Values=${type:-instance}"
                 "Name=resource-id,Values=${1:?resource-id}"
               )
-            output=`$AWS ec2 describe-tags --filters "${filter[@]}"`
-            ;;&
+            shift
+            [ $# -eq 0 ] || filter+=( "Name=key,Values=`join_string ',' $@`" )
+            ${DEBUG:+ runv} $AWS ec2 describe-tags --filters "${filter[@]}" |
+                $JQ '.Tags[] | {(.Key): .Value}' | $JQ -s add
+            ;;
 
-            # NOTE! 'tag' emits text
-    tag)    ${DEBUG:+ runv} $JQR '.Tags[0].Value' <<< "$output" ;;
-    tags)   ${DEBUG:+ runv} $JQ '.Tags[] | {(.Key): .Value}' <<< "$output" | $JQ -s add ;;
 #    route)
 #    subnet)
-    target-group)
+    lb.target-group|target-group)
             ${DEBUG:+ runv} $AWS elbv2 describe-target-groups |
                 $JQ --arg tg ${1:?target_group_name} '.TargetGroups[] | select(.TargetGroupName == $tg)'
             ;;
 
 #   ebs|volume) describe-volume
-    volume-attachment)
+    ec2.volume-attachment|volume-attachment)
             ${DEBUG:+ runv} $AWS ec2 describe-volumes --volume-ids ${1:?volume_id} |
                 $JQ '.Volumes[].Attachments[0]'
             ;;
-    volume-status) # ok, creating, ?
+    ec2.volume-status|volume-status)
+            # ok, creating, ?
             ${DEBUG:+ runv} $AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} |
                 $JQR '.VolumeStatuses[].VolumeStatus.Status //empty'
             ;;
@@ -507,6 +514,28 @@ function aws.describe() {
 #    elb|lb|load-blancer)
 #    security-group)
 #   launch-config)
+    ssm.parameter)
+            ;;
+
+    *)      >&2 echo "unsupported keyword"; return 2
+  esac
+}
+
+
+# similar to aws.describe() but intended to return single-ton values, not long-winded JSON
+function aws.get() {
+  local type output arn
+  local -a filter
+
+  resource=${1:?resource}; shift
+
+  case $resource in
+    ec2.tag)
+            aws.describe ec2.tags "$@" | $JQR --arg key "${2:?}" 'to_entries[] | select(.key == $key) | .value'
+            ;;
+    ssm.parameter)
+            ${DEBUG:+ runv} $AWS ssm get-parameter --name "${1:?parameter}" --with-decryption | $JQR '.Parameter.Value'
+            ;;
 
     *)      >&2 echo "unsupported keyword"; return 2
   esac
