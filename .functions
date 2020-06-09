@@ -184,11 +184,9 @@ function rmPath() {
 function define() {
   # Assign a HEREDOC to a variable. To preserve space/tab use '<<-_EOF'.
   # Contents will be expanded unless marker ('_EOF') is quoted.
+  #
   # Usage: define VAR <<_EOF ...
 
-  local IFS
-  # alt: IFS='
-  #'
   IFS=$'\n' read -r -d '' $1 || true
 }
 
@@ -300,7 +298,7 @@ function copy_function() {
     [ -n "$target" ] || continue
     declare -F "$target" >/dev/null && { [ ${overwrite:-0} -eq 1 ] || continue; }
 
-    eval "${source/$1/$target}"     # alt: "function $target ${source#*\(\)}"
+    eval "${source/$1/$target}"     #alt: "function $target ${source#*\(\)}"
   done
 }
 
@@ -311,19 +309,26 @@ function rename_function() {
 
 
 function join_string() {
-  local quote escape delim
+  local quote escape= delim
 
   [ -n "${delim+X}" ] || { delim=$1; shift; }
 
-  if [ -z "$quote" -o "$quote" = "$delim" ]; then
-    # escape whitespace, or even delimiter (rare)
-    : ${escape=${delim:-${IFS:0:1}}}
-    [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
-  fi
+  # escape whitespace, or even delimiter (rare)
+  [ -n "$quote" ] || escape=${IFS:0:1}
+  [ "$quote" = "$delim" ] && escape=$delim
+  [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
 
-  printf "${quote}%s${quote}" "$1"
-  [ $# -gt 1 ] || return 0
-  printf "${delim}${quote}%s${quote}" "${@:2}"
+  local IFS=
+  # prepend each word during expansion
+  local _str="${*/#/${delim}${quote}}"
+
+  # strip leading 'delim' and tack on trailing 'quote'
+  echo "${_str#${delim}}${quote}"
+
+  #alt: slower
+#  printf "${quote}%s${quote}" "$1"
+#  [ $# -gt 1 ] || return 0
+#  printf "${delim}${quote}%s${quote}" "${@:2}"
 }
 
 
@@ -396,7 +401,7 @@ function userinfo() {
 function tree() {
   local OPTIND opt      # IMPORTANT !!
   local filter= type= reverse= flags=()
-  local _find="find"    # alt: 'ls -R'
+  local _find="find"    #alt: 'ls -R'
 
   while getopts ":hdlL:P:x" opt 2>/dev/null; do
     case "$opt" in
