@@ -3,7 +3,7 @@
 #LOG_TIMESTAMP=0
 #LOG_STACKTRACE=0
 #LOG_LEVEL=INFO
-#LOG_MASK=WARN
+LOG_MASK=WARN
 #LOG_FORMAT=
 
 
@@ -105,13 +105,13 @@ unset -f __log_exit
 
 declare -F __log_level >/dev/null ||
 function __log_level {
-  [ -n "$1" ] || return 1
+  [ -n "$1" ] || { echo -1; return 1; }
 
-  local -u key=$1
-  key=${key#LOG_}; key=${key#LOG.}
+  local -u key=${1^^}
+  key=${key#LOG[._]}
 
   local result=${__log_levels[$key]}
-  [ -n "$result" ] || return 1
+  [ -n "$result" ] || { echo -1; return 1; }
 
   # returns numeric value only
   [[ $result == [0-8] ]] && echo $result || echo $key
@@ -150,8 +150,8 @@ function log() {
   fi
 
   # sanity check
-  [[ ${level:--1} == [0-8] ]] || level=`__log_level 'INFO'`
-  [[ ${mask:--1}  == [0-8] ]] || mask=`__log_level 'WARN'`
+  [[ ${level:-x} == [0-8] ]] || level=`__log_level 'INFO'`
+  [[ ${mask:-x}  == [0-8] ]] || mask=`__log_level 'WARN'`
 
   # squelch messages below mask
   [ $level -le $mask ] || return 0
