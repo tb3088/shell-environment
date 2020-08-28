@@ -55,6 +55,7 @@ logs/
 OpenVPN/
 .WINHOME
 .CYGHOME
+.WPHOME
 
 
 # Windows-specific

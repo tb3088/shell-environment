@@ -1,7 +1,7 @@
 [[ ${OSTYPE:-`uname -o`} == [cC]ygwin ]] || return 0
 
 #Ref: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
-delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks'
+delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks:lnk'
 # 'nativestrict' would be best but doesn't work in Explorer.
 # ':lnk' doesn't play nice with Dropbox
 # nothing works in WSL!!
