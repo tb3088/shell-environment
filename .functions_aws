@@ -138,8 +138,11 @@ function aws.profile {
   local region=$2
   local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
 
-  [ -n "$AWS_CONFIG_FILE" ] &&
-      : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
+  if [ -n "$AWS_CONFIG_FILE" ]; then
+    # assume ERROR if respective dirname() doesn't match
+    [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] || unset AWS_SHARED_CREDENTIALS_FILE
+    : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
+  fi
 
   is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
