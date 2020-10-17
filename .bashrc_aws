@@ -19,8 +19,8 @@ link=`type -p aws_bash_completer 2>/dev/null` &&
 # assume-role session credentials expire in 1h (default)
 export AWS_SESSION_DURATION=$((3600 * 8))
 
-alias aws.clearenv='unset ${!AWS_*}'
-
 source ${BASH_SOURCE/bashrc/functions} || return
 
-# vim: expandtab:ts=4:sw=2
+alias aws.clearenv='aws.profile RESET'
+
+# vim: expandtab:ts=8:sw=4

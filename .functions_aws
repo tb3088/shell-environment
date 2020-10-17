@@ -1,15 +1,13 @@
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 #TODO rename functions as 'aws::<foo>' instead of dot?
 
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR! file must be sourced"; return 2; }
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tthis file must be sourced"; return 2; }
 
-for exe in curl aws jq log runv; do
-  type -p $exe &>/dev/null || { >&2 echo "ERROR! unknown command ($exe)"; return 2; }
-done
+is_exec curl aws jq >/dev/null || return 2
 
 # all output is in JSON with rare exception
 # NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
-AWS="eval aws --region \${AWS_DEFAULT_REGION:-\$__aws_region} --output json"
+AWS="eval aws \${AWS_DEFAULT_REGION:- --region \$__aws_default_region} --output json"
 JQ='jq --exit-status'; JQR="$JQ --raw-output"
 
 declare -p __aws_session &>/dev/null ||
@@ -46,8 +44,8 @@ declare -ar __aws_regions=(
 
 is_hash __aws_availability_zones &>/dev/null && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
 declare -Ar __aws_availability_zones=(
-    [ap-northeast-2]=`printf "%s " ap-northeast-2{a,c}`
     [ap-northeast-1]=`printf "%s " ap-northeast-1{a,c,d}`
+    [ap-northeast-2]=`printf "%s " ap-northeast-2{a,c}`
     [ap-south-1]=`printf "%s " ap-south-1{a..b}`
     [ap-southeast-1]=`printf "%s " ap-southeast-1{a..c}`
     [ap-southeast-2]=`printf "%s " ap-southeast-2{a..c}`
@@ -101,27 +99,38 @@ function ec2.metadata() {
 #public-ipv4
 
 # safety fall-back in case AWS_DEFAULT_REGION not set
-declare -p __aws_region &>/dev/null || {
-    __aws_region=`aws configure get region`
-    : ${__aws_region:=`aws configure get region --profile default 2>/dev/null`}
-    : ${__aws_region:=`ec2.metadata region`}
-    : ${__aws_region:=us-east-1}
+declare -p __aws_default_region &>/dev/null || {
+    # don't use AWS_PROFILE since dynamic
+    # try 'default'
+    : ${__aws_default_region:=`aws configure get region`}
 
-    declare -r __aws_region
+    : ${__aws_default_region:=`ec2.metadata region`}
+
+    # NOTE last-ditch assumption - edit to suit
+    : ${__aws_default_region:=us-east-1}
+
+    readonly __aws_default_region
   }
 
 function is_aws() { ec2.metadata self &>/dev/null; }
 
 
 function aws.region {
-  local region
+  local default
 
-  if [ -z "${region:=$1}" ]; then
+  # '' (empty string) or '-' does not prompt
+  # but assumes AWS_DEFAULT_REGION, otherwise rely on API default
+  local region=${1-prompt}; shift; : ${region#-}
+  : ${region:=$AWS_DEFAULT_REGION}
+  [ -z "$region" -a -n "$default" ] && return
+
+  if [ -z "$region" -o "$region" = "prompt" ]; then
     echo; printf ' %s\n' ${__aws_regions[@]} | sort | column; echo
-    read -t 8 -ep "Choose REGION:  " -i ${AWS_DEFAULT_REGION:-$__aws_region} || return
-    region=$REPLY
+    read -t 8 -ep "Choose REGION:  " -i "${__aws_default_region:-$__aws_regions}" || return
+    region=${REPLY,,}
   fi
 
+  # validity check
   [ -n "${__aws_availability_zones[$region]}" ] &&
       export AWS_DEFAULT_REGION=$region || log.error "invalid region ($region)"
 }
@@ -129,63 +138,60 @@ function aws.region {
 
 function aws.profile {
   if [ "${1^^}" = 'RESET' ]; then
-    aws.rmPath
-	unset ${!AWS_*}
+    aws.rmPath; unset ${!AWS_*}
     return
   fi
 
-  local profile=$1
-  local region=$2
-  local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
+  # '' (empty string) or '-' does not prompt, assumes 'default'
+  local profile=${1-prompt}; shift; : ${profile#-}
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    # assume ERROR if respective dirname() doesn't match
-    [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] || unset AWS_SHARED_CREDENTIALS_FILE
-    : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
+    # WARN blindly overwrite if respective dirname() doesn't match
+    [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] ||
+        AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
+  else
+    # NOTE uncommon but technically valid, so leave alone
+#    unset AWS_SHARED_CREDENTIALS_FILE
+    :
   fi
 
+
+  local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
   is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
-  if [ -z "$profile" ]; then
+  if [ "$profile" = "prompt" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config" | sort` )
 
-    [ ${#list[@]} -ge 1 ] || { log.error "no profiles defined ($config)"; return; }
+    [ ${#list[@]} -ge 1 ] || { log.error "no profiles found ($config)"; return; }
 
     echo; printf ' %s\n' "${list[@]}" | column; echo
     read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
     profile=$REPLY
   fi
 
-  if [ -z "$region" ]; then
     # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
-    # nor fall-thru to 'default' unless profile is unspecified.
+    # nor fall-thru to 'default' if profile is specified.
     #
     # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
     # stacktrace on empty values of AWS_PROFILE.
-    #
-    # BUG! 'aws configure' emits to STDERR instead of STDOUT
-    local _region=`aws configure get region --profile "${profile:?}" 2>&1 | tail -n 1`
+    local _region=`aws configure get region ${profile:+ --profile "$profile"} 2>/dev/null | tail -n 1`
 
+    # $? -eq 1 simply means keyword not defined
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
-        RC=1 log.error "profile not found ($profile, $config)"
-        return
+        RC=255 log.error "invalid profile ($profile, $config)"; return
       }
 
-    region=$_region
-  fi
-
   # possible short-circuit if new values match current
-  [ "$profile" = "$AWS_PROFILE" -a "$region" = "$AWS_DEFAULT_REGION" ] && return
+  [ "${profile:-A}" = "${AWS_PROFILE:-B}" -a "${region:-C}" = "${AWS_DEFAULT_REGION:-D}" ] && return
 
   # cleanup previous environment
   ${DEBUG:+ runv} aws.rmPath
-
-  AWS_PROFILE="${profile:?}"
-  aws.region "$region" || return
-
   unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
-  ${DEBUG:+ runv} aws.addPath
 
+  [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
+  default=$_region aws.region "$@" || return
+
+  ${DEBUG:+ runv} aws.addPath
   export ${!AWS_*}
 }
 
@@ -471,7 +477,7 @@ function aws.describe() {
 #    internet-gateway
 #    nat-gateway
 
-    ec2.tags|tags)
+    ec2.tagss)
             # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
             filter+=(
                 "Name=resource-type,Values=${type:-instance}"
@@ -504,7 +510,7 @@ function aws.describe() {
 #    vpc-endpoint
     vpc-endpoint-service)
             ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoint-services \
-                --service-name com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_region}.${1:?service} |
+                --service-name com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_default_region}.${1:?service} |
                 $JQ '.ServiceDetails[]'
             ;;
     vpc-endpoint)
@@ -519,7 +525,7 @@ function aws.describe() {
     ssm.parameter)
             ;;
 
-    *)      >&2 echo "unsupported keyword"; return 2
+    *)      >&2 echo "unsupported keyword ($resource)"; return 2
   esac
 }
 
@@ -538,35 +544,66 @@ function aws.get() {
     ssm.parameter)
             ${DEBUG:+ runv} $AWS ssm get-parameter --name "${1:?parameter}" --with-decryption | $JQR '.Parameter.Value'
             ;;
+    ssm.parameters)
+            # key and value emitted on successive lines to simplify whitespace handling.
+            # consume via loop since direct eval() of ^/.+ which is not legal in SHELL:
+            #   while read -r key; do read -r value; ... done
+            ${DEBUG:+ runv} $AWS ssm get-parameters --names "${@:?parameter}" --with-decryption | $JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
+            ;;
 
-    *)      >&2 echo "unsupported keyword"; return 2
+    #target-group.instances - all EC2 instances assigned to a TG
+    #lb.instances - ditto for old LB style, detect if new (has TG) and iterate
+    #lb.membership - return all LB of which instance is a target. if LB is new (ie. has member TG) iterate thru them
+    #tg.membership - for new style
+
+#aws elb describe-load-balancers | jq -r '.LoadBalancerDescriptions[] | select(.Instances[].InstanceId == "<YOUR-INSTANCE-ID>") | . LoadBalancerName '
+# or
+#aws elb describe-load-balancers --query "LoadBalancerDescriptions[?Instances[?InstanceId=='${instanceId}']].LoadBalancerName"
+# but does NOT work with elbv2!!! have to loop thru all known target-groups
+#
+#    for tg in `aws elbv2 describe-target-groups --query "TargetGroups[?VpcId=='${vpc_id}'].TargetGroupArn" | $JQR '.[]'`; do
+#              $AWS elbv2 describe-target-health --target-group-arn "$tg" --query "TargetHealthDescriptions[?Target.Id=='${instance_id}']" | $JQ
+#    '.[]' >/dev/null && echo $tg
+#
+#      #alt: $JQR --arg instance "${instance_id:?}" 'select(.TargetHealthDescriptions[].Target.Id == $instance)'
+#      done
+
+    *)      >&2 echo "unsupported keyword ($resource)"; return 2
   esac
 }
 
 
 function asg.suspend() {
   asg=${1:?ASG name}; shift
-  aws autoscaling enter-standby --should-decrement-desired-capacity --auto-scaling-group-name "$asg" ${1:+ --instance-ids "$@"}
+
+  $AWS autoscaling enter-standby --auto-scaling-group-name "$asg" \
+      --should-decrement-desired-capacity \
+	  ${1:+ --instance-ids "$@"}
 }
 
 
 function asg.resume() {
   asg=${1:?ASG name}; shift
-  aws autoscaling exit-standby --auto-scaling-group-name "$asg" ${1:+ --instance-ids "$@"}
+  $AWS autoscaling exit-standby --auto-scaling-group-name "$asg" \
+      ${1:+ --instance-ids "$@"}
 }
 
 
 function asg.scale-zero() {
-  min=0 desired=0 asg.capacity "$@"
+  min=0 desired=0 asg.set-capacity "$@"
 }
 
 
 function asg.set-capacity() {
+  local -i min desired max
   [ "${min}${desired}${max}" ] || return 2
+  asg=${1:?ASG name}; shift
 
-  aws autoscaling update-auto-scaling-group \
-      ${min:+ --min-size $min} ${desired:+ --desired-capacity $desired} ${max:+ --max-size $max} \
-	  --auto-scaling-group-name "${1:?ASG name}"
+  $AWS autoscaling update-auto-scaling-group \
+	  --auto-scaling-group-name "$asg" \
+      ${min:+ --min-size $min} \
+	  ${desired:+ --desired-capacity $desired} \
+	  ${max:+ --max-size $max}
 }
 
 
@@ -578,4 +615,4 @@ function asg.set-capacity() {
 # s3cmd restore --recursive s3://mybucketname/ 
 
 
-# vim: expandtab:ts=4:sw=2
+# vim: expandtab:ts=8:sw=4
