@@ -116,5 +116,4 @@ function is_windows() {
 
 # TODO use procps
 # function pidof() {
-#    ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 # }

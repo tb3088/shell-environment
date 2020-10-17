@@ -1,15 +1,5 @@
 # $Id$
 
-for f in "${BASH_SOURCE}.${OSTYPE:-`uname`}"; do
-  [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
-done
-unset f
-
-#WIP - copy over latest from ami-factory/scripts/
-return 0
-
-
 function detect_os() {
   #TODO leverage facter2, chef equiv, and distro if available
   #ref: https://github.com/nir0s/distro/blob/master/distro.py#L154
@@ -124,12 +114,27 @@ function package_name() {
 }
 
 
+is_exec pidof &>/dev/null ||
+function pidof() {
+    ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+}
+
+
+for f in "${BASH_SOURCE}.${OSTYPE:-`uname`}"; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? during $f"
+done
+unset f
+
+#WIP - copy over latest from ami-factory/scripts/
+return 0
+
+
+#---------------
+
 os.detect
 [ -f "${BASH_SOURCE}.${OS_NAME}" ] && source "${BASH_SOURCE}.${OS_NAME}"
 
-[ `id -u` -eq 0 ] || : ${SUDO:=sudo}
-[ `ps -p 1 -o comm= 2>/dev/null` != 'systemd' ]
-SYSTEMD=$?
 
 
 # misc notes

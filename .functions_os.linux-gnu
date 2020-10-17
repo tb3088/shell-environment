@@ -1,0 +1,5 @@
+# $Id$
+
+[ `id -u` -eq 0 ] || : ${SUDO:=sudo}
+[ `ps -p 1 -o comm= 2>/dev/null` != 'systemd' ]
+SYSTEMD=$?
