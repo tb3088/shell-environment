@@ -3,7 +3,7 @@
 #LOG_TIMESTAMP=0
 #LOG_STACKTRACE=0
 #LOG_LEVEL=INFO
-LOG_MASK=WARN
+: ${LOG_MASK:=WARN}
 #LOG_FORMAT=
 
 
@@ -40,16 +40,16 @@ declare -arx LOG_FACILITIES=(
     auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
   )
 
-#FIXME rename to log.mask, if $1 set, then set, otherwise emit current setting
+#declare -F log.mask >/dev/null ||
 function log.mask {
-  [ -n "$1" ] || { echo "${LOG_MASK:-WARN}"; return; }
+  [ -n "$1" ] || { echo "${LOG_MASK:-unset}"; return; }
 
   [ -n "${__log_levels[${1:-x}]}" ] && LOG_MASK="$1" || log_ERROR "invalid level ($1)"
 }
 readonly -f log.mask
 
 
-#TODO function __log_verbose __log_debug() {
+#TODO function __log_verbose __log_debug {
 #  local _level=${VERBOSE:=$DEBUG}
 # DEBUG>1 will lower LOG_MASK into TRACE
 # call this individually for DEBUG and VERBOSE
@@ -74,84 +74,89 @@ readonly -f log.mask
 #}
 
 
-function __log_exit() {
-  : ${RC:=$?}
+# recycleable function template
+read -rd '' __log_template <<'EOF'
+{
+  local -i rc=$? _exit
 
-  >&2 log "$@"
+  log "$@"
+  [ ${_exit:-0} -eq 1 ] || return ${RC:-$rc}
+
+  # check nesting level, inside script, or screen
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
-        [[ `/bin/ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
-    return $RC
+        [[ `ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
+    return ${RC:-$rc}
   fi
-  exit $RC
+
+  _continue || exit ${RC:-$rc}
 }
+EOF
 
 for k in "${!__log_levels[@]}"; do
-  [[ $k == [0-9] ]] && continue
-  declare -F "log_$k" >/dev/null && continue
-
   case "${__log_levels[$k]}" in
-    [0-3])  copy_function __log_exit "log_$k" ;;
-    [4-8])  eval function log_$k '{ >&2 log "$@"; }' ;;
+    # silence output
+    [0-3])  eval function log_$k "${__log_template/_exit/_exit=1}" 2>/dev/null
+            ;;
+    [4-8])  eval function log_$k "${__log_template}" 2>/dev/null
+            ;;
+    *)      continue
   esac
-  readonly -f "log_$k"
-
-  # legacy and future naming style
-  copy_function "log_$k" "log.${k,,}"
-  readonly -f "log.${k,,}"
+  readonly -f log_$k
+ 
+  # define new naming style
+  overwrite=1 copy_function log_$k log.${k,,} 2>/dev/null
+  readonly -f log.${k,,}
 done
-unset k
+unset k  __log_template
 unset -f __log_exit
 
 
-declare -F __log_level >/dev/null ||
-function __log_level {
-  [ -n "$1" ] || { echo -1; return 1; }
+function __log_lookup {
+  # lookup level by either type of key
+  # returns numeric value only !!
 
-  local -u key=${1^^}
-  key=${key#LOG[._]}
+  local -u key=$1; key=${key#LOG[._]}
+  local result=${__log_levels[${key:-X}]}
 
-  local result=${__log_levels[$key]}
   [ -n "$result" ] || { echo -1; return 1; }
 
-  # returns numeric value only
-  [[ $result == [0-8] ]] && echo $result || echo $key
+  [[ $result == [0-8] ]] && echo "$result" || echo "$key"
 }
-readonly -f __log_level
+readonly -f __log_lookup
 
 
-declare -F log >/dev/null ||
-function log() {
+function log {
   local -i level mask offset=1
   local format=${LOG_FORMAT:-'%-5s\t%s'}
 
-  if level=`__log_level ${level:-$LOG_LEVEL}`; then
+  if level=`__log_lookup ${level:-$LOG_LEVEL}`; then
     # LOG_LEVEL=<level> log "msg"
     :
-  elif level=`__log_level "$1"`; then
+  elif level=`__log_lookup "$1"`; then
     # log <level> "msg"
     shift
   else
     # inside recursion from <level>() or log_<LEVEL>()
-    level=`__log_level "${FUNCNAME[1]}"` && : $((offset++))
+    level=`__log_lookup "${FUNCNAME[1]}"` && : $((offset++))
   fi
 
-  if mask=`__log_level ${mask:-$LOG_MASK}`; then
+  if mask=`__log_lookup ${mask:-$LOG_MASK}`; then
     :
   else
     # set mask on externalities
-    [ -n "$VERBOSE" ] && mask=`__log_level 'INFO'`
+    [ -n "$VERBOSE" ] && mask=`__log_lookup 'INFO'`
     if [ -n "$DEBUG" ]; then
-      mask=`__log_level 'DEBUG'`
+      mask=`__log_lookup 'DEBUG'`
 
       # increase level if (DEBUG > 1)
       local -i _mask=$((mask + DEBUG - 1))
-      [ $_mask -gt $mask ] && _mask=`__log_level $_mask` && mask=$_mask
+      [ $_mask -gt $mask ] && _mask=`__log_lookup $_mask` && mask=$_mask
     fi
   fi
 
   # sanity check
-  [[ ${level:-x} == [0-8] ]] || level=`__log_level 'INFO'`
-  [[ ${mask:-x}  == [0-8] ]] || mask=`__log_level 'WARN'`
+  [[ ${level:-X} == [0-8] ]] || level=`__log_lookup 'INFO'`
+  [[ ${mask:-X}  == [0-8] ]] || mask=`__log_lookup 'WARN'`
 
   # squelch messages below mask
   [ $level -le $mask ] || return 0
@@ -170,24 +175,28 @@ function log() {
   local level_name=${__log_levels[$level]}
 
   # embed FUNCNAME if DEBUG or higher
-  if [ $level -ge `__log_level 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ]; then
+  if [ $level -ge `__log_lookup 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ]; then
     fname="(${FUNCNAME[offset]}) "
   fi
 
-  [ $# -gt 0 ] && __log_print "$@" || while IFS= read -r; do __log_print "$REPLY"; done
+  if [ $# -ge 1 ]; then
+    __log_print "$@"
+  else
+    # slurp STDIN. 'IFS=' not needed when read() arg is 1
+    while read -r; do __log_print "$REPLY"; done
+  fi
 }
 readonly -f log
 
 
-declare -F __log_print >/dev/null ||
-function __log_print() {
+function __log_print {
   local line
 
-  while [ "${1:x}" ]; do
+  while [ -n "${1:x}" ]; do
     printf -v line "${LOG_TIMESTAMP:+`date '+%FT%T.%3N'` }${format}" "$level_name" "${fname}$1"
-    # allow primitive escape sequences
-    echo -e "$line" | tee ${LOGFILE:+ -a "$LOGFILE"}
-    if [ -n "$SYSLOG" ] && type -p "${LOGGER:=logger}" >/dev/null; then
+    # allow primitive escape sequences and send to STDERR
+    echo -e "$line" | tee ${LOGFILE:+ -a "$LOGFILE"} >&2
+    if [ -n "$SYSLOG" ] && is_exec "${LOGGER:=logger}"; then
       "$LOGGER" --priority user.${level_name,,} -- "$line"
     fi
     shift
@@ -195,4 +204,4 @@ function __log_print() {
 }
 readonly -f __log_print
 
-# vim: expandtab:ts=4:sw=4
+# vim: expandtab:ts=8:sw=4

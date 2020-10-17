@@ -1,7 +1,7 @@
 # $Id$
 
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR file must be sourced"; exit 2; }
-[[ $BASH_VERSION =~ 4.[34] ]] || { >&2 echo 'ERROR! bash ~> 4.3 required'; exit 126; }
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
+[[ $BASH_VERSION =~ 4.[234] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 
 [[ "$-" =~ i ]] || shopt -s nullglob
 set -o pipefail
@@ -15,54 +15,98 @@ function runv() {
 }
 
 
-function is_interactive() {
+function is_interactive {
   [[ $- =~ i ]] || tty -s || [ -n `tset -q` ]
 }
 
+#TODO is_what() returns 'type -t' or 'declare -p' mapped back to English
+#function is_what
 
-function is_type() {
-  # ignore blank arguments. return on first error
+function __is_type {
+  local compare
+  local -Ar types=(
+      [a]='array'       [array]='a'
+      [A]='hash'        [hash]='A'
+      [f]='function'    [function]='f'
+      [i]='integer'     [integer]='i'
+      [l]='lower'       [lower]='l'
+      [n]='nref'        [nref]='n'
+      [-]='string'      [string]='-'
+      [r]='readonly'    [readonly]='r'
+      [u]='upper'       [upper]='u'
+    )
 
-  local type
-  while [ $# -ne 0 ]; do
-    if [ -n "$1" ]; then
-	  [[ `declare -p "$1" | awk '{ print $2; }'` =~ ${type:?} ]] || return
-	fi
-	shift
-  done
-}
+  case ${compare:=${FUNCNAME[1]:3}} in
+    file)
+        while [ -n "$1" ]; do
+          #alt: readlink -qe "$1"
+          [ -f "$1" ] || { log.debug "file not found ($1)"; return 1; }
+          shift
+        done
+        return
+        ;;
 
-function is_array()   { type=a is_type "$@"; }
-function is_hash()    { type=A is_type "$@"; }
-function is_int()     { type=i is_type "$@"; }
-function is_integer() { type=i is_type "$@"; }
-function is_string()  { type='-' is_type "$@"; }
+    exec*)
+        while [ -n "$1" ]; do
+          type -p "$1" || { log.debug "unknown command ($1)"; return 1; }
+          shift
+        done
+        return
+        ;;
 
+    func*)
+        while [ -n "$1" ]; do
+          declare -F "$1" >/dev/null || { log.debug "undefined function ($1)"; return 1; }
+          shift
+        done
+        return
+        ;;
 
-function is_file() {
-  # ignore blank arguments. return on first error
-  #TODO? hard-fail mode
+    read*)
+        local _readonly=1
+        ;;
 
-  while [ $# -ne 0 ]; do
-    if [ -n "$1" ]; then
-	  [ -f "$1" ] || { log.error "file not found ($1)"; return; }
-	fi
+    *)  [ -n "${types[$compare]}" ] || {
+            log.debug "unsupported type ($compare)"
+            return 2
+          }
+  esac
+
+  local whatami flag
+  while [ -n "$1" ]; do
+    # suss out functions during 'readonly'
+    [ $_readonly -eq 1 -a `type -t "$1"` = 'function' ] && flag=F || flag=
+
+    whatami=`declare -p${flag} "$1" 2>/dev/null | awk '{ print $2; }'` || {
+        log.debug "not found ($1)"; return
+      }
+
+    whatami=${whatami#-}
+    [[ $whatami =~ ${types[$compare]} ]] || {
+        log.debug "type mismatch ($1: ${types[$whatami]} != $compare)"; return
+      }
     shift
   done
 }
 
+for f in array exec hash integer string file function readonly; do
+  declare -F is_$f >/dev/null || {
+      eval function is_$f '{ __is_type "$@"; }'
+      readonly -f is_$f
+    }
+done
 
-declare -F is_windows >/dev/null ||
+
 function is_windows() {
   # deliberate NOOP
   false
 }
 
 
-function _continue() { RC=$?; [ -n "$CONTINUE" ] || return $RC; }
+# used for override 'exit' program flow
+function _continue() { [ -n "$CONTINUE" ]; }
 
 
-declare -F convert_path >/dev/null ||
 function convert_path() {
   [ $# -ne 0 ] || return
   # deliberate NOOP
@@ -191,12 +235,6 @@ function define() {
 }
 
 
-type -p pidof &>/dev/null ||
-function pidof() {
-    ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
-}
-
-
 function replace_file() {
   # replace file and optionally take backup
   local orig="${1:?}"
@@ -236,7 +274,8 @@ function list_functions() {
   local file
 
   while [ -n "$1" ]; do
-    file=`readlink -qe "$1"` || { error "file not found ($1)"; continue; }
+#    file=`readlink -qe "$1"` || { error "file not found ($1)"; continue; }
+	is_file "$1" || continue
 	# use sub-shell to not contaminate current
 	( source "$file" &>/dev/null; file="$file" $FUNCNAME )
 	shift
@@ -256,19 +295,21 @@ function list_functions() {
 }
 
 
+#TODO? rename web.getcert
 function getcert() {
-  : ${1:?}
-  host=${1%:*}
-  port=${1#*:}
-  [ "$host" = "$port" ] && port=${2:-443}
+  is_exec openssl || return
 
-  output=`openssl s_client -connect ${host}:${port} </dev/null 2>/dev/null`
-  if [ -n "$output" ]; then
-    gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
-    gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" | openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
-  else
-    return 1
-  fi
+  local uri=${1:?}; uri=${uri#*://}
+  local host=${uri%:*}
+  local port=${uri#*:}
+
+  [ "$host" != "$port" ] || port=${2:-443}
+
+  output=`openssl s_client -connect ${host}:${port} < /dev/null`
+  [ -n "$output" ] || return
+
+  gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
+  gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" | openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
 }
 
 
@@ -280,31 +321,54 @@ function pause() {
 function confirm() {
   read -n 1 -t 15 -p 'Are you sure (y/N)? '
   echo
-  [[ "$REPLY" =~ [yY] ]]
+  [ "${REPLY^^}" = "Y" ]
 }
 
 
 function copy_function() {
+  # arg1: source name or fully declared format
+  # argN: destination
+  #
   # Does NOT support recursion since fails easily or in unintended ways.
   # Using SED with BOL, EOL or whitespace detection isn't reliable either.
 
-  local readonly source=`declare -f "${1:?}"`
+  local fname=${1:?source} body
   local -i overwrite
 
-  [ -n "$source" ] || return
+  shift
 
-  local target
-  for target in "${@:1}"; do
+  if echo $fname | grep -q '() {'; then
+    body=$fname
+    fname=`awk '{print $1; exit}' <<< "$body"`
+  else
+    # allow side-channel injection
+    : ${body:=`declare -f "$fname"`}
+  fi
+
+  [ -n "$fname" -a -n "$body" ] || return
+
+  for target in "$@"; do
+    # ignore badly-formed arguments
     [ -n "$target" ] || continue
-    declare -F "$target" >/dev/null && { [ ${overwrite:-0} -eq 1 ] || continue; }
 
-    eval "${source/$1/$target}"     #alt: "function $target ${source#*\(\)}"
+    is_function "$target" && {
+        if [ ${overwrite:-0} -eq 1 ]; then
+          is_readonly "$target" && { log.debug "ERROR\tread-only function ($target)"; return 1; }
+          log.debug "NOTICE\toverwriting function ($target)"
+        else
+          log.debug "WARN\tfunction exits ($target)"
+          continue
+        fi
+      }
+
+    #alt: "function $target ${body#*\(\)}"
+    eval "${body/$fname/$target}"
   done
 }
 
 
 function rename_function() {
-  copy_function "${1:?}" "${2:?}" && unset -f "$1"
+  copy_function "${1:?source}" "${2:?dest}" && unset -f "$1"
 }
 
 
@@ -363,6 +427,7 @@ function join_quote() { quote=\' join_string "$@"; }
 # }
 
 
+#TODO move to .functions_os
 function userinfo() {
   # analogous to /bin/usermod
   #while [ "${1+xxx}" ] && [[ "$1" =~ -* ]]; do
@@ -483,32 +548,58 @@ function expand_dvq() {
 }
 
 
-if [ -f "${BASH_SOURCE}_logging" ]; then
-  source "${BASH_SOURCE}_logging" || >&2 echo "RC=$? during ${BASH_SOURCE}_logging"
-else
-  function log        { while [ "$1" ]; do >&2 echo -e "${level:+${level^^}\t}$1"; shift; done; }
+# rudimentary logging implementation
+function log {
+  local level
 
-  function log.trace  { [ -n "$DEBUG" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
+  [ "${FUNCNAME[1]:0:4}" = 'log.' ] && : ${level:=${FUNCNAME[1]:4}}
+  
+  while [ "${1+X}" ]; do 
+    >&2 echo -e "${level:+${level^^}\t}$1"; shift
+  done
+}
 
-  function log.debug  { [ -n "$DEBUG" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
+function log.debug {
+  local rc=$?
 
-  function log.info   { [ -n "${VERBOSE}${DEBUG}" ] && level=${FUNCNAME#log.} log "$@" || return 0; }
+  [ -n "$DEBUG" ] && log "$@"
+  return ${RC:-$rc}
+}
 
-  function log.notice { level=${FUNCNAME#log.} log "$@"; }
+function log.info {
+  local rc=$?
 
-  function log.warn   { level=${FUNCNAME#log.} log "$@"; }
+  [ -n "${VERBOSE}${DEBUG}" ] && log "$@"
+  return ${RC:-$rc}
+}
 
-  function log.error  { RC=$?; level=${FUNCNAME#log.} log "$@";
-    [ ${SHLVL:-1} -eq 1 ] && return $RC
-    exit $RC
-  }
-fi
+function log.notice { 
+  local rc=$?
+
+  log "$@"
+  return ${RC:-$rc}
+}
+
+function log.error {
+  local rc=$?
+
+  log "$@"
+  if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
+        [[ `ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
+    return ${RC:-$rc}
+  fi
+
+  exit ${RC:-$rc}
+}
+
+copy_function log.debug log.trace
+copy_function log.notice log.warn
 
 
-for f in "${BASH_SOURCE}"_os; do
+for f in "${BASH_SOURCE}"_{logging,os}; do
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? during $f"
 done
 unset f
 
-# vim: expandtab:ts=4:sw=4
+# vim: expandtab:ts=8:sw=4
