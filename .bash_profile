@@ -124,14 +124,14 @@ PS1="\n${PS_PREFIX}\n\! "${PS_SCREEN}'\$ '
 #
 # Whenever displaying the prompt, write the previous line to disk
 #PROMPT_COMMAND="history -a"
-declare -F __prompt &>/dev/null && PROMPT_COMMAND=__prompt
-
+declare -F __prompt >/dev/null && PROMPT_COMMAND=__prompt
 
 for f in "$HOME"/.bash{_profile.local,rc}; do
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? during $f"
 done
 unset f
+
 
 # CAC/PIF card support
 #FIXME paths should come from bashrc_`uname`, not hard-coded here
