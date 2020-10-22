@@ -84,7 +84,7 @@ read -rd '' __log_template <<'EOF'
 
   # check nesting level, inside script, or screen
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
-        [[ `ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
+      [[ `ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
     return ${RC:-$rc}
   fi
 
@@ -129,6 +129,7 @@ function log {
   local -i level mask offset=1
   local format=${LOG_FORMAT:-'%-5s\t%s'}
 
+  # auto-detect level from invocation style
   if level=`__log_lookup ${level:-$LOG_LEVEL}`; then
     # LOG_LEVEL=<level> log "msg"
     :
@@ -140,18 +141,17 @@ function log {
     level=`__log_lookup "${FUNCNAME[1]}"` && : $((offset++))
   fi
 
-  if mask=`__log_lookup ${mask:-$LOG_MASK}`; then
-    :
-  else
-    # set mask on externalities
-    [ -n "$VERBOSE" ] && mask=`__log_lookup 'INFO'`
-    if [ -n "$DEBUG" ]; then
-      mask=`__log_lookup 'DEBUG'`
+  mask=`__log_lookup ${mask:-$LOG_MASK}`
 
-      # increase level if (DEBUG > 1)
-      local -i _mask=$((mask + DEBUG - 1))
-      [ $_mask -gt $mask ] && _mask=`__log_lookup $_mask` && mask=$_mask
-    fi
+  # set 'mask' on externalities
+  [ -n "$VERBOSE" ] && mask=`__log_lookup 'INFO'`
+
+  if [ -n "$DEBUG" ]; then
+    mask=`__log_lookup 'DEBUG'`
+
+    # increase level if (DEBUG > 1)
+    local -i _mask=$((mask + DEBUG - 1))
+    [ $_mask -gt $mask ] && _mask=`__log_lookup $_mask` && mask=$_mask
   fi
 
   # sanity check
