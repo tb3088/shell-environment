@@ -5,10 +5,12 @@
 
 is_exec curl aws jq >/dev/null || return 2
 
+CURL='eval curl --connect-timeout 2 --silent ${VERBOSE:+ --verbose --progress-bar}'
 # all output is in JSON with rare exception
 # NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
-AWS="eval aws \${AWS_DEFAULT_REGION:- --region \$__aws_default_region} --output json"
-JQ='jq --exit-status'; JQR="$JQ --raw-output"
+AWS='eval aws $( [ -n "$AWS_DEFAULT_REGION" -o -n "`aws configure get region ${AWS_PROFILE:+ --profile $AWS_PROFILE} 2>/dev/null`" ] || echo "--region $__aws_default_region" ) --output json ${DEBUG:+ --debug}'
+JQ='jq --exit-status'
+JQR="$JQ --raw-output"
 
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
@@ -19,7 +21,7 @@ declare -Ar __aws_session=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' | jq -r '.[].Name'
+# aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' | $JQR '.[].Name'
 
 is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
@@ -39,7 +41,7 @@ declare -ar __aws_regions=(
 #  __aws_availability_zones[$region]=`aws ec2 describe-availability-zones \
 #      --region $region \
 #      --query 'AvailabilityZones[].{ Name:ZoneName }' --output text`
-#  #alt: ... | jq --raw-output '.AvailabilityZones[].ZoneName | @sh'`
+#  #alt: ... | $JQR '.AvailabilityZones[].ZoneName | @sh'`
 #done
 
 is_hash __aws_availability_zones &>/dev/null && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
@@ -65,7 +67,6 @@ declare -Ar __aws_availability_zones=(
 
 function ec2.metadata() {
   local url='http://169.254.169.254/latest/meta-data'
-  local CURL="curl --connect-timeout 2 ${VERBOSE:+ --verbose --progress-bar} --silent"
   local item mac
 
   # special cases that require recursion etc.
@@ -220,19 +221,20 @@ function aws.session-load {
   fi
 
   [ -f "$input" ] && { input=$( <"$input" ) || return; }
-  jq . <<< "$input" &>/dev/null && format='json'
+  $JQ . <<< "$input" &>/dev/null && format='json'
 
   case "$format" in
     text)   # see 'aws.session()' call to 'aws sts'
             local header rest
             log.debug "$input"
 #FIXME something very wrong in 'text' mode
-log.error "code is broken ($FUNCNAME)"; return
+log.error "code is broken ($FUNCNAME)"; return 1
 #            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
 #                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
+
     json)   local field; local -u envvar
-            log.debug `jq -MS '.Credentials' <<< "$input"`
+            log.debug `$JQ -MS '.Credentials' <<< "$input"`
             for field in `keys __aws_session`; do
               envvar=`value __aws_session $field`
               local -n nref=$envvar
@@ -240,6 +242,7 @@ log.error "code is broken ($FUNCNAME)"; return
             done
             log.info `$JQR '.AssumedRoleUser' <<< "$input"`
             ;;
+
     *)      RC=2 log.error "unsupported format ($format)"
             return
   esac
@@ -253,7 +256,7 @@ function aws.session-write {
 
     for field in `keys __aws_session`; do
       envvar=`value __aws_session $field`
-      ${DEBUG:+ runv} aws configure set "${envvar,,}" "${!envvar}"
+      ${DEBUG:+ runv} $AWS configure set "${envvar,,}" "${!envvar}"
     done
 }
 
@@ -348,10 +351,10 @@ function aws.session {
           unset $key
         done
 
-        ${DEBUG:+ runv} aws sts ${DEBUG:+ --debug} "${cmd[@]}" \
-            ${mfa:+ --serial-number="$mfa" ${token:+ --token-code=$token}} \
-            ${duration:+ --duration-seconds=$duration} \
-            --output json
+        ${DEBUG:+ runv} $AWS sts "${cmd[@]}" \
+            ${mfa:+ --serial-number="$mfa" \
+            ${token:+ --token-code=$token}} \
+            ${duration:+ --duration-seconds=$duration}
     ) || return
 #FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
 #An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
@@ -407,7 +410,7 @@ function aws.route53-export {
   # if doesn't match pattern assume Domain name was specified
   #FIXME will pick first occurance which is likely not intended, use read() to prompt
   grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
-      aws route53 list-hosted-zones --output=json |
+      $AWS route53 list-hosted-zones |
       $JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
       cut -d'/' -f3 | head -n 1
     )
@@ -415,8 +418,8 @@ function aws.route53-export {
   for zone in $zone_id; do
     echo -e "; $zone\n"
     #TODO use printf() with width
-    aws route53 list-resource-record-sets --hosted-zone-id=${zone:?} --output=json |
-        jq -jr '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
+    $AWS route53 list-resource-record-sets --hosted-zone-id=${zone:?} |
+        $JQR -j '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
     echo
   done
 }
@@ -433,7 +436,8 @@ function aws.sshkeys {
 
   while [ "$1" ];do
     for kid in $( $AWS iam list-ssh-public-keys --user-name "$1" |
-        $JQR --arg STATUS "$status" '.SSHPublicKeys[] | select( .Status == $STATUS) | .SSHPublicKeyId //empty' )
+        $JQR --arg STATUS "$status" '.SSHPublicKeys[] | select(.Status == $STATUS) | .SSHPublicKeyId //empty'
+      )
     do
       $AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
           $JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
@@ -463,10 +467,13 @@ function aws.describe() {
 
   case $resource in
 #    asg|autoscaling-group)
-    iam-role) ${DEBUG:+ runv} $AWS iam get-role --role-name "${1:?role}" | $JQ '.Role'
+    iam-role)
+            ${DEBUG:+ runv} $AWS iam get-role --role-name "${1:?role}" | $JQ '.Role'
             ;;
     s3|*bucket)
-            ${DEBUG:+ runv} $AWS s3api list-buckets $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)' ;;
+    #FIXME use --filter syntax
+            ${DEBUG:+ runv} $AWS s3api list-buckets | $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)'
+            ;;
     *bucket-policy)
             # last JQ used to un-escape embedded stanza
             ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
@@ -488,7 +495,6 @@ function aws.describe() {
             ${DEBUG:+ runv} $AWS ec2 describe-tags --filters "${filter[@]}" |
                 $JQ '.Tags[] | {(.Key): .Value}' | $JQ -s add
             ;;
-
 #    route)
 #    subnet)
     lb.target-group|target-group)
@@ -501,31 +507,36 @@ function aws.describe() {
             ${DEBUG:+ runv} $AWS ec2 describe-volumes --volume-ids ${1:?volume_id} |
                 $JQ '.Volumes[].Attachments[0]'
             ;;
+
     ec2.volume-status|volume-status)
             # ok, creating, ?
             ${DEBUG:+ runv} $AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} |
                 $JQR '.VolumeStatuses[].VolumeStatus.Status //empty'
             ;;
-    vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc_id} | $JQ '.Vpcs[]' ;;
+
+    vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc_id} | $JQ '.Vpcs[]'
+            ;;
 #    vpc-endpoint
     vpc-endpoint-service)
             ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoint-services \
                 --service-name com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_default_region}.${1:?service} |
                 $JQ '.ServiceDetails[]'
             ;;
+
     vpc-endpoint)
             ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoints \
                 --vpc-endpoint-ids ${1:?endpoint_id} |
                 $JQ '.VpcEndpoints[]'
             ;;
+
 #    target-group)
 #    elb|lb|load-blancer)
 #    security-group)
 #   launch-config)
-    ssm.parameter)
-            ;;
+#    ssm.parameter)
+#            ;;
 
-    *)      >&2 echo "unsupported keyword ($resource)"; return 2
+    *)      log.error "unsupported keyword ($resource)"; return 2
   esac
 }
 
@@ -541,14 +552,18 @@ function aws.get() {
     ec2.tag)
             aws.describe ec2.tags "$@" | $JQR --arg key "${2:?}" 'to_entries[] | select(.key == $key) | .value'
             ;;
+
     ssm.parameter)
-            ${DEBUG:+ runv} $AWS ssm get-parameter --name "${1:?parameter}" --with-decryption | $JQR '.Parameter.Value'
+            ${DEBUG:+ runv} $AWS ssm get-parameter --name "${1:?parameter}" --with-decryption |
+                $JQR '.Parameter.Value'
             ;;
+
     ssm.parameters)
             # key and value emitted on successive lines to simplify whitespace handling.
             # consume via loop since direct eval() of ^/.+ which is not legal in SHELL:
             #   while read -r key; do read -r value; ... done
-            ${DEBUG:+ runv} $AWS ssm get-parameters --names "${@:?parameter}" --with-decryption | $JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
+            ${DEBUG:+ runv} $AWS ssm get-parameters --names "${@:?parameter}" --with-decryption |
+                $JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
             ;;
 
     #target-group.instances - all EC2 instances assigned to a TG
@@ -556,7 +571,7 @@ function aws.get() {
     #lb.membership - return all LB of which instance is a target. if LB is new (ie. has member TG) iterate thru them
     #tg.membership - for new style
 
-#aws elb describe-load-balancers | jq -r '.LoadBalancerDescriptions[] | select(.Instances[].InstanceId == "<YOUR-INSTANCE-ID>") | . LoadBalancerName '
+#aws elb describe-load-balancers | $JQR '.LoadBalancerDescriptions[] | select(.Instances[].InstanceId == "<YOUR-INSTANCE-ID>") | . LoadBalancerName '
 # or
 #aws elb describe-load-balancers --query "LoadBalancerDescriptions[?Instances[?InstanceId=='${instanceId}']].LoadBalancerName"
 # but does NOT work with elbv2!!! have to loop thru all known target-groups
@@ -568,7 +583,7 @@ function aws.get() {
 #      #alt: $JQR --arg instance "${instance_id:?}" 'select(.TargetHealthDescriptions[].Target.Id == $instance)'
 #      done
 
-    *)      >&2 echo "unsupported keyword ($resource)"; return 2
+    *)      log.error "unsupported keyword ($resource)"; return 2
   esac
 }
 
@@ -576,15 +591,17 @@ function aws.get() {
 function asg.suspend() {
   asg=${1:?ASG name}; shift
 
-  $AWS autoscaling enter-standby --auto-scaling-group-name "$asg" \
+  ${DEBUG:+ runv} $AWS autoscaling enter-standby \
+      --auto-scaling-group-name "$asg" \
       --should-decrement-desired-capacity \
-	  ${1:+ --instance-ids "$@"}
+      ${1:+ --instance-ids "$@"}
 }
 
 
 function asg.resume() {
   asg=${1:?ASG name}; shift
-  $AWS autoscaling exit-standby --auto-scaling-group-name "$asg" \
+  ${DEBUG:+ runv} $AWS autoscaling exit-standby \
+      --auto-scaling-group-name "$asg" \
       ${1:+ --instance-ids "$@"}
 }
 
@@ -599,11 +616,11 @@ function asg.set-capacity() {
   [ "${min}${desired}${max}" ] || return 2
   asg=${1:?ASG name}; shift
 
-  $AWS autoscaling update-auto-scaling-group \
-	  --auto-scaling-group-name "$asg" \
+  ${DEBUG:+ runv} $AWS autoscaling update-auto-scaling-group \
+      --auto-scaling-group-name "$asg" \
       ${min:+ --min-size $min} \
-	  ${desired:+ --desired-capacity $desired} \
-	  ${max:+ --max-size $max}
+      ${desired:+ --desired-capacity $desired} \
+      ${max:+ --max-size $max}
 }
 
 
