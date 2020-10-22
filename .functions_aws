@@ -163,7 +163,7 @@ function aws.profile {
   if [ "$profile" = "prompt" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config" | sort` )
 
-    [ ${#list[@]} -ge 1 ] || { log.error "no profiles found ($config)"; return; }
+    [ ${#list[@]} -ge 1 ] || { log.notice "no profiles found ($config)"; return 0; }
 
     echo; printf ' %s\n' "${list[@]}" | column; echo
     read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
