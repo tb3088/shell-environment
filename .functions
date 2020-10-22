@@ -7,11 +7,10 @@
 set -o pipefail
 
 
+# mimic 'set -x' and send STDERR to file
 function runv() {
-  # mimic 'set -x'
-
   >&2 printf "%s %s\n" `printf '%.0s+' {1..$SHLVL}` "$*"
-  [ -n "$NOOP" ] || "$@"
+  [ -n "$NOOP" ] || "$@" 2> >( tee ${TMP:-/tmp}/$1.err-$$ | log.debug )
 }
 
 
