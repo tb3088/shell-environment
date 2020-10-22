@@ -161,23 +161,30 @@ function aws.profile {
   is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
   if [ "$profile" = "prompt" ]; then
-    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config" | sort` )
+    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config"` )
+    [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
+        list+=( `awk '/^\[\w+\]/ { gsub(/\[|\]/, ""); print; }' "$AWS_SHARED_CREDENTIALS_FILE"` )
 
-    [ ${#list[@]} -ge 1 ] || { log.notice "no profiles found ($config)"; return 0; }
+    list=( `IFS=$'\n'; sort <<< "${list[*]}"` )
 
-    echo; printf ' %s\n' "${list[@]}" | column; echo
-    read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
-    profile=$REPLY
+    if [ ${#list[@]} -ge 1 ]; then
+      echo; printf ' %s\n' "${list[@]}" | column; echo
+      read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
+      profile=$REPLY
+    else
+      log.error "no profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"; return
+    fi
   fi
 
     # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
-    # nor fall-thru to 'default' if profile is specified.
+    # nor fall-thru to 'default' if --profile is specified.
     #
-    # aws-cli (boto-core?) returns 255 on ProfileNotFound, but will
-    # stacktrace on empty values of AWS_PROFILE.
+    # aws-cli (boto-core) returns 255 on ProfileNotFound, but will also
+    # stacktrace if value of AWS_PROFILE is not defined in file(s).
+    #
+    # $? == 1 simply means no explicit declaration
     local _region=`aws configure get region ${profile:+ --profile "$profile"} 2>/dev/null | tail -n 1`
 
-    # $? -eq 1 simply means keyword not defined
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
         RC=255 log.error "invalid profile ($profile, $config)"; return
       }
@@ -243,10 +250,10 @@ log.error "code is broken ($FUNCNAME)"; return 1
             log.info `$JQR '.AssumedRoleUser' <<< "$input"`
             ;;
 
-    *)      RC=2 log.error "unsupported format ($format)"
-            return
+    *)      log.error "unsupported format ($format)"; return 2
   esac
-  log.info `aws.printenv`
+
+  aws.printenv | log.info
   export ${!AWS_*}
 }
 

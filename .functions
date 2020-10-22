@@ -66,7 +66,7 @@ function __is_type {
         ;;
 
     *)  [ -n "${types[$compare]}" ] || {
-            log.debug "unsupported type ($compare)"
+            log.error "unsupported type ($compare)"
             return 2
           }
   esac
