@@ -99,41 +99,39 @@ function ec2.metadata() {
 #local-ipv4
 #public-ipv4
 
-# safety fall-back in case AWS_DEFAULT_REGION not set
-declare -p __aws_default_region &>/dev/null || {
-    # don't use AWS_PROFILE since dynamic
-    # try 'default'
-    : ${__aws_default_region:=`aws configure get region`}
+# CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
+: ${__aws_default_region:=`aws configure get region`}
+: ${__aws_default_region:=`ec2.metadata region`}
 
-    : ${__aws_default_region:=`ec2.metadata region`}
+# last-ditch assumption - edit to suit
+: ${__aws_default_region:=us-east-1}
 
-    # NOTE last-ditch assumption - edit to suit
-    : ${__aws_default_region:=us-east-1}
-
-    readonly __aws_default_region
-  }
 
 function is_aws() { ec2.metadata self &>/dev/null; }
 
 
 function aws.region {
+  # value detected from aws.profile()
   local default
 
-  # '' (empty string) or '-' does not prompt
-  # but assumes AWS_DEFAULT_REGION, otherwise rely on API default
-  local region=${1-prompt}; shift; : ${region#-}
-  : ${region:=$AWS_DEFAULT_REGION}
+  # '' (empty string) or '-' avoids prompt provided
+  # AWS_DEFAULT_REGION is set, or can fall-back on configuration default
+  local region=${1-prompt}; shift
+  region=${region#-}
   [ -z "$region" -a -n "$default" ] && return
 
+  : ${region:=$AWS_DEFAULT_REGION}
+
   if [ -z "$region" -o "$region" = "prompt" ]; then
-    echo; printf ' %s\n' ${__aws_regions[@]} | sort | column; echo
-    read -t 8 -ep "Choose REGION:  " -i "${__aws_default_region:-$__aws_regions}" || return
+    local -a list=( `echo "${__aws_regions[@]}" | sort` )
+    echo; printf ' %s\n' "${list[@]}" | column; echo
+    read -t 8 -ep "Choose REGION:  " -i "${__aws_default_region:-$list}" || return
     region=${REPLY,,}
   fi
 
   # validity check
   [ -n "${__aws_availability_zones[$region]}" ] &&
-      export AWS_DEFAULT_REGION=$region || log.error "invalid region ($region)"
+      export AWS_DEFAULT_REGION=$region || log.${LOG_LEVEL:-error} "invalid region ($region)"
 }
 
 
@@ -143,8 +141,9 @@ function aws.profile {
     return
   fi
 
-  # '' (empty string) or '-' does not prompt, assumes 'default'
-  local profile=${1-prompt}; shift; : ${profile#-}
+  # '' (empty string) or '-' avoids prompt, assumes 'default'
+  local profile=${1-prompt}; shift
+  profile=${profile#-}
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
     # WARN blindly overwrite if respective dirname() doesn't match
@@ -156,23 +155,22 @@ function aws.profile {
     :
   fi
 
-
   local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
-  is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
+  LOG_LEVEL=${LOG_LEVEL:-error} is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
   if [ "$profile" = "prompt" ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config"` )
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
         list+=( `awk '/^\[\w+\]/ { gsub(/\[|\]/, ""); print; }' "$AWS_SHARED_CREDENTIALS_FILE"` )
 
-    list=( `IFS=$'\n'; sort <<< "${list[*]}"` )
+    list=( `IFS=$'\n'; sort <<< "${list[*]}" | grep -v default` )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo; printf ' %s\n' "${list[@]}" | column; echo
-      read -t 12 -ep "Choose PROFILE:  " -i "${list[0]}" || return
+      read -t 12 -ep "Choose PROFILE:  " || return
       profile=$REPLY
     else
-      log.error "no profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"; return
+      log.${LOG_LEVEL:-error} "no profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"; return
     fi
   fi
 
@@ -186,7 +184,7 @@ function aws.profile {
     local _region=`aws configure get region ${profile:+ --profile "$profile"} 2>/dev/null | tail -n 1`
 
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
-        RC=255 log.error "invalid profile ($profile, $config)"; return
+        RC=255 log.${LOG_LEVEL:-error} "invalid profile ($profile, $config)"; return
       }
 
   # possible short-circuit if new values match current
