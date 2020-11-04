@@ -10,7 +10,8 @@ set -o pipefail
 # mimic 'set -x' and send STDERR to file
 function runv() {
   >&2 printf "%s %s\n" `printf '%.0s+' {1..$SHLVL}` "$*"
-  [ -n "$NOOP" ] || "$@" 2> >( tee ${TMP:-/tmp}/${1/eval/$2}.err-$$ | log.debug )
+  [ -n "$NOOP" ] || "$@" > >( tee ${TMP:-/tmp}/${1/eval/$2}.out-$$ ) \
+      2> >( tee ${TMP:-/tmp}/${1/eval/$2}.err-$$ >&2 )
 }
 
 
@@ -39,7 +40,7 @@ function __is_type {
     file)
         while [ -n "$1" ]; do
           #alt: readlink -qe "$1"
-          [ -f "$1" ] || { log.debug "file not found ($1)"; return 1; }
+          [ -f "$1" ] || { log.${LOG_LEVEL:-debug} "file not found ($1)"; return 1; }
           shift
         done
         return
@@ -47,7 +48,7 @@ function __is_type {
 
     exec*)
         while [ -n "$1" ]; do
-          type -p "$1" || { log.debug "unknown command ($1)"; return 1; }
+          type -p "$1" || { log.${LOG_LEVEL:-debug} "unknown command ($1)"; return 1; }
           shift
         done
         return
@@ -55,7 +56,7 @@ function __is_type {
 
     func*)
         while [ -n "$1" ]; do
-          declare -F "$1" >/dev/null || { log.debug "undefined function ($1)"; return 1; }
+          declare -F "$1" >/dev/null || { log.${LOG_LEVEL:-debug} "undefined function ($1)"; return 1; }
           shift
         done
         return
@@ -77,12 +78,12 @@ function __is_type {
     [ $_readonly -eq 1 -a `type -t "$1"` = 'function' ] && flag=F || flag=
 
     whatami=`declare -p${flag} "$1" 2>/dev/null | awk '{ print $2; }'` || {
-        log.debug "not found ($1)"; return
+        log.${LOG_LEVEL:-debug} "item not found ($1)"; return
       }
 
     whatami=${whatami#-}
     [[ $whatami =~ ${types[$compare]} ]] || {
-        log.debug "type mismatch ($1: ${types[$whatami]} != $compare)"; return
+        log.${LOG_LEVEL:-debug} "type mismatch ($1: ${types[$whatami]} != $compare)"; return
       }
     shift
   done
