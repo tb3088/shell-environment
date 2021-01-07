@@ -17,6 +17,7 @@ go
 .lesshst
 .local
 .minttyrc
+.motd_shown
 .npm/
 .packer.d
 .pex/
@@ -56,6 +57,7 @@ OpenVPN/
 .WINHOME
 .CYGHOME
 .WPHOME
+.USERPROFILE
 
 
 # Windows-specific
