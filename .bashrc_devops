@@ -1,10 +1,16 @@
+is_exec git && {
 alias gsb='git status -sb'
 alias gbl='git show-branch --all --list'
+}
 
+is_exec python && {
 alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
 alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
+}
 
+is_exec docker && {
 alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
+}
 
 source ${BASH_SOURCE/bashrc/functions} || return
 

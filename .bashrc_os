@@ -1,0 +1,12 @@
+
+is_exec pidof ||
+function pidof() {
+    ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+}
+
+source ${BASH_SOURCE/bashrc/functions} || return
+
+#TODO
+#os.detect
+
+# vim: expandtab:ts=4:sw=4

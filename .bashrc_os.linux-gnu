@@ -1,0 +1,12 @@
+[[ ${OSTYPE:-`uname -o`} =~ [lL]inux ]] || return 0
+
+PATHSEP=':'
+
+#TODO support Debian/WSL?
+is_exec yum && {
+alias yum.vars="python -c 'import yum, pprint; yb = yum.YumBase(); pprint.pprint(yb.conf.yumvar, width=1)'"
+}
+
+source ${BASH_SOURCE/bashrc/functions} || return
+
+# vim: expandtab:ts=4:sw=4

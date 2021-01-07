@@ -1,7 +1,7 @@
 # $Id$
 
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
-[[ $BASH_VERSION =~ 4.[234] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
+[[ $BASH_VERSION =~ 4.[234] ]] || [[ $BASH_VERSION =~ 5 ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 
 [[ "$-" =~ i ]] || shopt -s nullglob
 set -o pipefail
@@ -48,7 +48,7 @@ function __is_type {
 
     exec*)
         while [ -n "$1" ]; do
-          type -p "$1" || { log.${LOG_LEVEL:-debug} "unknown command ($1)"; return 1; }
+          type -p "$1" &>/dev/null || { log.${LOG_LEVEL:-debug} "unknown command ($1)"; return 1; }
           shift
         done
         return
@@ -297,8 +297,6 @@ function list_functions() {
 
 #TODO? rename web.getcert
 function getcert() {
-  is_exec openssl || return
-
   local uri=${1:?}; uri=${uri#*://}
   local host=${uri%:*}
   local port=${uri#*:}
@@ -595,8 +593,7 @@ function log.error {
 copy_function log.debug log.trace
 copy_function log.notice log.warn
 
-
-for f in "${BASH_SOURCE}"_{logging,os}; do
+for f in "${BASH_SOURCE}"_{logging}; do
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? during $f"
 done

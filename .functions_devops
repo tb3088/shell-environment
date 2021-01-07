@@ -1,20 +1,17 @@
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo "ERROR! file must be sourced"; return 2; }
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; return 2; }
 
-for exe in git log runv; do
-  type -p $exe &>/dev/null || { >&2 echo "ERROR! unknown command ($exe)"; return 2; }
-done
+is_exec git log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
-GIT="git \${NOOP:+ --dry-run} \${DEBUG:+ --verbose} \${QUIET:+ --quiet}"
+
+GIT='eval ${DEBUG:+ GIT_TRACE=2} git ${NOOP:+ --dry-run} ${VERBOSE:+ --verbose} ${QUIET:+ --quiet}'
 
 function git.current() {
-  git branch 2>/dev/null | awk '$1 == "*" { print $2; exit; }'
+  $GIT branch | awk '$1 == "*" { print $2; exit; }'
 }
-
-alias git.diff-stat='git diff --stat'
 
 function git.add() {
   for f in `git status -s | awk -v type=${1:-M} '$1 ~ type { print $2 }'`; do
-    git add "$f"
+    ${DEBUG:+runv} $GIT add "$f"
   done
 }
 
@@ -36,8 +33,7 @@ function git.mirror() {
   : ${dst:=$2}
   shift 2
 
-  ${DEBUG:+runv} git fetch ${NOOP:+ --dry-run} ${DEBUG:+ --verbose} ${QUIET:+ --quiet} \
-      --multiple --prune ${src:?} ${dst:?} || return
+  ${DEBUG:+runv} $GIT fetch --multiple --prune ${src:?} ${dst:?} || return
 
   # alt: uses local as intermediary and will DESTROY any updates present in $dst
   # git clone --mirror $src_url
@@ -52,11 +48,11 @@ function git.mirror() {
     else
       echo "  $br"
     fi
-    ${DEBUG:+runv} eval $GIT push ${PRUNE:+ --prune} "$dst" "${br}:refs/heads/${br#*/}"
+    ${DEBUG:+runv} $GIT push ${PRUNE:+ --prune} "$dst" "${br}:refs/heads/${br#*/}"
   done
 
   echo -e "\n\nTags ..."
-  ${DEBUG:+runv} eval $GIT push "$dst" --tags
+  ${DEBUG:+ runv} $GIT push "$dst" --tags
   #alt: ... 'refs/tags/*:refs/tags/*'
 }
 

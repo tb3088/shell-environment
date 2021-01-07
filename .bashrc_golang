@@ -1,6 +1,6 @@
-return 0
+return 0    # disabled
 
-type -p go &>/dev/null || {
+is_exec go || {
     # look for program in common places
     declare -n v
 

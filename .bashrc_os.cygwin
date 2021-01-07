@@ -8,7 +8,7 @@ delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks:lnk'
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 
-type -p procps &>/dev/null &&
+is_exec procps &&
     alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}' ||
         alias ps='\ps -f'
 
@@ -23,5 +23,7 @@ shopt -s nocaseglob
 #      [ -x "$dir/$bin" ] && { alias npp="run \"$dir/$bin\""; break; }
 #    done
 #  }
+
+source ${BASH_SOURCE/bashrc/functions} || return
 
 # vim: expandtab:ts=4:sw=4

@@ -1,5 +1,23 @@
-# $Id$
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
+
+#is_exec log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
 [ `id -u` -eq 0 ] || : ${SUDO:=sudo}
 [ `ps -p 1 -o comm= 2>/dev/null` != 'systemd' ]
 SYSTEMD=$?
+
+function proc.cache-hit () {
+  [ $EUID -eq 0 ] || { echo "insufficent privileges (root)"; return 2; }
+
+  read rchar wchar rbytes wbytes <<< $( cat /proc/${1:?}/io | awk '
+      $1 == "rchar:" { print $2 }
+      $1 == "wchar:" { print $2 }
+      $1 == "read_bytes:" { print $2 }
+      $1 == "write_bytes:" { print $2 }'
+    )
+
+  echo -n "READ "; bc <<< "scale=3; (1 - $rbytes / $rchar)"
+  echo -n "WRITE "; bc <<< "scale=3; (1 - $wbytes / $wchar)"
+}
+
+# vim: expandtab:ts=4:sw=4

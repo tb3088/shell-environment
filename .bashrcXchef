@@ -1,6 +1,6 @@
 return 0
 
-type -p chef &>/dev/null || {
+is_exec chef || {
 #TODO attempt to find binary like this
 #which notepad++ &>/dev/null || {
 #    bin='Notepad++/notepad++.exe'
@@ -41,14 +41,11 @@ function chef.env() {
   for p in ${!CHEF_*}; do echo -n "$p = "; printenv $p; done
 }
 
-echo "processing .bashrc.chef"
-
 alias chef-repo='pushd $REPO_HOME/chef-repo'
 alias ops-repo='pushd $REPO_HOME/operations'
 alias krf='\knife role from file'
 alias ksn='\knife search node'
-alias kds='knife data bag show'
-alias kde='knife data bag edit'
-
+alias kds='\knife data bag show'
+alias kde='\knife data bag edit'
 
 # vim: expandtab:ts=4:sw=4

@@ -1,6 +1,6 @@
-# $Id$
+is_exec aws || return 0
 
-type -p ec2-version &>/dev/null ||
+is_exec ec2-version ||
     for v in /usr/local/ec2-api-tools*; do
       [ -d "$v/bin" ] && addPath "$v/bin"
     done

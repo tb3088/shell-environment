@@ -1,9 +1,10 @@
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 #TODO rename functions as 'aws::<foo>' instead of dot?
 
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tthis file must be sourced"; return 2; }
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; return 2; }
 
-is_exec curl aws jq >/dev/null || return 2
+is_exec aws jq curl log || { >&2 echo -e "ERROR\tunknown command ($exe)"; return 2; }
+
 
 CURL='eval curl --connect-timeout 2 --silent ${VERBOSE:+ --verbose --progress-bar}'
 # all output is in JSON with rare exception
@@ -571,6 +572,10 @@ function aws.get() {
                 $JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
             ;;
 
+    *)      log.error "unsupported keyword ($resource)"; return 2
+  esac
+}
+
     #target-group.instances - all EC2 instances assigned to a TG
     #lb.instances - ditto for old LB style, detect if new (has TG) and iterate
     #lb.membership - return all LB of which instance is a target. if LB is new (ie. has member TG) iterate thru them
@@ -587,10 +592,6 @@ function aws.get() {
 #
 #      #alt: $JQR --arg instance "${instance_id:?}" 'select(.TargetHealthDescriptions[].Target.Id == $instance)'
 #      done
-
-    *)      log.error "unsupported keyword ($resource)"; return 2
-  esac
-}
 
 
 function asg.suspend() {

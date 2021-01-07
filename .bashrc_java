@@ -1,4 +1,4 @@
-type -p java &>/dev/null ||
+is_exec java ||
   for v in "$JAVA_HOME" "${PROGRAMFILES:-/opt}/java${JAVA_VERSION}"; do
     [ -x "$v/bin/java" ] && addPath "$v/bin"
   done
