@@ -12,28 +12,32 @@ Cygwin 'git' may complain about some of the submodules so add `ignore = all` to 
 ## Integration
 Dropbox and environment-specific hooks (eg. Windows/Cygwin) can be helpful.
 
-Tie in Windows to Cygwin
+### Tie in Windows to Cygwin
 ```
 #/etc/fstab
 C:/Users /home none binary 0 0
 ```
 
-Tie in Window to WSL
+### Tie in Window to WSL
 ```
 ln -s /mnt/c/Users/$USER .USERPROFILE
 ln -s .USERPROFILE/Dropbox
 ```
-Common
+### Problematic Symlinks
+In Git-Bash (MINGW) `MSYS=winsymlinks:nativestrict` needs `SeCreateSymbolicLink` rights. Launch `gpedit.msc` and navigate to
+  `Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
+
 ```bash
-# prepend 'CYGWIN=winsymlinks' for Native access
+# prepend 'CYGWIN=winsymlinks' or 'MSYS=winsymlinks' for Native access
 ln -s Dropbox/Work_Projects/XXX .WPHOME
-ln -s .WPHOME/.aws
-ln -s .WPHOME/.ssh
 ln -s .WPHOME/.gitconfig
 mkdir "$LOCALAPPDATA/workspace"
 ln -s "$LOCALAPPDATA/workspace"
------
+
+# prepend is optional
 ln -s .WPHOME/.*.local .
+ln -s .WPHOME/.aws
+ln -s .WPHOME/.ssh
 ```
 
 ## Environment Variables
