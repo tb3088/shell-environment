@@ -24,8 +24,8 @@ ln -s /mnt/c/Users/$USER .USERPROFILE
 ln -s .USERPROFILE/Dropbox
 ```
 ### Problematic Symlinks
-In Git-Bash (MINGW) `MSYS=winsymlinks:nativestrict` needs `SeCreateSymbolicLink` rights. Launch gpedit.msc and navigate to
-  Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment
+In Git-Bash (MINGW) `MSYS=winsymlinks:nativestrict` needs `SeCreateSymbolicLink` rights. Launch `gpedit.msc` and navigate to
+  `Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
 
 ```bash
 # prepend 'CYGWIN=winsymlinks' or 'MSYS=winsymlinks' for Native access
@@ -33,7 +33,8 @@ ln -s Dropbox/Work_Projects/XXX .WPHOME
 ln -s .WPHOME/.gitconfig
 mkdir "$LOCALAPPDATA/workspace"
 ln -s "$LOCALAPPDATA/workspace"
------
+
+# prepend is optional
 ln -s .WPHOME/.*.local .
 ln -s .WPHOME/.aws
 ln -s .WPHOME/.ssh
