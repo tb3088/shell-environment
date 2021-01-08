@@ -3,12 +3,15 @@
 _bash_source=${BASH_SOURCE##*/}
 [ "${OSTYPE:-`uname`}" = "${_bash_source#?*.}" ] || return 0
 
-# 'nativestrict' would be best but doesn't work in Explorer
-# '<blank>' doesn't play nice within Dropbox hierarchy.
-# 'winsymlinks' used wherever Native DOS/WIN programs access
+# '<blank>' problems within Dropbox hierarchy or Git-Bash's git
+# 'winsymlinks' needed wherever Native DOS/WIN programs access
+# 'nativestrict' works across MINGW/CYGWIN/WSL but NOT in Native
+#     and requires SeCreateSymbolicLink rights
+#
 # see: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
 #
-#delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks'
+# enforce maximum compatability
+delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 
