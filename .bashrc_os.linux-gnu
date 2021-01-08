@@ -1,4 +1,4 @@
-[[ ${OSTYPE:-`uname -o`} =~ [lL]inux ]] || return 0
+[ "${OSTYPE:-`uname`}" = "${BASH_SOURCE#*.}" ] || return 0
 
 PATHSEP=':'
 

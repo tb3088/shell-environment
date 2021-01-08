@@ -49,10 +49,10 @@ function convert_path() {
   while [ $# -ne 0 ]; do
 	[ -n "$1" ] || { echo; shift; continue; }
 
-	log_TRACE "raw:    '$1'"
+	log.trace "raw:    '$1'"
 	# damn Windows! unescape whitespace
 	local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
-	log_TRACE "cooked: '$p'"
+	log.trace "cooked: '$p'"
 
 	[ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
 	shift

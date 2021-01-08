@@ -593,7 +593,7 @@ function log.error {
 copy_function log.debug log.trace
 copy_function log.notice log.warn
 
-for f in "${BASH_SOURCE}"_{logging}; do
+for f in "${BASH_SOURCE}"_logging; do
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? during $f"
 done
