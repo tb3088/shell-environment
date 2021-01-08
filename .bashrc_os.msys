@@ -9,4 +9,7 @@ export MSYS=winsymlinks:nativestrict
 alias ps='\ps -f'
 GIT_PROMPT=1
 
+# path-handling is not 'space'-safe
+unset EDITOR
+
 # vim: expandtab:ts=4:sw=4
