@@ -64,7 +64,8 @@ function git.mirror() {
 
 is_exec docker && {
 #----------
-
+:
 #----------
 }
+
 # vim: expandtab:ts=4:sw=4
