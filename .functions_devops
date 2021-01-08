@@ -1,7 +1,9 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; return 2; }
 
-is_exec git log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
+#is_exec git || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
+is_exec git && {
+#----------
 
 GIT='eval ${DEBUG:+ GIT_TRACE=2} git ${NOOP:+ --dry-run} ${VERBOSE:+ --verbose} ${QUIET:+ --quiet}'
 
@@ -56,4 +58,13 @@ function git.mirror() {
   #alt: ... 'refs/tags/*:refs/tags/*'
 }
 
+#----------
+}
+
+
+is_exec docker && {
+#----------
+
+#----------
+}
 # vim: expandtab:ts=4:sw=4

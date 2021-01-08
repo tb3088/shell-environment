@@ -1,6 +1,6 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
 
-is_exec log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
+#is_exec log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
 
 #PATHSEP=';'

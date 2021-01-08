@@ -1,10 +1,13 @@
-[ "${OSTYPE:-`uname`}" = "${BASH_SOURCE#*.}" ] || return 0
+# $Id$
 
-#Ref: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
-delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks:lnk'
-# 'nativestrict' would be best but doesn't work in Explorer.
-# ':lnk' doesn't play nice with Dropbox
-# nothing works in WSL!!
+[ "${OSTYPE:-`uname`}" = "${BASH_SOURCE#?*.}" ] || return 0
+
+# 'nativestrict' would be best but doesn't work in Explorer
+# '<blank>' doesn't play nice within Dropbox hierarchy.
+# 'winsymlinks' used wherever Native DOS/WIN programs access
+# see: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
+#
+#delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks'
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 

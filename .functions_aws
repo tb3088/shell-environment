@@ -3,7 +3,7 @@
 
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; return 2; }
 
-is_exec aws jq curl log || { >&2 echo -e "ERROR\tunknown command ($exe)"; return 2; }
+is_exec aws jq curl || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
 
 CURL='eval curl --connect-timeout 2 --silent ${VERBOSE:+ --verbose --progress-bar}'

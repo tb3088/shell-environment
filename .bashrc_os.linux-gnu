@@ -1,4 +1,6 @@
-[ "${OSTYPE:-`uname`}" = "${BASH_SOURCE#*.}" ] || return 0
+# $Id$
+
+[ "${OSTYPE:-`uname`}" = "${BASH_SOURCE#?*.}" ] || return 0
 
 PATHSEP=':'
 
