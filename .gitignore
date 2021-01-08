@@ -50,7 +50,6 @@ mercurial.ini
 
 bin
 workspace
-workspace/
 Dropbox
 logs/
 OpenVPN/
@@ -92,6 +91,7 @@ Searches
 SendTo
 Start\ Menu
 Templates
+Tools
 Tracing
 Videos
 
