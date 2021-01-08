@@ -1,3 +1,6 @@
+# cygwin package fail-safe
+[ -n "$BASH_COMPLETION_VERSINFO" ] && return 0
+
 #                                                          -*- shell-script -*-
 #
 #   bash_completion - programmable completion functions for bash 4.1+

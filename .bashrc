@@ -73,7 +73,7 @@ fi
 # If this shell is interactive, turn on programmable completion enhancements.
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
-  *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
+  *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{,.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
           [ -f "$f" ] || continue
           source "$f" || echo >&2 "RC=$? during $f"
         done
