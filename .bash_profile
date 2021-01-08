@@ -112,7 +112,7 @@ fi
 }
 
 PS_SCREEN='\[\033k\033\134\]'
-PS_PREFIX="${FCYN}\$USER${RS}@${FGRN}\h ${FYEL}\w${RS}"
+PS_PREFIX="${FCYN}\u${RS}@${FGRN}\h ${FYEL}\w${RS}"
 PS1="\n${PS_PREFIX}\n\! "${PS_SCREEN}'\$ '
 
 # Examples:
