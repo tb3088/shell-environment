@@ -16,6 +16,7 @@ alias ffs='eval sudo !!'
 alias free='\free -m'
 alias edit='eval `[[ $TERM =~ ^screen ]] && echo screen` ${EDITOR:-vi}'
 
+# caution: only Unix(tm)
 alias ps &>/dev/null || alias ps='\ps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
 
 # Some shortcuts for different directory listings
@@ -31,17 +32,22 @@ alias cdl='cd ${1:-.}; shift; ls $@'
 alias sftp='\sftp -R 256 -B 262144'
 alias screen='\screen ${HOSTNAME:+-t ${HOSTNAME%%.*}}'
 alias ntpdate='sudo /usr/sbin/ntpd -gq'
+
 # --filter=':- .gitignore'      mind the space
 alias rsync="\rsync --cvs-exclude --exclude='.git*'"
 
 alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{time_starttransfer} Total time: %{time_total} ReturnCode: %{http_code} Download Size: %{size_download} Speed: %{speed_download} \n"'
 
 # increasing order of preference
-which curl &>/dev/null && \
+is_exec curl && \
   alias myip='curl -sk https://diagnostic.opendns.com/myip' 
-which nslookup &>/dev/null && \
+
+is_exec nslookup && \
   alias myip='nslookup myip.opendns.com resolver1.opendns.com.'
-which dig &>/dev/null && \
-  alias myip='dig +short myip.opendns.com @resolver1.opendns.com.' || true
+
+is_exec dig && \
+  alias myip='dig +short myip.opendns.com @resolver1.opendns.com.'
+
+return 0
 
 # vim: expandtab:ts=4:sw=4

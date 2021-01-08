@@ -6,4 +6,7 @@ _bash_source=${BASH_SOURCE##*/}
 # force symlinks otherwise MINGW resorts to copying files!
 export MSYS=winsymlinks:nativestrict
 
+alias ps='\ps -f'
+GIT_PROMPT=1
+
 # vim: expandtab:ts=4:sw=4
