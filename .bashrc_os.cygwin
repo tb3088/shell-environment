@@ -1,6 +1,7 @@
 # $Id$
 
-[ "${OSTYPE:-`uname`}" = "${BASH_SOURCE#?*.}" ] || return 0
+_bash_source=${BASH_SOURCE##*/}
+[ "${OSTYPE:-`uname`}" = "${_bash_source#?*.}" ] || return 0
 
 # 'nativestrict' would be best but doesn't work in Explorer
 # '<blank>' doesn't play nice within Dropbox hierarchy.

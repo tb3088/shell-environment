@@ -34,11 +34,11 @@ function convert_path() {
       n)    noop=1 ;;
       t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
                 format="-t $OPTARG" || {
-                    RC=2 log_ERROR "unknown format ($OPTARG)"
+                    RC=2 log.error "unknown format ($OPTARG)"
                     return
                 }
             ;;
-      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      :)    RC=2 log.error "missing argument to '-$OPTARG'"; return ;;
       \?)   flags+=("-$OPTARG")
     esac
   done
@@ -61,7 +61,7 @@ function convert_path() {
 readonly -f convert_path
 
 
-type -p sudo &>/dev/null ||
+is_exec sudo ||
 function sudo() {
   local opt who cmd line env shell flags preserve=''
   #FIXME local -A env
@@ -70,16 +70,17 @@ function sudo() {
 
   while getopts ':ieEu:X' opt 2>/dev/null; do
     case "$opt" in
-      i)    initial=1; unset preserve ;;
-      e)    cmd=`type -p ${EDITOR:-vi} 2>/dev/null` || {
-                log_ERROR "invalid EDITOR (${EDITOR:-vi})"
+      i)    initial=1; unset preserve
+	    ;;
+      e)    cmd=`is_exec ${EDITOR:-vi}` || {
+                log.error "invalid EDITOR (${EDITOR:-vi})"
                 return
               }
             ;;
       E)    preserve='' ;;
       u)    who=$OPTARG ;;
       X)    exec=1 ;;
-      :)    RC=2 log_ERROR "missing argument to '-$OPTARG'"; return ;;
+      :)    RC=2 log.error "missing argument to '-$OPTARG'"; return ;;
       \?)   flags+=" -$OPTARG"
     esac
   done
@@ -87,7 +88,7 @@ function sudo() {
 
   : ${who:?missing argument \'-u USER\'}
   line=`getent passwd $who || grep -s "^${who}:" /etc/passwd` || {
-        log_ERROR "unknown USER ($who)"
+        log.error "unknown USER ($who)"
         return
     }
 
@@ -99,7 +100,7 @@ function sudo() {
 
   shell=${line##*:}
   [ -n "${shell:=$SHELL}" -a -x "$shell" ] || {
-        log_ERROR "invalid SHELL ($shell)"
+        log.error "invalid SHELL ($shell)"
         return
     }
 
@@ -116,7 +117,4 @@ function is_windows() {
   [ "$bin" != "${bin#/cygdrive}" ]
 }
 
-
-# TODO use procps
-# function pidof() {
-# }
+# vim: expandtab:ts=4:sw=4

@@ -1,0 +1,9 @@
+# $Id$
+
+_bash_source=${BASH_SOURCE##*/}
+[ "${OSTYPE:-`uname`}" = "${_bash_source#?*.}" ] || return 0
+
+# force symlinks otherwise MINGW resorts to copying files!
+export MSYS=winsymlinks:nativestrict
+
+# vim: expandtab:ts=4:sw=4
