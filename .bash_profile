@@ -3,10 +3,6 @@ umask 022
 export PATH MANPATH
 export LANG='en_US.utf8'
 
-: ${EDITOR:=`which "$EDITOR" vim vi nano pico emacs 2>/dev/null | head -n 1`}
-: ${PAGER:='less -RF'}
-export EDITOR PAGER
-
 if [ -z "$SSH_AUTH_SOCK" -a `which ssh-agent 2>/dev/null` ]; then
   eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
   trap "kill -9 $SSH_AGENT_PID" EXIT
@@ -131,6 +127,10 @@ for f in "$HOME"/.bash{_profile.local,rc}; do
   source "$f" || echo >&2 "RC=$? during $f"
 done
 unset f
+
+: ${EDITOR:=`type -p vim vi nano pico emacs 2>/dev/null | head -n 1 | sed 's|.*/||'`}
+: ${PAGER:='less -RF'}
+export EDITOR PAGER
 
 
 # CAC/PIF card support
