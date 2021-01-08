@@ -7,19 +7,33 @@ a simple `git clone` will not work. The following sequence is best way forward.
 1. git fetch; git checkout master
 1. git submodule update --init --recursive
 
+Cygwin 'git' may complain about some of the submodules so add `ignore = all` to .gitmodules as needed.
+
 ## Integration
 Dropbox and environment-specific hooks (eg. Windows/Cygwin) can be helpful.
-```bash
-ln -s "$USERPROFILE" .USERPROFILE
+
+Tie in Windows to Cygwin
+```
+#/etc/fstab
+C:/Users /home none binary 0 0
+```
+
+Tie in Window to WSL
+```
+ln -s /mnt/c/Users/$USER .USERPROFILE
 ln -s .USERPROFILE/Dropbox
+```
+Common
+```bash
+# prepend 'CYGWIN=winsymlinks' for Native access
 ln -s Dropbox/Work_Projects/XXX .WPHOME
 ln -s .WPHOME/.aws
 ln -s .WPHOME/.ssh
-ln -s .WPHOME/.*.local .
 ln -s .WPHOME/.gitconfig
-
 mkdir "$LOCALAPPDATA/workspace"
 ln -s "$LOCALAPPDATA/workspace"
+-----
+ln -s .WPHOME/.*.local .
 ```
 
 ## Environment Variables
