@@ -56,9 +56,3 @@
 [submodule "awscli-aliases"]
 	path = awscli-aliases
 	url = https://github.com/tb3088/awscli-aliases.git
-[submodule ".config/base16-shell"]
-	path = .config/base16-shell
-	url = https://github.com/chriskempson/base16-shell.git
-[submodule ".vim/bundle/base16-vim"]
-	path = .vim/bundle/base16-vim
-	url = https://github.com/chriskempson/base16-vim.git
