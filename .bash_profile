@@ -3,16 +3,6 @@ umask 022
 export PATH MANPATH
 export LANG='en_US.utf8'
 
-if [ -z "$SSH_AUTH_SOCK" -a `which ssh-agent 2>/dev/null` ]; then
-  eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
-  trap "kill -9 $SSH_AGENT_PID" EXIT
-fi
-if [[ "$-" == *i* ]] || tty -s; then
-  #FIXME technically could pipe in password from file
-  [ -n "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
-fi
-
-
 # ANSI color codes
 RS="\[\033[0m\]"    # reset
 HC="\[\033[1m\]"    # hicolor
@@ -122,15 +112,21 @@ PS1="\n${PS_PREFIX}\n\! "${PS_SCREEN}'\$ '
 #PROMPT_COMMAND="history -a"
 declare -F __prompt >/dev/null && PROMPT_COMMAND=__prompt
 
+if [ -z "$SSH_AUTH_SOCK" -a `type -p ssh-agent` ]; then
+  eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
+  trap "kill -9 $SSH_AGENT_PID" EXIT
+fi
+
 for f in "$HOME"/.bash{_profile.local,rc}; do
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
+  source "$f" || >&2 echo "RC=$? during $f"
 done
-unset f
 
 : ${EDITOR:=`type -p vim vi nano pico emacs 2>/dev/null | head -n 1 | sed 's|.*/||'`}
 : ${PAGER:='less -RF'}
 export EDITOR PAGER
+
+[ -n "$SSH_AUTH_SOCK" ] && ssh-add -q "$HOME"/.ssh/{id_?sa,*.pem}
 
 
 # CAC/PIF card support
