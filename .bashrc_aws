@@ -1,9 +1,6 @@
 is_exec aws || return 0
 
-is_exec ec2-version ||
-    for v in /usr/local/ec2-api-tools*; do
-      [ -d "$v/bin" ] && addPath "$v/bin"
-    done
+addPath PATH /usr/local/ec2-ami-tools*/**/bin
 
 link=`type -p aws_bash_completer 2>/dev/null` &&
     for bc in {/etc/,"$HOME"/.}bash_completion.d; do
