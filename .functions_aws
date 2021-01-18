@@ -380,26 +380,26 @@ function aws.addPath {
   local v f
   local -i delete
 
-  for v in "$@" \
-        ${AWS_CONFIG_FILE:+`eval echo $(dirname "$AWS_CONFIG_FILE")${AWS_PROFILE:+"{/$AWS_PROFILE,}"}`} \
-        ${AWS_PROFILE:+`echo "$HOME"/.{aws,ssh}/$AWS_PROFILE`}; do
-    [ -n "$v" ] || continue
-    [ "$v" = '.' ] && v=`pwd`
+  #NOTE  incomplete search - reorder terms to suit.
+  #TODO abstract out search mechanism from ~/bin-template/ssh-wrapper.sh
+  local -a dirs=()
+  [ -n "$AWS_CONFIG_FILE" ] &&
+      dirs+=( `eval echo "${AWS_CONFIG_FILE%/*}"${AWS_DEFAULT_REGION:+\{/"$AWS_DEFAULT_REGION",\}}${AWS_PROFILE:+\{/"$AWS_PROFILE",\}}` )
 
-    for f in "$v"/bin; do
-      if [ ${delete:-0} -eq 1 ]; then
-        ${DEBUG:+ runv} rmPath "$f"
-      else
-        [ -d "$f" ] || continue
-        ${DEBUG:+ runv} addPath -"$f"
-      fi
-    done
+  [ -n "$AWS_PROFILE" ] &&
+      dirs+=( `eval echo "$HOME"/.\{aws,ssh\}/$AWS_PROFILE` )
+
+  for v in "$@" "${dirs[@]}"; do
+    [ -n "$v" ] || continue
+
+    if [ ${delete:-0} -eq 1 ]; then
+      rmPath "$v/bin"
+    else
+      prepend=1 addPath "$v/bin"
+    fi
 
     [ -n "$SSH_AUTH_SOCK" ] &&
-      for f in `eval echo "$v"/${AWS_DEFAULT_REGION:+"{$AWS_DEFAULT_REGION/,}"}{id_*,*.pem,*.pub}`; do
-        [ -f "$f" ] || continue
-        ${DEBUG:+ runv} ssh-add ${delete:+ -d} "$f" &>/dev/null
-      done
+        ${DEBUG:+ runv} ssh-add ${delete:+ -d} -q "$v"/{id_*,*.pem}
   done
 }
 
