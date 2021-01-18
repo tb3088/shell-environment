@@ -82,7 +82,7 @@ read -rd '' __log_template <<'EOF'
 
   # check nesting level, inside script, or screen
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
-      [[ `ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
+      [[ `\ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
     return ${RC:-$rc}
   fi
 
@@ -165,17 +165,16 @@ function log {
     for ((i=${#FUNCNAME[@]}-1; i>0; i--))  do
       msg+=("callstack: ${BASH_SOURCE[i]}/${FUNCNAME[i]}")
     done
-    # prevent recursion loop
+    # prevent recursion loop with 'offset' value - see L:176
     mask='TRACE' level='TRACE' offset=2 $FUNCNAME "${msg[@]}"
   fi
 
   local fname=
   local level_name=${__log_levels[$level]}
 
-  # embed FUNCNAME if DEBUG or higher
-  if [ $level -ge `__log_lookup 'DEBUG'` -a -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ]; then
-    fname="(${FUNCNAME[offset]}) "
-  fi
+  # embed FUNCNAME in output
+  [ -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] &&
+        fname="[${FUNCNAME[offset]}] "
 
   if [ $# -ge 1 ]; then
     __log_print "$@"
