@@ -176,8 +176,10 @@ function addPath() {
     # leading '-' means prepend
     [ "${v:0:1}" = '-' ] && { prepend=1; v=${v:1}; }
 
-    # unroll and check validity (ref: https://sourceware.org/git/?p=newlib-cygwin.git;a=commit;h=aec6479820fee5f71d50930bf0dde2bbf386bd4b)
-    [ v=`readlink -e "$v"` -a -d "$v" ] || {
+    # unroll and check validity
+    # ref: https://sourceware.org/git/?p=newlib-cygwin.git;a=commit;h=aec6479820fee5f71d50930bf0dde2bbf386bd4b
+    v=`readlink -e "$v"`
+    [ $? -eq 0 -a -d "$v" ] || {
         log.error "invalid element ($1)"
         shift; continue
       }
@@ -568,7 +570,8 @@ function log {
     : ${level:=${FUNCNAME[1]:4}}
     : $((offset++))
   fi
-  [ -n "${FUNCNAME[$offset]}" ] && fname="[${FUNCNAME[$offset]}] "
+  [ -n "${FUNCNAME[$offset]}" ] &&
+      fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
   
   while [ "${1+X}" ]; do 
     >&2 echo -e "${level:-LOG}\t${fname}$1"

@@ -174,7 +174,7 @@ function log {
 
   # embed FUNCNAME in output
   [ -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] &&
-        fname="[${FUNCNAME[offset]}] "
+        fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
 
   if [ $# -ge 1 ]; then
     __log_print "$@"
