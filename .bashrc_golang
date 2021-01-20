@@ -1,17 +1,18 @@
 return 0    # disabled
 
 is_exec go || {
-    # look for program in common places
-    declare -n v
+  # look for program in common places
+  declare -n v
 
-    for v in GOROOT SYSTEMDRIVE PROGRAMFILES LOCALAPPDATA; do
-        [ -n "$v" ] || continue
-        for p in `convert_path "$v"`/go{,lang}{,{,-,_}$GO_VERSION}; do
-            [ -x "$p/bin/go" ] && { addPath "$p/bin"; break; }
-        done
+  for v in GOROOT SYSTEMDRIVE PROGRAMFILES LOCALAPPDATA; do
+    [ -n "$v" ] || continue
+#FIXME shouldn't need convert_path()
+    for p in `convert_path "$v"`/go{,lang}{,{,-,_}$GO_VERSION}; do
+      [ -x "$p/bin/go" ] && { addPath "$p/bin"; break; }
     done
-    unset -n v
-  }
+  done
+  unset -n v
+}
 
 #FIXME detect if Windows binary. if so, we can't mangle paths into UNIX-style
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
@@ -37,6 +38,7 @@ done
 
 #TODO Windows 'go get' doesn't work if using Cygwin 'git'
 # if OSTYPE=cygwin or uname -k = windows, then git version | grep windows or issue WARN
+#[[ "${OSTYPE:-`uname -o`}" = [cC]ygwin ]]
 
 export ${!GO*}
 

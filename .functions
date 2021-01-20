@@ -1,12 +1,18 @@
-# $Id$
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
-[[ $BASH_VERSION =~ 4.[234] ]] || [[ $BASH_VERSION =~ 5 ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
+# prevent multiple-inclusion
+__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+[ ${!__tag:-0} = 0 ] || return 0
+eval $__tag=1
+#------------------
+
+[[ $BASH_VERSION =~ 4.[2-4] ]] || [[ $BASH_VERSION =~ 5 ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
+
 
 shopt -s globstar extglob nullglob
 shopt -u failglob
 set -o pipefail
-
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
@@ -160,7 +166,6 @@ function addPath() {
   [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log.error "invalid variable ($k)"; return; }
 
   [ "$k" = 'PATH' ] && { delim=':'; flags+=('-E'); }
-
   : ${delim:=${PATHSEP:-\:}}
 
   local -n kval=$k

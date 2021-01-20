@@ -1,10 +1,22 @@
-# $Id$
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
-_bash_source=${BASH_SOURCE##*/}
-[ "${OSTYPE:-`uname`}" = "${_bash_source#?*.}" ] || return 0
+# prevent multiple-inclusion
+__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+[ ${!__tag:-0} = 0 ] || return 0
+eval $__tag=1
+#------------------
 
-# force symlinks otherwise MINGW resorts to copying files!
+
+# ignore if wrong OS
+_flavor=${BASH_SOURCE##*/}
+_flavor=${_flavor#?*.}
+[ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
+
+# !! WARN !! force symlinks otherwise MINGW resorts to copying files
 export MSYS=winsymlinks:nativestrict
+
+#TODO suck in _os.cygwin
 
 alias ps='\ps -f'
 GIT_PROMPT=1

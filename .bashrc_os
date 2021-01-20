@@ -1,10 +1,22 @@
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+
+# prevent multiple-inclusion
+__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+[ ${!__tag:-0} = 0 ] || return 0
+eval $__tag=1
+#------------------
+
+
+: ${OSTYPE:=`uname`}
 
 is_exec pidof ||
 function pidof() {
-    ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+  \ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
 
-source ${BASH_SOURCE/bashrc/functions} || return
+source "${BASH_SOURCE/bashrc/functions}" || return
+source "${BASH_SOURCE}.${OSTYPE}" || return
 
 #TODO
 #os.detect

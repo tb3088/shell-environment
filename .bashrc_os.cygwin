@@ -1,7 +1,17 @@
-# $Id$
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
-_bash_source=${BASH_SOURCE##*/}
-[ "${OSTYPE:-`uname`}" = "${_bash_source#?*.}" ] || return 0
+# prevent multiple-inclusion
+__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+[ ${!__tag:-0} = 0 ] || return 0
+eval $__tag=1
+#------------------
+
+
+# ignore if wrong OS
+_flavor=${BASH_SOURCE##*/}
+_flavor=${_flavor#?*.}
+[ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
 
 # '<blank>' problems within Dropbox hierarchy or Git-Bash's git
 # 'winsymlinks' needed wherever Native DOS/WIN programs access
@@ -11,13 +21,22 @@ _bash_source=${BASH_SOURCE##*/}
 # see: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
 #
 # enforce maximum compatability
-delim='' contains "${CYGWIN:-x}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
+delim='' contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
 
 function command_not_found_handle() { cmd.exe /D /C "$@"; }
 
-is_exec procps &&
-    alias ps='\procps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}' ||
-        alias ps='\ps -f'
+if is_exec procps; then
+  alias ps='\procps -e ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
+  function pidof() {
+    \procps -eo pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+  }
+else
+  alias ps='\ps -f'
+  function pidof() {
+    \ps -s | awk -v pat="$1" '$NF ~ pat { print $1 }'
+  }
+fi
+readonly -f pidof
 
 shopt -s nocaseglob
 

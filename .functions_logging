@@ -1,9 +1,18 @@
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+
+# prevent multiple-inclusion
+__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+[ ${!__tag:-0} = 0 ] || return 0
+eval $__tag=1
+#------------------
+
+
 #LOG_TIMESTAMP=0
 #LOG_STACKTRACE=0
 #LOG_LEVEL=INFO
 : ${LOG_MASK:=WARN}
 #LOG_FORMAT=
-
 
 # reference https://code.woboq.org/gcc/include/sys/syslog.h.html
 # syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7

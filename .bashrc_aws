@@ -1,6 +1,24 @@
-is_exec aws || return 0
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+
+# prevent multiple-inclusion
+__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+[ ${!__tag:-0} = 0 ] || return 0
+eval $__tag=1
+#------------------
+
+
+is_exec aws || { log.notice "Would you like to install AWS-CLI?"; return 0; }
 
 addPath PATH /usr/local/ec2-ami-tools*/**/bin
+
+# SSM Session-Manager
+# ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+is_exec session-manager-plugin || {
+    [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] &&
+        addPath "$PROGRAMFILES/Amazon/SessionManagerPlugin/bin" 2>/dev/null
+    # Linux installs to /usr/local/bin
+  }
 
 link=`type -p aws_bash_completer 2>/dev/null` &&
     for bc in {/etc/,"$HOME"/.}bash_completion.d; do
