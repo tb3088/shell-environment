@@ -438,9 +438,9 @@ function aws.route53-export {
 }
 
 
+#TODO rewrite as aws.describe() item
 function aws.sshkeys {
   # Example: $FUNCNAME `$AWS iam get-group --group-name <group> | $JQR '.Users[].UserName'`
-  #TODO rewrite as aws.describe() item
   local -u format
   local status
 
@@ -563,12 +563,13 @@ function aws.get() {
 
   case $resource in
     ec2.tag)
-            aws.describe ec2.tags "$@" | $JQR --arg key "${2:?}" 'to_entries[] | select(.key == $key) | .value'
+            aws.describe ec2.tags "$@" |
+                $JQR --arg key "${2:?}" 'to_entries[] | select(.key == $key) | .value //empty'
             ;;
 
     ssm.parameter)
             ${DEBUG:+ runv} $AWS ssm get-parameter --name "${1:?parameter}" --with-decryption |
-                $JQR '.Parameter.Value'
+                $JQR '.Parameter.Value //empty'
             ;;
 
     ssm.parameters)
@@ -580,7 +581,7 @@ function aws.get() {
             ;;
 
     sts.account)
-            ${DEBUG:+ runv} $AWS sts get-caller-identity | $JQR '.Account'
+            ${DEBUG:+ runv} $AWS sts get-caller-identity | $JQR '.Account //empty'
             ;;
 
     *)      log.error "unsupported keyword ($resource)"; return 2
