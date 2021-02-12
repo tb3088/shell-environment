@@ -55,7 +55,7 @@ function __is_type {
 
     exec*)
         while [ -n "$1" ]; do
-          type -p "$1" &>/dev/null || { log.${LOG_LEVEL:-debug} "unknown command ($1)"; return 1; }
+          type -p "$1" >/dev/null || { log.${LOG_LEVEL:-debug} "unknown command ($1)"; return 1; }
           shift
         done
         return

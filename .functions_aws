@@ -391,10 +391,10 @@ function aws.addPath {
   #TODO abstract out search mechanism from ~/bin-template/ssh-wrapper.sh
   local -a dirs=()
   [ -n "$AWS_CONFIG_FILE" ] &&
-      dirs+=( `eval echo "${AWS_CONFIG_FILE%/*}"${AWS_DEFAULT_REGION:+\{/"$AWS_DEFAULT_REGION",\}}${AWS_PROFILE:+\{/"$AWS_PROFILE",\}}` )
+      dirs+=( `eval echo "${AWS_CONFIG_FILE%/*}"${AWS_DEFAULT_REGION:+\{"/$AWS_DEFAULT_REGION",\}}${AWS_PROFILE:+\{"/$AWS_PROFILE",\}}` )
 
   [ -n "$AWS_PROFILE" ] &&
-      dirs+=( `eval echo "$HOME"/.\{aws,ssh\}/$AWS_PROFILE` )
+      dirs+=( `echo "$HOME"/.{aws,ssh}/$AWS_PROFILE` )
 
   for v in "$@" "${dirs[@]}"; do
     [ -n "$v" ] || continue
@@ -497,7 +497,7 @@ function aws.describe() {
 #    internet-gateway
 #    nat-gateway
 
-    ec2.tagss)
+    ec2.tags)
             # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
             filter+=(
                 "Name=resource-type,Values=${type:-instance}"
@@ -577,6 +577,10 @@ function aws.get() {
             #   while read -r key; do read -r value; ... done
             ${DEBUG:+ runv} $AWS ssm get-parameters --names "${@:?parameter}" --with-decryption |
                 $JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
+            ;;
+
+    sts.account)
+            ${DEBUG:+ runv} $AWS sts get-caller-identity | $JQR '.Account'
             ;;
 
     *)      log.error "unsupported keyword ($resource)"; return 2
