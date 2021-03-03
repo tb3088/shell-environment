@@ -649,5 +649,8 @@ function asg.set-capacity() {
 # or better
 # s3cmd restore --recursive s3://mybucketname/ 
 
+# simple example of qlgrep but need to find my original from AWS
+# szcat <file> | grep '^Key=' | sed -e 's|^\([^/]\+/[^/]\+\).*|\1|' | sort | uniq -dc
+
 
 # vim: expandtab:ts=8:sw=4

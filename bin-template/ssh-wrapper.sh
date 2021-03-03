@@ -151,7 +151,7 @@ function _ssh() {
         ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
         ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
         $SSH_OPTS \
-        "$@" ${_screen:+ || sleep 15\'}
+        "$@" ${_screen:+ || sleep 8\'}
 }
 
 
