@@ -3,7 +3,7 @@
 
 # prevent multiple-inclusion
 __tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
-[ ${!__tag:-0} = 0 ] || return 0
+###XXX[ ${!__tag:-0} = 0 ] || return 0
 eval $__tag=1
 #------------------
 
@@ -11,7 +11,7 @@ eval $__tag=1
 is_exec git && {
 #----------
 
-GIT='eval ${DEBUG:+ GIT_TRACE=2} git ${NOOP:+ --dry-run} ${VERBOSE:+ --verbose} ${QUIET:+ --quiet}'
+GIT='eval ${DEBUG:+ GIT_TRACE=2} \git ${NOOP:+ --dry-run} ${VERBOSE:+ --verbose} ${QUIET:+ --quiet}'
 
 function git.current() {
   $GIT branch | awk '$1 == "*" { print $2; exit; }'
@@ -42,24 +42,30 @@ function git.mirror() {
   shift 2
 
   ${DEBUG:+runv} $GIT fetch --multiple --prune ${src:?} ${dst:?} || return
+  echo
 
   # alt: uses local as intermediary and will DESTROY any updates present in $dst
   # git clone --mirror $src_url
   # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
 
-  echo -e "\nBranches ..."
-  for br in ${@:-`git branch --list --remote "$src/${branch:-*}" | grep -v --regexp='->'`}; do
+  echo '----------'
+  echo "process BRANCHES ..."
+  echo
+  for br in ${@:-`\git branch --list --remote "$src/${branch:-*}"`}; do
     if [ ${interactive:-0} -eq 1 ]; then
-      read -t 8 -n 1 -p "Copy '${br#*/}' [y/N]:  " || return
+      read -t 8 -n 1 -p "Copy '$br' [y/N]:  " || return
       [ -z "${REPLY}" ] || echo
       [ "${REPLY^^}" = 'Y' ] || continue
     else
-      echo "  $br"
+      echo "> $br"
     fi
     ${DEBUG:+runv} $GIT push ${PRUNE:+ --prune} "$dst" "${br}:refs/heads/${br#*/}"
+    echo
   done
 
-  echo -e "\n\nTags ..."
+  echo '----------'
+  echo "process TAGS ..."
+  echo
   ${DEBUG:+ runv} $GIT push "$dst" --tags
   #alt: ... 'refs/tags/*:refs/tags/*'
 }
