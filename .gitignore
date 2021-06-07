@@ -1,4 +1,6 @@
 .atlassian*
+
+
 .atom
 .aws
 .bash_sessions
@@ -6,6 +8,7 @@
 .bundle
 .cache
 .chef
+.dbvis/
 .dbus*
 .gem
 .gitconfig
@@ -29,6 +32,7 @@ go
 .sudo_as_admin_successful
 .terraform.d/
 .terraformrc
+.vscode/
 .viminfo
 .vim/.netrwhist
 .wget-hsts
