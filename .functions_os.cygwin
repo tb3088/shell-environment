@@ -8,10 +8,8 @@ eval $__tag=1
 #------------------
 
 
-#is_exec log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
-
-#PATHSEP=';'
-#readonly PATHSEP
+PATHSEP=';'
+readonly PATHSEP
 
 function convert_path() {
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
@@ -26,9 +24,6 @@ function convert_path() {
   # of desired output format (';' for Windows, ':' for Unix). Any intermix
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
-  #
-  # In other words:
-  # if output as windows, input MUST be unix (:) delimited
 
   local format flags=()
   local -i noop=0 escape
@@ -52,8 +47,9 @@ function convert_path() {
   shift $((OPTIND-1))
 
   #TODO detect bad input, word-split on PATHSEP?
-  
-  while [ $# -ne 0 ]; do
+
+  # silently ignore empty param
+  while (( $# )); do
 	[ -n "$1" ] || { echo; shift; continue; }
 
 	log.trace "raw:    '$1'"
@@ -118,10 +114,16 @@ readonly -f sudo
 
 function is_windows() {
   # detects if path or binary is Cygwin or native Windows
-  [ "${1:0:1}" = '/' ] && return [[ "$1" =~ ^/cygdrive ]]
+  while (( $# )); do
+    [ -n "$1" ] || { shift; continue; }
 
-  bin=`type -p "${1:?}" 2>/dev/null` || return
-  [ "$bin" != "${bin#/cygdrive}" ]
+    bin=`type -p "$1"`
+    [[ "${bin:-$1}" =~ ^/cygdrive ]] || {
+        file "$bin" | grep -q 'for MS Windows'
+        #alt: sed -E 's/.* for ([[:alpha:]/]+) .*/\1/'
+      } || return
+    shift
+  done
 }
 
 # vim: expandtab:ts=4:sw=4

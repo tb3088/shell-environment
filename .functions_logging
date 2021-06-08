@@ -111,8 +111,9 @@ for k in "${!__log_levels[@]}"; do
   readonly -f log_$k
  
   # define new naming style
-  overwrite=1 copy_function log_$k log.${k,,} 2>/dev/null
-  readonly -f log.${k,,}
+  overwrite=1 copy_function "log_$k" "log.${k,,}" 2>/dev/null
+  overwrite=1 copy_function "log_$k" "log.$k" 2>/dev/null
+  readonly -f "log.${k,,}" "log.$k"
 done
 unset k  __log_template
 unset -f __log_exit
