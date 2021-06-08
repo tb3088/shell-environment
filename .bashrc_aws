@@ -8,9 +8,9 @@ eval $__tag=1
 #------------------
 
 
-is_exec aws || { log.notice "Would you like to install AWS-CLI?"; return 0; }
+is_exec aws${AWS_VERSION} || return 0
 
-addPath PATH /usr/local/ec2-ami-tools*/**/bin
+addPath /usr/local/ec2-ami-tools*/**/bin
 
 # SSM Session-Manager
 # ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
@@ -31,7 +31,7 @@ link=`type -p aws_bash_completer 2>/dev/null` &&
       ln -s "$link" "$bc"/
     done
 
-# assume-role session credentials expire in 1h (default)
+# session credentials expire in 1h (default)
 export AWS_SESSION_DURATION=$((3600 * 8))
 
 source ${BASH_SOURCE/bashrc/functions} || return

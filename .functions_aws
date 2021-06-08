@@ -11,14 +11,37 @@ eval $__tag=1
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 #TODO rename functions as 'aws::<foo>' instead of dot?
 
-is_exec aws jq curl || { log.error "missing required commands"; return 2; }
+is_exec aws${AWS_VERSION} jq curl || return 2
 
-CURL='eval curl --connect-timeout 2 --silent ${VERBOSE:+ --verbose --progress-bar}'
 # all output is in JSON with rare exception
 # NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
-AWS='eval aws $( [ -n "$AWS_DEFAULT_REGION" -o -n "`aws configure get region ${AWS_PROFILE:+ --profile $AWS_PROFILE} 2>/dev/null`" ] || echo "--region $__aws_default_region" ) --output json ${DEBUG:+ --debug}'
-JQ='jq --exit-status'
-JQR="$JQ --raw-output"
+#AWS='eval \aws${AWS_VERSION} $( [ -n "$AWS_DEFAULT_REGION" -o -n "`\aws${AWS_VERSION} configure get region ${AWS_PROFILE:+ --profile $AWS_PROFILE}`" ] || echo "--region $__aws_default_region"; [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && echo "--debug" ) --output json'
+function __aws_cmd() {
+  local -a cmd=()
+
+  if is_windows "aws${AWS_VERSION}"; then
+    [ -n "$AWS_CONFIG_FILE" ] &&
+        cmd+=( env AWS_CONFIG_FILE=`cygpath -w "$AWS_CONFIG_FILE"` )
+    [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
+        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`cygpath -w "$AWS_SHARED_CREDENTIALS_FILE"` )
+  fi
+
+  cmd+=( "aws${AWS_VERSION}" --output json )
+
+  [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( --debug )
+  [ -z "$AWS_DEFAULT_REGION" -a is_ec2 ] && cmd+=( --region `ec2.metadata region` )
+
+  echo "${cmd[@]}"
+}
+readonly -f __aws_cmd
+
+readonly AWS='eval `__aws_cmd`'
+readonly JQ='\jq --exit-status'
+readonly JQR="$JQ --raw-output"
+readonly CURL='eval curl --connect-timeout 2 --silent ${VERBOSE:+ --verbose --progress-bar}'
+
+# CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
+__aws_default_region='us-east-1'
 
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
@@ -29,7 +52,7 @@ declare -Ar __aws_session=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# aws ec2 describe-regions --query 'Regions[].{ Name:RegionName }' | $JQR '.[].Name'
+# aws ec2 describe-regions | $JQR '.Regions[].RegionName | sort'
 
 is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
@@ -73,73 +96,79 @@ declare -Ar __aws_availability_zones=(
   )
 
 
+# clone of program provided by ec2-utils.rpm
 function ec2.metadata() {
   local url='http://169.254.169.254/latest/meta-data'
   local item mac
+  : ${item:=`echo "$1" | sed 's/^-\+//'`}
 
-  # special cases that require recursion etc.
-  case ${item:=$1} in
-    vpc|vpc-id)
-        : ${mac:=`$FUNCNAME mac`}
-        item='vpc-id'
-        ;;
+#-a/--ami-id               The AMI ID used to launch this instance
+#-l/--ami-launch-index     The index of this instance in the reservation (per AMI).
+#-m/--ami-manifest-path    The manifest path of the AMI with which the instance was launched.
+#-n/--ancestor-ami-ids     The AMI IDs of any instances that were rebundled to create this AMI.
+#-b/--block-device-mapping Defines native device names to use when exposing virtual devices.
+#-h/--local-hostname       The local hostname of the instance.
+#-o/--local-ipv4           Public IP address if launched with direct addressing; private IP address if launched with public addressing.
+#-k/--kernel-id            The ID of the kernel launched with this instance, if applicable.
+#-z/--availability-zone    The availability zone in which the instance launched. Same as placement
+#-c/--product-codes        Product codes associated with this instance.
+#-p/--public-hostname      The public hostname of the instance.
+#-v/--public-ipv4          NATted public IP Address
+#-u/--public-keys          Public keys. Only available if supplied at instance launch time
+#-r/--ramdisk-id           The ID of the RAM disk launched with this instance, if applicable.
+#-e/--reservation-id       ID of the reservation.
+#-s/--security-groups      Names of the security groups the instance is launched in. Only available if supplied at instance launch time
+#-d/--user-data            User-supplied data.Only available if supplied at instance launch time.
+
+  # special cases
+  case "$item" in
+    i|self)
+        item='instance-id' ;;
     region)
         $FUNCNAME availability-zone | sed 's/[a-z]$//'
-        return
-        ;;
+        return ;;
+    t|type)   
+        item='instance-type' ;;
+    vpc|vpc-id)
+        : ${mac:=`$FUNCNAME mac`}
+        item='vpc-id' ;;
+    z|az)
+        item='availability-zone' ;;
   esac
 
   local -A mapping=(
-      [az]=placement/availability-zone
       [availability-zone]=placement/availability-zone
-      [self]=instance-id
-      [type]=instance-type
       [vpc-id]=network/interfaces/macs/$mac/vpc-id
     )
 
   # intermediary items (eg. macs) leave behind trailing '/'
   ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
 }
-#ami-id
-#hostname
-#instance-id
-#instance-type
-#local-ipv4
-#public-ipv4
-
-# CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
-: ${__aws_default_region:=`aws configure get region`}
-: ${__aws_default_region:=`ec2.metadata region`}
-
-# last-ditch assumption - edit to suit
-: ${__aws_default_region:=us-east-1}
 
 
-function is_aws() { ec2.metadata self &>/dev/null; }
+function is_ec2 { ec2.metadata self &>/dev/null; }
 
 
 function aws.region {
   # value detected from aws.profile()
   local default
 
-  # '' (empty string) or '-' avoids prompt provided
+  # '' (empty string) avoids prompt provided
   # AWS_DEFAULT_REGION is set, or can fall-back on configuration default
-  local region=${1-prompt}; shift
-  region=${region#-}
-  [ -z "$region" -a -n "$default" ] && return
+  local region=${1-'prompt'}; shift
+  [ -z "$region" -a -n "${AWS_DEFAULT_REGION}$default" ] && return
 
-  : ${region:=$AWS_DEFAULT_REGION}
-
-  if [ -z "$region" -o "$region" = "prompt" ]; then
+  if [ "$region" = 'prompt' ]; then
     local -a list=( `echo "${__aws_regions[@]}" | sort` )
     echo; printf ' %s\n' "${list[@]}" | column; echo
-    read -t 8 -ep "Choose REGION:  " -i "${__aws_default_region:-$list}" || return
+    read -t 12 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$list}" || return
     region=${REPLY,,}
   fi
 
   # validity check
   [ -n "${__aws_availability_zones[$region]}" ] &&
-      export AWS_DEFAULT_REGION=$region || log.${LOG_LEVEL:-error} "invalid region ($region)"
+      export AWS_DEFAULT_REGION=$region ||
+          log.error "invalid region ($region)"
 }
 
 
@@ -149,36 +178,36 @@ function aws.profile {
     return
   fi
 
-  # '' (empty string) or '-' avoids prompt, assumes 'default'
-  local profile=${1-prompt}; shift
-  profile=${profile#-}
+  # '' (empty string) avoids prompt, assumes 'default'
+  local profile=${1-'prompt'}; shift
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    # WARN blindly overwrite if respective dirname() doesn't match
+    # WARN blindly overwrites if respective dirname() doesn't match
     [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] ||
-        AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
+        AWS_SHARED_CREDENTIALS_FILE="${AWS_CONFIG_FILE%/*}/credentials"
   else
-    # NOTE uncommon but technically valid, so leave alone
+    #NOTE uncommon but technically valid, so leave alone
 #    unset AWS_SHARED_CREDENTIALS_FILE
     :
   fi
 
   local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
-  LOG_LEVEL=${LOG_LEVEL:-error} is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
+  LOG_LEVEL=error is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
-  if [ "$profile" = "prompt" ]; then
+  if [ "$profile" = 'prompt' ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config"` )
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
         list+=( `awk '/^\[\w+\]/ { gsub(/\[|\]/, ""); print; }' "$AWS_SHARED_CREDENTIALS_FILE"` )
 
-    list=( `IFS=$'\n'; sort <<< "${list[*]}" | grep -v default` )
+    list=( `IFS=$'\n'; sort -u <<< "${list[*]}" | grep -v default` )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo; printf ' %s\n' "${list[@]}" | column; echo
       read -t 12 -ep "Choose PROFILE:  " || return
       profile=$REPLY
     else
-      log.${LOG_LEVEL:-error} "no profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"; return
+      log.notice "no profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"
+      unset profile
     fi
   fi
 
@@ -189,20 +218,21 @@ function aws.profile {
     # stacktrace if value of AWS_PROFILE is not defined in file(s).
     #
     # $? == 1 simply means no explicit declaration
-    local _region=`aws configure get region ${profile:+ --profile "$profile"} 2>/dev/null | tail -n 1`
+    local _region=`$AWS configure get region ${profile:+ --profile "$profile"} 2>/dev/null | tail -n 1`
 
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
         RC=255 log.${LOG_LEVEL:-error} "invalid profile ($profile, $config)"; return
       }
 
   # possible short-circuit if new values match current
-  [ "${profile:-A}" = "${AWS_PROFILE:-B}" -a "${region:-C}" = "${AWS_DEFAULT_REGION:-D}" ] && return
+  [ "${profile:-A}" = "${AWS_PROFILE:-B}" ] && return
 
   # cleanup previous environment
   ${DEBUG:+ runv} aws.rmPath
   unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
 
   [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
+
   default=$_region aws.region "$@" || return
 
   ${DEBUG:+ runv} aws.addPath
@@ -222,18 +252,19 @@ function aws.session-load {
   local cache_dir="$HOME"/.aws/cli/cache
 
   if [ -z "$input" ]; then
-    local -a list=( `cd "$cache_dir" 2>/dev/null && find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))` )
+    local -a list=( `cd "$cache_dir" 2>/dev/null &&
+       find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))`
+     )
 
     [ ${#list[@]} -ge 1 ] || { log.error "no cached sessions ($cache_dir)"; return; }
 
-    [ ${#list[@]} -gt 1 ] && {
-        echo; printf ' %s\n' "${list[@]}" | column; echo
-        read -t 12 -ep "Choose cached SESSION:  " -i "${list[0]}" || return
-      }
-    input=$cache_dir/$REPLY
+    echo; printf ' %s\n' "${list[@]}" | column; echo
+    read -t 12 -ep "Choose cached SESSION:  " -i "${list[0]}" || return
+    input="$cache_dir"/$REPLY
   fi
 
-  [ -f "$input" ] && { input=$( <"$input" ) || return; }
+  [ -f "$input" ] && input=$(<"$input")
+
   $JQ . <<< "$input" &>/dev/null && format='json'
 
   case "$format" in
@@ -241,7 +272,7 @@ function aws.session-load {
             local header rest
             log.debug "$input"
 #FIXME something very wrong in 'text' mode
-log.error "code is broken ($FUNCNAME)"; return 1
+log.error "code is broken ($FUNCNAME, $format)"; return 1
 #            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
 #                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
@@ -311,7 +342,7 @@ function aws.session {
             return 2
     esac
   done
-  shift $((OPTIND-1))
+  shift $((OPTIND - 1))
 
   #BUG! STS service rejects duration > 3600 despite documentation
   [ ${duration:-0} -gt 3600 ] && unset duration
@@ -406,7 +437,7 @@ function aws.addPath {
     fi
 
     [ -n "$SSH_AUTH_SOCK" ] &&
-        ${DEBUG:+ runv} ssh-add ${delete:+ -d} -q "$v"/{id_*,*.pem}
+        ${DEBUG:+ runv} ssh-add ${delete:+ -d} -q `readlink -e "$v"`/{id_*,*.pem}
   done
 }
 
@@ -470,26 +501,34 @@ function aws.sshkeys {
 # aws kms  decrypt --ciphertext-blob fileb://<(sed -e 's/^kmscrypt:://' post | base64 -d) --query Plaintext --output text
 # }
 
-#TODO break out into 'ec2.describe', 'iam.describe' 'ssm.get'?
+#TODO? break out into 'ec2.describe', 'iam.describe' 'ssm.get'
+#TODO? assume plural and rewrite
 
 function aws.describe() {
-  local type output arn
-  local -a filter
+  #WARN !! plural supported but beware side-effects !!
+  local type= field= resource
+  local -a filter=() cmd=() post=()
 
-  resource=${1:?resource}; shift
+  [ -n "$resource" ] || { resource=${1:?resource}; shift; }
+
+#FIXME rewrite all to use --filter syntax and generic ending below
 
   case $resource in
 #    asg|autoscaling-group)
-    iam-role)
+
+#    iam.user)
+#    iam.group?)
+#    iam.policy)
+    iam.role)
             ${DEBUG:+ runv} $AWS iam get-role --role-name "${1:?role}" | $JQ '.Role'
             ;;
+
     s3|*bucket)
-    #FIXME use --filter syntax
             ${DEBUG:+ runv} $AWS s3api list-buckets | $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)'
             ;;
     *bucket-policy)
             # last JQ used to un-escape embedded stanza
-            ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ '.' ;;
+            ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ . ;;
 
 #    ec2|*instance)
 #    instance-role)
@@ -497,46 +536,55 @@ function aws.describe() {
 #    internet-gateway
 #    nat-gateway
 
-    ec2.tags)
-            # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
-            filter+=(
-                "Name=resource-type,Values=${type:-instance}"
+    # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
+    ec2.tag?(s)) type='instance' ;;&
+    eip.tag?(s)) type='elastic-ip' ;;&
+    # WARN non-EC2 items (eg. SQS will catch this and fail)
+    *.tag?(s)) cmd=( ec2 describe-tags )
+            filter=(
+                "Name=resource-type,Values=${type:-${resource%.tags}}"
                 "Name=resource-id,Values=${1:?resource-id}"
               )
             shift
-            [ $# -eq 0 ] || filter+=( "Name=key,Values=`join_string ',' $@`" )
-            ${DEBUG:+ runv} $AWS ec2 describe-tags --filters "${filter[@]}" |
-                $JQ '.Tags[] | {(.Key): .Value}' | $JQ -s add
+
+            # select specified tags
+            [ -n "$1" ] && filter+=( "Name=key,Values=`join_string ',' "$@"`" )
+
+            field='Tags'
+            post=( $JQ -s 'from_entries' )
             ;;
 #    route)
 #    subnet)
-    lb.target-group|target-group)
+    *target-group?(s))
+        #FIXME use filter to pick items
             ${DEBUG:+ runv} $AWS elbv2 describe-target-groups |
                 $JQ --arg tg ${1:?target_group_name} '.TargetGroups[] | select(.TargetGroupName == $tg)'
             ;;
 
 #   ebs|volume) describe-volume
-    ec2.volume-attachment|volume-attachment)
+    *volume-attachment)
             ${DEBUG:+ runv} $AWS ec2 describe-volumes --volume-ids ${1:?volume_id} |
                 $JQ '.Volumes[].Attachments[0]'
             ;;
 
-    ec2.volume-status|volume-status)
+    *volume-status)
             # ok, creating, ?
             ${DEBUG:+ runv} $AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} |
                 $JQR '.VolumeStatuses[].VolumeStatus.Status //empty'
             ;;
 
-    vpc)    ${DEBUG:+ runv} $AWS ec2 describe-vpcs --vpc-id ${1:?vpc_id} | $JQ '.Vpcs[]'
+    vpc?(s)) cmd=( ec2 describe-vpcs )
+            [ -n "$1" ] && filter=( "Name=vpc-id,Values=`join_string ',' "$@"`" )
+            field='Vpcs'
             ;;
-#    vpc-endpoint
-    vpc-endpoint-service)
+
+    vpc-endpoint-service?(s))
             ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoint-services \
-                --service-name com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_default_region}.${1:?service} |
+                --service-name "com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_default_region}.${1:?service}" |
                 $JQ '.ServiceDetails[]'
             ;;
 
-    vpc-endpoint)
+    vpc-endpoint?(s))
             ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoints \
                 --vpc-endpoint-ids ${1:?endpoint_id} |
                 $JQ '.VpcEndpoints[]'
@@ -548,24 +596,37 @@ function aws.describe() {
 #   launch-config)
 #    ssm.parameter)
 #            ;;
-
     *)      log.error "unsupported keyword ($resource)"; return 2
   esac
+
+  [ -n "$filter" ] && cmd+=( '--filters' "${filter[@]}" )
+
+  if [ -n "$post" ]; then
+    ${DEBUG:+ runv} $AWS "${cmd[@]}" |
+        ${DEBUG:+ runv} $JQ --arg field "${field:?}" '.[$field][]' |
+        ${DEBUG:+ runv} "${post[@]}"
+  else
+    ${DEBUG:+ runv} $AWS "${cmd[@]}" |
+        ${DEBUG:+ runv} $JQ --arg field "${field:?}" '.[$field][]'
+  fi
 }
 
 
-# similar to aws.describe() but intended to return single-ton values, not long-winded JSON
+# similar to aws.describe() but intended to return singleton values, not long-winded JSON
 function aws.get() {
-  local type output arn
-  local -a filter
+  local item resource
+  local -a filter=()
 
-  resource=${1:?resource}; shift
+  [ -n "$resource" ] || { resource=${1:?item}; shift; }
 
-  case $resource in
-    ec2.tag)
-            aws.describe ec2.tags "$@" |
-                $JQR --arg key "${2:?}" 'to_entries[] | select(.key == $key) | .value //empty'
+  case "$resource" in
+    *.tag)  aws.describe "$resource" "${1:?resouce-id}" "${2:?key}" |
+                $JQR --arg key "$2" '.[$key] //empty'
             ;;
+
+#    *.tags) aws.describe "$resource" "${1:?resouce-id}" "${@:2}" |
+#             format with 'a' or 'A' like aws.list
+#            ;;
 
     ssm.parameter)
             ${DEBUG:+ runv} $AWS ssm get-parameter --name "${1:?parameter}" --with-decryption |
@@ -607,7 +668,7 @@ function aws.get() {
 
 
 function asg.suspend() {
-  asg=${1:?ASG name}; shift
+  local asg=${1:?ASG name}; shift
 
   ${DEBUG:+ runv} $AWS autoscaling enter-standby \
       --auto-scaling-group-name "$asg" \
@@ -617,7 +678,8 @@ function asg.suspend() {
 
 
 function asg.resume() {
-  asg=${1:?ASG name}; shift
+  local asg=${1:?ASG name}; shift
+
   ${DEBUG:+ runv} $AWS autoscaling exit-standby \
       --auto-scaling-group-name "$asg" \
       ${1:+ --instance-ids "$@"}
@@ -631,7 +693,8 @@ function asg.scale-zero() {
 
 function asg.set-capacity() {
   local -i min desired max
-  [ "${min}${desired}${max}" ] || return 2
+
+  [ -n "${min}${desired}${max}" ] || return 2
   asg=${1:?ASG name}; shift
 
   ${DEBUG:+ runv} $AWS autoscaling update-auto-scaling-group \
@@ -642,7 +705,62 @@ function asg.set-capacity() {
 }
 
 
-#function aws.ssh takes after 18f script that probes for region, VPC, and then instance
+# wrapper around aws.describe emits 2 columns: <resource id>   ["Tag:Name"] for
+# human-friendly display of items and dynamic array assembly
+# TODO? '-A' for assoc array format, '-a' for normal array and omits 2nd column
+function aws.list() {
+  local -i sort name
+  local OPTIND opt format
+
+  while getopts 'aA' opt; do
+    case "$opt" in
+      a)    format='array' ;;
+      A)    format='hash' ;;
+      :)    RC=2 log.error "missing argument (-$OPTARG)"; return ;;
+      \?)   log.error "invalid option (-$OPTARG)" ;&
+      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  resource=${1:?resource}; shift
+
+  case "$resource" in
+    vpc?(s))   field='VpcId' ;;
+
+    *)      log.error "unsupported keyword ($resource)"; return 2
+  esac
+
+#TODO if name=0  cmd[1]=$JQ --arg field "$field" '.[$field], ""'
+#TODO if sort=1  can JQ sort?
+
+  # shell-friendly output
+  case "${format:-json}" in
+    # 2 lines per entry. readarray -t VAR < <(aws.list ...)
+    a|array) aws.describe $resource "$@" |
+                ${DEBUG:+ runv} $JQR --arg field "$field" '.[$field], (.Tags | from_entries | .Name // "")'
+            ;;
+
+    # format? if TAB, 'while IFS=$'\t' read -t key val
+    # otherwise, read key && read val
+    A|hash) aws.describe $resource "$@" |
+                ${DEBUG:+ runv} $JQR --arg field "$field" '".[$field]=\(.Tags | from_entries | .Name // "")"'
+            ;;
+
+    json)   aws.describe $resource "$@" |
+                ${DEBUG:+ runv} $JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
+                ${DEBUG:+ runv} $JQ -s 'add'
+            ;;
+    # not reached
+    *)      log.error "unsupported format ($opt)"; return 2
+  esac
+
+  #TODO generic execution - $cmd1 | $cmd2 | $cmd3
+}
+
+
+#function ec2.connect takes after 18f script that probes for region, VPC, and then instance
 
 #function s3.restore
 #aws s3 ls s3://<bucket_name> | awk '{print $4}' | xargs -L 1 aws s3api restore-object --restore-request Days=<days> --bucket <bucket_name> --key
