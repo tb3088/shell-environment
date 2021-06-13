@@ -37,5 +37,6 @@ export AWS_SESSION_DURATION=$((3600 * 8))
 source ${BASH_SOURCE/bashrc/functions} || return
 
 alias aws.clearenv='aws.profile RESET'
+alias aws=\$AWS
 
 # vim: expandtab:ts=8:sw=4

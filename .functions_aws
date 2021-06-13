@@ -13,9 +13,6 @@ eval $__tag=1
 
 is_exec aws${AWS_VERSION} jq curl || return 2
 
-# all output is in JSON with rare exception
-# NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
-#AWS='eval \aws${AWS_VERSION} $( [ -n "$AWS_DEFAULT_REGION" -o -n "`\aws${AWS_VERSION} configure get region ${AWS_PROFILE:+ --profile $AWS_PROFILE}`" ] || echo "--region $__aws_default_region"; [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && echo "--debug" ) --output json'
 function __aws_cmd() {
   local -a cmd=()
 
@@ -26,7 +23,7 @@ function __aws_cmd() {
         cmd+=( AWS_SHARED_CREDENTIALS_FILE=`cygpath -w "$AWS_SHARED_CREDENTIALS_FILE"` )
   fi
 
-  cmd+=( "aws${AWS_VERSION}" --output json )
+  cmd+=( "aws${AWS_VERSION}" )
 
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( --debug )
   [ -z "$AWS_DEFAULT_REGION" -a is_ec2 ] && cmd+=( --region `ec2.metadata region` )
@@ -35,8 +32,10 @@ function __aws_cmd() {
 }
 readonly -f __aws_cmd
 
-readonly AWS='eval `__aws_cmd`'
-readonly JQ='\jq --exit-status'
+# all output is in JSON with rare exception
+readonly AWS='eval `__aws_cmd` --output json'
+readonly JQ='jq --exit-status'
+# NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
 readonly JQR="$JQ --raw-output"
 readonly CURL='eval curl --connect-timeout 2 --silent ${VERBOSE:+ --verbose --progress-bar}'
 
