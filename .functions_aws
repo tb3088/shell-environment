@@ -436,7 +436,7 @@ function aws.addPath {
     fi
 
     [ -n "$SSH_AUTH_SOCK" ] &&
-        ${DEBUG:+ runv} ssh-add ${delete:+ -d} -q `readlink -e "$v"`/{id_*,*.pem}
+        ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} ${delete:+ -d} `readlink -e "$v"`/{id_*,*.pem}${delete:+.pub} 2>/dev/null
   done
 }
 
