@@ -14,12 +14,14 @@ shopt -s globstar extglob nullglob
 shopt -u failglob
 set -o pipefail
 
+WHICH="`type -p which` --skip-alias --skip-functions"
+
 # mimic 'set -x' and send STDERR to file
 function runv() {
   local indent=`printf '%.0s+' {1..$SHLVL}`
   >&2 printf "%s %s\n" "$indent" "$*"
 
-  [ -n "$NOOP" ] || return
+  [ -z "$NOOP" ] || return
 
   local outf=`mktemp -t "${1/eval/${2##*/}}-XXXXX"`
   "$@" > >( tee "$outf".out-$$ ) 2> >( tee "$outf".err-$$ >&2 )
@@ -48,6 +50,8 @@ function __is_type {
       [u]='upper'       [upper]='u'
     )
 
+  set -- "${@:-$(</dev/stdin)}"
+
   case "${compare:=${FUNCNAME[1]#is_}}" in
     file)
         while (( $# )); do
@@ -67,7 +71,7 @@ function __is_type {
         while (( $# )); do
           [ -n "$1" ] || { shift; continue; }
 
-          [ -n "`type -p $1`" ] || {
+          $WHICH "$1" &>/dev/null || {
               [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "unknown command ($1)"
               return 1
             }
@@ -129,7 +133,7 @@ done
 
 function is_windows() {
   # deliberate NOOP
-  false
+  return 1
 }
 
 
@@ -138,9 +142,31 @@ function _continue() { [ -n "$CONTINUE" ]; }
 
 
 function convert_path() {
-  (( $# )) || return
-  # deliberate NOOP
-  echo "$@"
+  local -i escape
+  local OPTIND
+
+  while getopts ":eE" opt; do
+    case $opt in
+      e)    escape=1 ;;     # default
+      E)    escape=0 ;;
+      \?)   ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  # read from stdin if no args
+  set -- "${@:-$(</dev/stdin)}"
+
+  # silently ignore empty param
+  while (( $# )); do
+    [ -n "$1" ] || { echo; shift; continue; }
+
+    # unescape whitespace to not double-escape
+    local p="${1//\\ / }"
+
+    [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
+    shift
+  done
 }
 
 
@@ -243,7 +269,8 @@ function rmPath() {
   [ "$k" = 'PATH' ] && { delim=':'; flag='-E'; }
   : ${delim:=${PATHSEP:-\:}}
 
-  log.trace "$k before" "$kval"
+  ${DEBUG:+ log.trace "$k before" "$kval"}
+
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
@@ -264,7 +291,7 @@ function rmPath() {
   kval=${kval##$delim}
   kval=${kval%%$delim}
 
-  log.trace "$k after" "$kval"
+  ${DEBUG:+ log.trace "$k after" "$kval"}
 }
 
 
@@ -306,6 +333,7 @@ function replace_file() {
 }
 
 
+#TODO? extend to other types
 function whereis_function() {
   shopt -s extdebug
   declare -F ${1:?} | awk '{ print $3; }'
@@ -317,11 +345,11 @@ function list_functions() {
   local file
 
   while [ -n "$1" ]; do
-#    file=`readlink -qe "$1"` || { error "file not found ($1)"; continue; }
-	is_file "$1" || continue
-	# use sub-shell to not contaminate current
-	( source "$file" &>/dev/null; file="$file" $FUNCNAME )
-	shift
+    [ -f "$1" ] || { shift; continue; }
+
+    # use sub-shell to not contaminate current, recurse
+    ( source "$1" &>/dev/null; file="$1" $FUNCNAME )
+    shift
   done
 
   shopt -s extdebug

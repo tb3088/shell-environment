@@ -26,21 +26,21 @@ function convert_path() {
   # Unix output from Unix input is usually benign.
 
   local format flags=()
-  local -i noop=0 escape
+  local -i escape
   local OPTIND
 
-  while getopts ":eEnt:" opt; do
+  while getopts ":eEt:" opt; do
     case $opt in
-      e)    escape=1 ;;
+      e)    escape=1 ;;     # default
       E)    escape=0 ;;
-      n)    noop=1 ;;
       t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
                 format="-t $OPTARG" || {
-                    RC=2 log.error "unknown format ($OPTARG)"
-                    return
+                    log.error "unknown format ($OPTARG)"
+                    return 2
                 }
             ;;
-      :)    RC=2 log.error "missing argument to '-$OPTARG'"; return ;;
+      :)    log.error "missing argument to '-$OPTARG'"; return 2
+            ;;
       \?)   flags+=("-$OPTARG")
     esac
   done
@@ -48,14 +48,17 @@ function convert_path() {
 
   #TODO detect bad input, word-split on PATHSEP?
 
+  # read from stdin if no args
+  set -- "${@:-$(</dev/stdin)}"
+
   # silently ignore empty param
   while (( $# )); do
 	[ -n "$1" ] || { echo; shift; continue; }
 
-	log.trace "raw:    '$1'"
+    ${DEBUG:+ log.trace "raw:    '$1'"}
 	# damn Windows! unescape whitespace
 	local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
-	log.trace "cooked: '$p'"
+    ${DEBUG:+ log.trace "cooked: '$p'"}
 
 	[ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
 	shift
@@ -114,16 +117,13 @@ readonly -f sudo
 
 function is_windows() {
   # detects if path or binary is Cygwin or native Windows
-  while (( $# )); do
-    [ -n "$1" ] || { shift; continue; }
-
-    bin=`type -p "$1"`
-    [[ "${bin:-$1}" =~ ^/cygdrive ]] || {
-        file "$bin" | grep -q 'for MS Windows'
-        #alt: sed -E 's/.* for ([[:alpha:]/]+) .*/\1/'
-      } || return
-    shift
-  done
+  # 'which' is multi-platform safe unlike 'type -p'
+  bin=`$WHICH "${1:?}"`
+  [[ "${bin:=$1}" =~ ^/cygdrive ]] || {
+      file "$bin" | grep -q 'for MS Windows'
+      #alt: sed -E 's/.* for ([[:alpha:]/]+) .*/\1/'
+    } || return
 }
+readonly -f is_windows
 
 # vim: expandtab:ts=4:sw=4
