@@ -18,15 +18,16 @@ function __aws_cmd() {
 
   if is_windows "aws${AWS_VERSION}"; then
     [ -n "$AWS_CONFIG_FILE" ] &&
-        cmd+=( env AWS_CONFIG_FILE=`cygpath -w "$AWS_CONFIG_FILE"` )
+        cmd+=( env AWS_CONFIG_FILE=`convert_path -w "$AWS_CONFIG_FILE"` )
+
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
-        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`cygpath -w "$AWS_SHARED_CREDENTIALS_FILE"` )
+        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -w "$AWS_SHARED_CREDENTIALS_FILE"` )
   fi
 
-  cmd+=( "aws${AWS_VERSION}" )
+  cmd+=( aws${AWS_VERSION} )
 
-  [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( --debug )
-  [ -z "$AWS_DEFAULT_REGION" -a is_ec2 ] && cmd+=( --region `ec2.metadata region` )
+  [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
+  [ -z "$AWS_DEFAULT_REGION" ] && { is_ec2 && cmd+=( '--region' `ec2.metadata region` ); }
 
   echo "${cmd[@]}"
 }
@@ -141,7 +142,7 @@ function ec2.metadata() {
     )
 
   # intermediary items (eg. macs) leave behind trailing '/'
-  ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
+  ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||' || return 1
 }
 
 
@@ -330,12 +331,14 @@ function aws.session {
       p)    profile=$OPTARG ;;
       r)    role=$OPTARG ;;
       T)    duration=$OPTARG ;;
-      t)    [[ $OPTARG =~ [0-9]{6} ]] && token=$OPTARG || { log.error "invalid Token ($OPTARG)"; return; }
+      t)    [[ "$OPTARG" =~ [0-9]{6} ]] && token=$OPTARG || {
+                log.error "invalid Token ($OPTARG)"
+                return
+              }
             ;;
-      W)    # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
-            write=1
-            ;;
-      :)    RC=2 log.error "missing argument (-$OPTARG)"; return ;;
+      # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
+      W)    write=1 ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "invalid option (-$OPTARG)" ;&
       h)    >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
@@ -715,7 +718,7 @@ function aws.list() {
     case "$opt" in
       a)    format='array' ;;
       A)    format='hash' ;;
-      :)    RC=2 log.error "missing argument (-$OPTARG)"; return ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "invalid option (-$OPTARG)" ;&
       h)    >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
