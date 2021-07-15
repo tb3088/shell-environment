@@ -122,7 +122,7 @@ for f in "$HOME"/.bash{_profile.local,rc}; do
   source "$f" || >&2 echo "RC=$? during $f"
 done
 
-: ${EDITOR:=`type -p vim vi nano pico emacs 2>/dev/null | head -n 1 | sed 's|.*/||'`}
+: ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
 : ${PAGER:='less -RF'}
 export EDITOR PAGER
 

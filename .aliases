@@ -14,7 +14,7 @@ alias grep='\grep --color --line-number'
 #alias ffs='sudo $(fc -ln -1)'
 alias ffs='eval sudo !!'
 alias free='\free -m'
-alias edit='eval `[[ $TERM =~ ^screen ]] && echo screen` ${EDITOR:-vi}'
+alias edit='eval `[[ ${TERM:-X} =~ ^screen ]] && echo screen; [ -n "$WT_SESSION" ] && echo "cmd //c wt nt"` ${EDITOR:-vi}'
 
 # caution: only Unix(tm)
 alias ps &>/dev/null || alias ps='\ps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'

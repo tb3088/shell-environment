@@ -1,6 +1,4 @@
 .atlassian*
-
-
 .atom
 .aws
 .bash_sessions
@@ -10,6 +8,7 @@
 .chef
 .dbvis/
 .dbus*
+.docker
 .gem
 .gitconfig
 .gnupg
@@ -24,6 +23,7 @@ go
 .npm/
 .packer.d
 .pex/
+RCS/
 .rnd
 .screen_exchange
 .serverauth.*
@@ -49,6 +49,7 @@ go
 *log
 *.stackdump
 *.core
+*,v
 *~
 mercurial.ini
 
@@ -70,6 +71,7 @@ AppData
 Application\ Data
 Applications
 Bookmarks
+Camera\ Recordings
 Contacts
 Cookies
 Desktop

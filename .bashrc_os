@@ -9,14 +9,18 @@ eval $__tag=1
 
 
 : ${OSTYPE:=`uname`}
+#TODO uname | cut -d _ -f 1 | tr '[:upper:]' '[:lower:]
 
 is_exec pidof ||
 function pidof() {
   \ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
 
-source "${BASH_SOURCE/bashrc/functions}" || return
-source "${BASH_SOURCE}.${OSTYPE}" || return
+for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}.${OSTYPE}"; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? during $f"
+done
+
 
 #TODO
 #os.detect

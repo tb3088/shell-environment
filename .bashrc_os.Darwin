@@ -13,13 +13,12 @@ _flavor=${BASH_SOURCE##*/}
 _flavor=${_flavor#?*.}
 [ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
 
-# !! WARN !! force symlinks otherwise MINGW resorts to copying files
-# requires Win10 > 18363 or 'SeCreateSymbolicLink' rights
-export MSYS=winsymlinks:nativestrict
 
-#TODO suck in _os.cygwin
-
-alias ps='\ps -f'
-GIT_PROMPT=1
+alias ls='\ls -hAF -G'
+#alias subl='open -a "Sublime Text 2"'
+#alias bbe='open -a "TextWrangler"'
+#alias gvim='open -a "MacVim"'
+#alias xc='open -a "Xcode"'
+#alias edit='${EDITOR:-open -e}'
 
 # vim: expandtab:ts=4:sw=4

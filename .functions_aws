@@ -26,9 +26,15 @@ function __aws_cmd() {
 
   cmd+=( aws${AWS_VERSION} )
 
-  [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
-  [ -z "$AWS_DEFAULT_REGION" ] && { is_ec2 && cmd+=( '--region' `ec2.metadata region` ); }
+  # HACK - work around missing settings
+  if [ -z "${AWS_DEFAULT_REGION}" ]; then
+    #WARN may override caller's own '--region' directive
+    ${cmd[@]} configure get region &>/dev/null || {
+        is_ec2 && cmd+=( '--region' `ec2.metadata region` )
+      }
+  fi
 
+  [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
   echo "${cmd[@]}"
 }
 readonly -f __aws_cmd
@@ -150,12 +156,12 @@ function is_ec2 { ec2.metadata self &>/dev/null; }
 
 
 function aws.region {
-  # value detected from aws.profile()
+  # 'default' supplied by auto-detect in aws.profile()
   local default
-
-  # '' (empty string) avoids prompt provided
-  # AWS_DEFAULT_REGION is set, or can fall-back on configuration default
   local region=${1-'prompt'}; shift
+
+  # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set,
+  # or can fall-back on configuration default
   [ -z "$region" -a -n "${AWS_DEFAULT_REGION}$default" ] && return
 
   if [ "$region" = 'prompt' ]; then
@@ -167,8 +173,7 @@ function aws.region {
 
   # validity check
   [ -n "${__aws_availability_zones[$region]}" ] &&
-      export AWS_DEFAULT_REGION=$region ||
-          log.error "invalid region ($region)"
+      export AWS_DEFAULT_REGION=$region || log.error "invalid region ($region)"
 }
 
 
@@ -178,21 +183,22 @@ function aws.profile {
     return
   fi
 
-  # '' (empty string) avoids prompt, assumes 'default'
+  # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
   local profile=${1-'prompt'}; shift
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    # WARN blindly overwrites if respective dirname() doesn't match
+    #WARN blindly overwrites if respective dirname() doesn't match
+#FIXME use readlink for valid compare
     [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] ||
         AWS_SHARED_CREDENTIALS_FILE="${AWS_CONFIG_FILE%/*}/credentials"
   else
-    #NOTE uncommon but technically valid, so leave alone
-#    unset AWS_SHARED_CREDENTIALS_FILE
     :
+    # uncommon but technically valid
+#    unset AWS_SHARED_CREDENTIALS_FILE
   fi
 
   local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
-  LOG_LEVEL=error is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
+  is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
   if [ "$profile" = 'prompt' ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config"` )
@@ -218,22 +224,21 @@ function aws.profile {
     # stacktrace if value of AWS_PROFILE is not defined in file(s).
     #
     # $? == 1 simply means no explicit declaration
-    local _region=`$AWS configure get region ${profile:+ --profile "$profile"} 2>/dev/null | tail -n 1`
+    local _region=`$AWS configure get region ${profile:+ --profile "$profile"} | head -n 1`
 
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
-        RC=255 log.${LOG_LEVEL:-error} "invalid profile ($profile, $config)"; return
+        log.error "invalid profile ($profile, $config)"; return 255
       }
 
-  # possible short-circuit if new values match current
-  [ "${profile:-A}" = "${AWS_PROFILE:-B}" ] && return
-
-  # cleanup previous environment
-  ${DEBUG:+ runv} aws.rmPath
-  unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
+  [ "${profile:-A}" = "${AWS_PROFILE:-B}" ] || {
+      # cleanup previous environment
+      ${DEBUG:+ runv} aws.rmPath
+      unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
+    }
 
   [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
 
-  default=$_region aws.region "$@" || return
+  default="$_region" aws.region "$@" || return
 
   ${DEBUG:+ runv} aws.addPath
   export ${!AWS_*}
@@ -312,7 +317,7 @@ function aws.session {
   local -ir now=`date '+%s'`
   local -i duration write=0 force=0
   # Bash 'integer' doesn't handle leading ZEROs
-  local cmd cache output role profile token mfa
+  local cache output role profile token mfa
 
   local OPTIND opt
   while getopts ':cfp:r:T:t:W' opt; do
@@ -349,6 +354,7 @@ function aws.session {
   #BUG! STS service rejects duration > 3600 despite documentation
   [ ${duration:-0} -gt 3600 ] && unset duration
 
+  #WARN unsafe backwards compat
   while [ "${1+x}" ]; do
     if [[ $1 =~ [0-9]{6} ]]; then
       token=$1
@@ -363,16 +369,17 @@ function aws.session {
     shift
   done
 
-  aws.profile "${profile:-$AWS_PROFILE}" || return
+  aws.profile "$profile" || return
 
-#  mfa=`aws configure get mfa_serial`
+#  mfa=`$AWS configure get mfa_serial`
 #  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
 #    # not reached, aws.profile() should have caught it
 #    RC=1 log.critical "unknown profile ($profile, $AWS_CONFIG_FILE)"
 #    return
 #  fi
 
-  : ${role:=`aws configure get role_arn 2>/dev/null`}
+  : ${role:=`$AWS configure get role_arn 2>/dev/null`}
+  local cmd=()
 
   if [ -n "$role" ]; then
     # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
@@ -380,12 +387,12 @@ function aws.session {
     local session_suffix="${AWS_PROFILE}.$$"
     session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
     session_name="${session_name//:/.}"
-    cmd=( "assume-role" "--role-arn=$role" "--role-session-name=$session_name" )
+    cmd=( 'assume-role' '--role-arn' "$role" '--role-session-name' "$session_name" )
   else
     cmd='get-session-token'
   fi
 
-  if [ -z "$cache" -o $force -eq 1 ]; then
+  if [ -z "$cache" -o ${force:-0} -eq 1 ]; then
     unset cache
     output=$(
         local field
@@ -398,10 +405,10 @@ function aws.session {
         done
 
         ${DEBUG:+ runv} $AWS sts "${cmd[@]}" \
-            ${mfa:+ --serial-number="$mfa" \
-            ${token:+ --token-code=$token}} \
-            ${duration:+ --duration-seconds=$duration}
-    ) || return
+            ${mfa:+ --serial-number "$mfa" \
+            ${token:+ --token-code $token}} \
+            ${duration:+ --duration-seconds $duration}
+      ) || return
 #FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
 #An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
 # if the token is wrong you get:
@@ -541,7 +548,7 @@ function aws.describe() {
     # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
     ec2.tag?(s)) type='instance' ;;&
     eip.tag?(s)) type='elastic-ip' ;;&
-    # WARN non-EC2 items (eg. SQS will catch this and fail)
+    #WARN non-EC2 items (eg. SQS will catch this and fail)
     *.tag?(s)) cmd=( ec2 describe-tags )
             filter=(
                 "Name=resource-type,Values=${type:-${resource%.tags}}"

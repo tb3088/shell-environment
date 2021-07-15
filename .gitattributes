@@ -17,8 +17,8 @@
 *.tf    text
 *.var   text
 
-Makefile text
-makefile text
+Makefile text eol=lf
+makefile text eol=lf
 
 # Python
 *.pxd   text
@@ -72,7 +72,6 @@ makefile text
 *.jspf  text
 *.jspx  text
 *.properties text
-*.sh    text
 *.tld   text
 *.txt   text
 *.tag   text

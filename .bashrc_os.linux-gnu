@@ -20,6 +20,9 @@ is_exec yum && {
   alias yum.vars="python -c 'import yum, pprint; yb = yum.YumBase(); pprint.pprint(yb.conf.yumvar, width=1)'"
 }
 
-source ${BASH_SOURCE/bashrc/functions} || return
+for f in "${BASH_SOURCE/bashrc/functions}"; do
+  [ -f "$f" ] || continue
+  source "$f" || >&2 echo "RC=$? during $f"
+done
 
 # vim: expandtab:ts=4:sw=4
