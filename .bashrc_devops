@@ -12,6 +12,9 @@ is_exec docker && {
 alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
 }
 
-source ${BASH_SOURCE/bashrc/functions} || return
+for f in "${BASH_SOURCE/bashrc/functions}"; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? during $f"
+done
 
 # vim: expandtab:ts=4:sw=4

@@ -34,7 +34,10 @@ link=`type -p aws_bash_completer 2>/dev/null` &&
 # session credentials expire in 1h (default)
 export AWS_SESSION_DURATION=$((3600 * 8))
 
-source ${BASH_SOURCE/bashrc/functions} || return
+for f in "${BASH_SOURCE/bashrc/functions}"; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? during $f"
+done
 
 alias aws.clearenv='aws.profile RESET'
 
