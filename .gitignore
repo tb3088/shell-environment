@@ -45,6 +45,7 @@ RCS/
 *.local
 *.lnk
 *.rdp
+*.swp
 *_history
 *log
 *.stackdump
