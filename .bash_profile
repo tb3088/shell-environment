@@ -126,7 +126,8 @@ done
 : ${PAGER:='less -RF'}
 export EDITOR PAGER
 
-[ -n "$SSH_AUTH_SOCK" ] && ssh-add -q "$HOME"/.ssh/{id_?sa,*.pem}
+# Amazon Linux family doesn't support '-q' or much of anything
+[ -n "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem}
 
 
 # CAC/PIF card support
