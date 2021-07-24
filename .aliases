@@ -11,10 +11,11 @@ alias du='\du -hD'
 
 alias grep='\grep --color --line-number'
 
-#alias ffs='sudo $(fc -ln -1)'
-alias ffs='eval sudo !!'
+alias ffs='eval sudo !!'    #alt: 'sudo $(fc -ln -1)'
 alias free='\free -m'
-alias edit='eval `[[ ${TERM:-X} =~ ^screen ]] && echo screen; [ -n "$WT_SESSION" ] && echo "cmd //c wt nt"` ${EDITOR:-vi}'
+
+# when WT_SESSION make sure $EDITOR is on Windows PATH or use 'cygwin -m ${EDITOR}'
+alias edit='eval $( if [[ ${TERM:-X} =~ ^screen ]]; then echo screen; elif [ -n "$WT_SESSION" ]; then echo wt new-tab --title "$EDITOR" --; fi; echo ${EDITOR##*/} )'
 
 # caution: only Unix(tm)
 alias ps &>/dev/null || alias ps='\ps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'

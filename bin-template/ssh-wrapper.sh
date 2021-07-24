@@ -1,5 +1,5 @@
 #!/bin/bash
-#
+
 # Usage:
 #
 #   [DEBUG=<0-9>] [VERBOSE=<0-9>|-v ...] [PROFILE=<profile>] [SSH_IDENTITY=<key>] [SSH_CONFIG=<path_to>]
@@ -7,8 +7,8 @@
 #
 # symlink to this wrapper will automatically set PROFILE
 
-source "$HOME"/.functions
-declare -F log runv >/dev/null || exit
+source "$HOME"/.functions || exit 1
+declare -F log runv >/dev/null || { >&2 echo "required functions (log, ruv) not found"; exit 1; }
 
 shopt -s nullglob extglob
 
@@ -82,9 +82,13 @@ function _ssh() {
   #   SSH_VERBOSE   - specific to SSH and not this script
 
   local _{screen,file} _cmd=SSH
-  local i v p
 
-  [[ "$TERM" =~ ^screen ]] && { _screen="$SCREEN"; TERM=vt100; }
+  if [[ "${TERM:-X}" =~ ^screen ]]; then
+    _screen="$SCREEN -t '$PROFILE:$1' -T vt100"
+  elif [ -n "$WT_SESSION" ]; then
+    #NOTE! Win10 'ssh' can NOT be on PATH
+    _screen="wt new-tab --title '($PROFILE) $1' --suppressApplicationTitle --"
+  fi
 
   case ${1^^} in
     SCP|SFTP)
@@ -98,13 +102,14 @@ function _ssh() {
   esac
 
   # check that SSH_* files exist
+  local v
   for v in ${!SSH_*}; do
     case $v in
         # skip irrelevent
         SSH_AGENT_PID|SSH_AUTH_SOCK|SSH_VERBOSE|SSH_OPTS) continue ;;
     esac
-    local -n vv=$v
 
+    local -n vv=$v
     [ -n "${vv}" -a -f "${vv}" ] || log.error "file $v (${vv}) not found!"
   done
 
@@ -144,52 +149,42 @@ function _ssh() {
     _env+=("$v=${!v}")
   done
 
-  ${DEBUG:+runv} ${_screen:+ eval $_screen -t "$PROFILE:$1" ${TERM:+ -T $TERM} bash -c \'} \
-        env "${_env[@]}" \
-        ${!_cmd} ${SSH_VERBOSE:- -q} \
-        ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
-        ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
-        ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
-        $SSH_OPTS \
-        "$@" ${_screen:+ || sleep 12\'}
+  ${DEBUG:+ runv} ${_screen:+ eval $_screen} \
+      env "${_env[@]}" \
+      ${!_cmd} ${SSH_VERBOSE:- -q} \
+      ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
+      ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
+      ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
+      $SSH_OPTS \
+      "$@"
 }
 
 
 function init_logs() {
-  local _level=${VERBOSE:=$DEBUG}
+  local -i _level
+  : ${level:=${VERBOSE:-$DEBUG}}
 
   case "$_level" in
     -*) ;;  # ignore like '-v -d'
 
     [4-9])  VERBOSE=3 ;&
     [1-3])
-        [ -n "$SSH_VERBOSE" ] || {
-            # tone down SSH verbosity 1 level unless DEBUG set
-            [ -n "$DEBUG" ] || : $((_level--))
-            [ $_level -eq 0 ] || SSH_VERBOSE="-`printf -- '%.0sv' {1..$_level}`"
-        }
+        if [ -z "$SSH_VERBOSE" ]; then
+          # tone down SSH verbosity 1 level unless DEBUG set
+          [ -z "$DEBUG" ] && : $((_level--))
+          [ $_level -ge 1 ] && SSH_VERBOSE="-`printf -- '%.0sv' {1..$_level}`"
+        fi
         ;;&
+
     # IFF advanced logging (implemented separately)
-    3)  LOG_MASK='DEBUG' ;;
-    2)  LOG_MASK='INFO' ;;
-    1)  LOG_MASK='NOTICE' ;;
-    0|'') unset LOG_MASK ;;     # defaults to >NOTICE
-    *)  log.error "invalid level ($_level) from VERBOSE or DEBUG"
+    3)      LOG_MASK='DEBUG' ;;
+    2)      LOG_MASK='INFO' ;;
+    1)      LOG_MASK='NOTICE' ;;
+    0|'')   unset LOG_MASK ;;     # defaults to WARN
+    *)      log.error "invalid level ($_level) from VERBOSE or DEBUG"
   esac
   [ -n "$DEBUG" ] && LOG_MASK='DEBUG'
 }
-
-
-# Check for essential binaries
-for p in SSH SCP SFTP SCREEN; do
-    declare -n pp=$p
-    # skip variables set to anything, even '' so as to not clobber aliases
-    [ -n "$pp" ] && continue
-
-    pp=`type -p ${p,,}`
-    # screen not found is benign
-    [ -n "$pp" -o "$p" = 'SCREEN' ] && log.info "$p=$pp" || log.error "missing binary ($p)"
-done
 
 
 #--- main ---
@@ -205,8 +200,6 @@ _PROG="${_PROG##*/}"
 [ "${_prog%.*}" = "${_PROG%.*}" ] || PROFILE="$_prog"
 
 BASEDIR="${_progdir%/bin}"          # rather arbitrary...
-log.debug "BASEDIR = $BASEDIR"
-
 _args=()
 
 while getopts ':dvqE:F:i:W:' _opt; do
@@ -241,6 +234,17 @@ shift $((OPTIND-1))
 [ -n "$1" ] || RC=2 log.error 'insufficient arguments'
 
 init_logs
+
+# Check for essential binaries
+for p in SSH SCP SFTP SCREEN; do
+    declare -n pp=$p
+    # skip variables set to anything, even '' so as to not clobber aliases
+    [ -n "${pp:+X}" ] && continue
+
+    pp=`type -p ${p,,}`
+    # screen not found is benign
+    [ -n "$pp" -o "$p" = 'SCREEN' ] && log.info "$p=$pp" || log.error "missing binary ($p)"
+done
 
 # There be DRAGONS!
 # disable SCREEN and script output when invoked with special suffix.

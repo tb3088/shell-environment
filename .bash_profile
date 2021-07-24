@@ -3,6 +3,9 @@ umask 022
 export PATH MANPATH
 export LANG='en_US.utf8'
 
+# kill WINDOWS environment PATH inheritance, but MUST be set in ControlPanel
+#CYGWIN_NOWINPATH=1
+
 # ANSI color codes
 RS="\[\033[0m\]"    # reset
 HC="\[\033[1m\]"    # hicolor
