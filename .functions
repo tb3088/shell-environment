@@ -14,7 +14,7 @@ shopt -s globstar extglob nullglob
 shopt -u failglob
 set -o pipefail
 
-WHICH="`type -p which` --skip-alias --skip-functions"
+WHICH="which --skip-alias --skip-functions"
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
