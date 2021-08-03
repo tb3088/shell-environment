@@ -162,7 +162,7 @@ function aws.region {
 
   # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set,
   # or can fall-back on configuration default
-  [ -z "$region" -a -n "${AWS_DEFAULT_REGION}$default" ] && return
+  [ -z "$region" -a -n "${AWS_DEFAULT_REGION:-$default}" ] && return
 
   if [ "$region" = 'prompt' ]; then
     local -a list=( `echo "${__aws_regions[@]}" | sort` )
@@ -185,16 +185,18 @@ function aws.profile {
 
   # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
   local profile=${1-'prompt'}; shift
+  # but force the issue if called from aws.session()
+  if [ "${FUNCNAME[1]}" = 'aws.session' ]; then
+    [ -n "$profile" ] || profile='prompt'
+  fi
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
     #WARN blindly overwrites if respective dirname() doesn't match
-#FIXME use readlink for valid compare
+#TODO use readlink for valid compare
     [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] ||
         AWS_SHARED_CREDENTIALS_FILE="${AWS_CONFIG_FILE%/*}/credentials"
   else
-    :
-    # uncommon but technically valid
-#    unset AWS_SHARED_CREDENTIALS_FILE
+    :   # uncommon but technically valid
   fi
 
   local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
@@ -230,11 +232,11 @@ function aws.profile {
         log.error "invalid profile ($profile, $config)"; return 255
       }
 
-  [ "${profile:-A}" = "${AWS_PROFILE:-B}" ] || {
-      # cleanup previous environment
-      ${DEBUG:+ runv} aws.rmPath
-      unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
-    }
+  if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
+    # cleanup previous environment
+    ${DEBUG:+ runv} aws.rmPath
+    unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
+  fi
 
   [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
 
@@ -369,7 +371,7 @@ function aws.session {
     shift
   done
 
-  aws.profile "$profile" || return
+  aws.profile "${profile:-$AWS_PROFILE}" || return
 
 #  mfa=`$AWS configure get mfa_serial`
 #  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
