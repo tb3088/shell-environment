@@ -566,11 +566,12 @@ _EOF
   done
   shift $((OPTIND - 1))
 
-  while (( $# )); do
-    ${DEBUG:+ runv} $_find ${1:-.} ${flags[@]} | sed -e '2,$ s/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|-\1/'
-    echo
-    shift
-  done
+  while read item; do
+    out=$( echo "$item" | sed -e 's/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|- \1/' )
+    [ -h "$item" ] && out="$out\t-> `readlink "$item"`"
+    echo -e "$out"
+  done < <( ${DEBUG:+ runv} $_find ${1:-.} ${flags[@]} )
+  echo
 }
 
 
