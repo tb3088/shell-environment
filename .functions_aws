@@ -156,7 +156,7 @@ function is_ec2 { ec2.metadata self &>/dev/null; }
 
 
 function aws.region {
-  # 'default' supplied by auto-detect in aws.profile()
+  # 'default' supplied by `aws configure` in aws.profile()
   local default
   local region=${1-'prompt'}; shift
 
@@ -371,7 +371,7 @@ function aws.session {
     shift
   done
 
-  aws.profile "${profile:-$AWS_PROFILE}" || return
+  aws.profile "${profile:-$AWS_PROFILE}" "$AWS_DEFAULT_REGION" || return
 
 #  mfa=`$AWS configure get mfa_serial`
 #  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
