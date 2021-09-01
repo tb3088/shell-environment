@@ -24,7 +24,7 @@ function runv() {
   [ -z "$NOOP" ] || return
 
   local command=${1/eval/${2//\`/}}
-  local outf=`mktemp -p "${command##*/}-XXXXX"`
+  local outf=`mktemp -t "${command##*/}-XXXXX"`
   "$@" > >( tee "$outf" ) 2> >( tee "${outf}.err" >&2 )
 }
 
