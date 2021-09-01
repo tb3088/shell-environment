@@ -551,7 +551,8 @@ function aws.describe() {
     ec2.tag?(s)) type='instance' ;;&
     eip.tag?(s)) type='elastic-ip' ;;&
     #WARN non-EC2 items (eg. SQS will catch this and fail)
-    *.tag?(s)) cmd=( ec2 describe-tags )
+    *.tag?(s))
+            cmd=( ec2 describe-tags )
             filter=(
                 "Name=resource-type,Values=${type:-${resource%.tags}}"
                 "Name=resource-id,Values=${1:?resource-id}"
@@ -606,9 +607,11 @@ function aws.describe() {
 #    security-group)
 #   launch-config)
 #    ssm.parameter)
-#            ;;
     *)      log.error "unsupported keyword ($resource)"; return 2
   esac
+
+  # quick hack to bypass general case
+#  [ -n "$legacy" ] && return
 
   [ -n "$filter" ] && cmd+=( '--filters' "${filter[@]}" )
 
@@ -616,9 +619,11 @@ function aws.describe() {
     ${DEBUG:+ runv} $AWS "${cmd[@]}" |
         ${DEBUG:+ runv} $JQ --arg field "${field:?}" '.[$field][]' |
         ${DEBUG:+ runv} "${post[@]}"
-  else
+  elif [ -n "$field" ]; then
     ${DEBUG:+ runv} $AWS "${cmd[@]}" |
         ${DEBUG:+ runv} $JQ --arg field "${field:?}" '.[$field][]'
+  else
+    log.notice "FIXME legacy entry ($resource)"; return 0
   fi
 }
 

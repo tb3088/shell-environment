@@ -146,7 +146,7 @@ function _ssh() {
     [ -n "${!v}" ] || continue
 
     log.info "$v=${!v}"
-    _env+=("$v=${!v}")
+    _env+=( "$v=${!v}" )
   done
 
   # Add keys to agent

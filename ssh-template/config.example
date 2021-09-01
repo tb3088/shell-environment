@@ -84,3 +84,193 @@ host *
 #TODO rewrite '%h' to key off VPC subnet applicable to AZ
   ProxyCommand ssh-wrapper.sh -W %h:%p relay${REGION:+.$REGION}.direct
 
+Include ~/.aws/iqinkdemo/us-east-1/ssh_config.header 
+
+#--- Relay/Gateway ---
+host i-0b852a4c98fae2679 gateway.us-east-1a relay.us-east-1.direct
+  Hostname relay.comsearchawsprod.com
+  #3.214.116.208
+  HostKeyAlias i-0b852a4c98fae2679
+  IdentityFile ~/.aws/iqinkdemo/us-east-1/ComsearchQA.pem
+  LocalForward 1943 localhost:943
+
+
+#--- Misc ---
+
+# EFS backup
+host i-01e16a565224e746e i-01e16a565224e746e.* backup.us-east-1
+  Hostname 172.31.0.139
+  HostKeyAlias i-01e16a565224e746e
+
+
+#--- QA ---
+# WordPress
+host i-08ebea95c156279c9.direct qawp1.direct
+  Hostname 18.235.102.77
+
+host i-08ebea95c156279c9* qawp1*
+  Hostname 172.31.1.69
+  HostKeyAlias i-08ebea95c156279c9
+  User centos
+
+# Web
+host i-01a43a3b54f67ffc8.direct qaweb1.direct
+  Hostname 34.238.0.235
+
+host i-01a43a3b54f67ffc8* qaweb1*
+  Hostname 172.31.1.253
+  HostKeyAlias i-01a43a3b54f67ffc8
+
+# Terrain
+host i-0200b4ed11e4ddecb.direct qaterr1.direct
+  Hostname 54.204.58.118
+
+host i-0200b4ed11e4ddecb* qaterr1*
+  Hostname 172.31.1.68
+  HostKeyAlias i-0200b4ed11e4ddecb
+#  LocalForward 5056 localhost:5056
+
+# Sybase DB
+host i-0083f1ea70a6616e6.direct qadb1.direct
+  Hostname 100.24.96.2
+
+host i-0083f1ea70a6616e6 i-0083f1ea70a6616e6.* qadb1 qadb1.*
+  Hostname 172.31.1.110
+  HostKeyAlias i-0083f1ea70a6616e6
+  User centos
+  LocalForward 4101 localhost:4100
+
+# StorageGateway
+host i-0e827801f27ed3d69 sgw-681EF801 
+  Hostname 172.31.3.190
+  HostKeyAlias i-0e827801f27ed3d69
+  User admin
+
+
+#--- QA2 ---
+# Web
+host i-084faad9da14017c9* qa2web1*
+  Hostname 172.31.4.246
+  HostKeyAlias i-084faad9da14017c9
+
+# Terrain
+host i-0b0b2b01f61a1c696* qa2terr1*
+  Hostname 172.31.4.152
+  HostKeyAlias i-0b0b2b01f61a1c696
+#  LocalForward 5056 localhost:5056
+
+
+#--- WMTS ---
+host i-01393336b16eeecf6.direct prodwmts.direct
+  Hostname 34.225.179.210
+
+host i-01393336b16eeecf6 i-01393336b16eeecf6.* prodwmts prodwmts.*
+  Hostname 172.31.1.160
+  HostKeyAlias i-01393336b16eeecf6
+
+host i-08e40fd38f83d6030.direct qawmts.direct
+  Hostname 35.174.209.114
+
+host i-08e40fd38f83d6030 i-08e40fd38f83d6030.* qawmts qawmts.*
+  Hostname 172.31.1.209
+  HostKeyAlias i-08e40fd38f83d6030
+
+
+#--- UAT ---
+# WordPress
+
+# Web
+host i-03938e8d116f79223 uatweb1
+  Hostname 172.31.5.150
+  HostKeyAlias i-03938e8d116f79223
+
+# Terrain
+host i-003c9567668ceb40b uatterr1
+  Hostname 172.31.5.147
+  HostKeyAlias i-003c9567668ceb40b
+
+
+#--- PROD ---
+# Sybase DB
+host i-023885a1ed4f1c653.direct proddb1.direct
+  Hostname 34.236.176.214
+
+host i-023885a1ed4f1c653 i-023885a1ed4f1c653.* proddb1 proddb1.*
+  Hostname 172.31.1.203
+  HostKeyAlias i-023885a1ed4f1c653
+  User mpatton
+
+host i-016c5ce410f9dc4f6.direct dbcollector.direct
+  Hostname 3.90.80.72
+
+host i-016c5ce410f9dc4f6 i-016c5ce410f9dc4f6.* dbcollector dbcollector.*
+  Hostname 172.31.1.9
+  HostKeyAlias i-016c5ce410f9dc4f6
+
+# Web
+host i-0374e55c2397f9984.direct prodweb1.direct
+  Hostname 18.204.254.250
+
+host i-0374e55c2397f9984 i-0374e55c2397f9984.* prodweb1 prodweb1.*
+  Hostname 172.31.1.116
+  HostKeyAlias i-0374e55c2397f9984
+
+# Terrain
+host i-05d42e4d6d142ce8c.direct prodterr1.direct
+  Hostname 18.204.254.248
+
+host i-05d42e4d6d142ce8c i-05d42e4d6d142ce8c.* prodterr1 prodterr1.*
+  Hostname 172.31.1.239
+  HostKeyAlias i-05d42e4d6d142ce8c
+
+# WordPress
+host i-0fbdacca9139e1a30.direct prodwp1.direct
+  Hostname 35.153.61.62
+
+host i-0fbdacca9139e1a30 i-0fbdacca9139e1a30.* prodwp1 prodwp1.*
+  Hostname 172.31.1.52
+  HostKeyAlias i-0fbdacca9139e1a30
+  User centos
+
+host i-03a95602ef2d45e67.direct prodsmtp2.direct
+  Hostname 35.169.254.90
+
+host i-03a95602ef2d45e67 i-03a95602ef2d45e67.* prodsmtp2 prodsmtp2.*
+  Hostname 172.31.1.145
+  HostKeyAlias i-03a95602ef2d45e67
+  User centos
+
+# StorageGateway
+host sgw-E11DFB88 i-08da21576d7ae3968
+  Hostname 172.31.3.89
+  HostKeyAlias i-08da21576d7ae3968
+  User admin
+
+# utility
+host i-027d44e33f2ad33b2.direct utility-amz2.direct
+  Hostname 54.237.9.242
+
+host i-027d44e33f2ad33b2 i-027d44e33f2ad33b2.* utility-amz2 utility-amz2.*
+  Hostname 172.31.1.107
+  HostKeyAlias i-027d44e33f2ad33b2
+
+host i-001c2676db01fa0c5.direct utility-rhel7.direct
+  Hostname 34.201.161.242
+
+host i-001c2676db01fa0c5 i-001c2676db01fa0c5.* utility-rhel7 utility-rhel7.*
+  Hostname 172.31.1.145
+  HostKeyAlias i-001c2676db01fa0c5
+  User centos
+
+
+#------------
+
+host *
+  User ec2-user
+  Include ~/.aws/iqinkdemo/ssh_config.star
+
+match User root,ec2-user,ubuntu,centos,admin
+  IdentityFile ~/.aws/iqinkdemo/us-east-1/Legacy.pem
+
+match User ssm-user,ec2-user,centos
+  IdentityFile ~/.aws/iqinkdemo/us-east-1/AWSSysOps.pem

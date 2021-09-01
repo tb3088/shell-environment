@@ -40,5 +40,6 @@ for f in "${BASH_SOURCE/bashrc/functions}"; do
 done
 
 alias aws.clearenv='aws.profile RESET'
+alias aws=\$AWS
 
 # vim: expandtab:ts=8:sw=4
