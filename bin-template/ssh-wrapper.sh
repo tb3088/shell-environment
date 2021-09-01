@@ -149,7 +149,10 @@ function _ssh() {
     _env+=("$v=${!v}")
   done
 
-  ${DEBUG:+ runv} ${_screen:+ eval $_screen} \
+  # Add keys to agent
+  ssh-add ${SSH_CONFIG%/*}/*.pem
+
+  ${DEBUG:+ runv} $_screen \
       env "${_env[@]}" \
       ${!_cmd} ${SSH_VERBOSE:- -q} \
       ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
@@ -157,6 +160,10 @@ function _ssh() {
       ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
       $SSH_OPTS \
       "$@"
+
+  # Remove keys (requires .pub files)
+  ssh-add -d ${SSH_CONFIG%/*}/*.pem
+
 }
 
 
