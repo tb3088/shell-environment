@@ -81,13 +81,14 @@ function _ssh() {
   #   SSH_IDENTITY  - path to identity file (-i)
   #   SSH_VERBOSE   - specific to SSH and not this script
 
-  local _{screen,file} _cmd=SSH
+  local _cmd=SSH
+  local -a _screen
 
   if [[ "${TERM:-X}" =~ ^screen ]]; then
-    _screen="$SCREEN -t '$PROFILE:$1' -T vt100"
+    _screen=( "$SCREEN" -t "$PROFILE:$1" -T vt100 '--' )
   elif [ -n "$WT_SESSION" ]; then
     #NOTE! Win10 'ssh' can NOT be on PATH
-    _screen="wt new-tab --title '($PROFILE) $1' --suppressApplicationTitle --"
+    _screen=( wt new-tab '--title' "($PROFILE) $1" '--suppressApplicationTitle' '--' )
   fi
 
   case ${1^^} in
@@ -150,10 +151,10 @@ function _ssh() {
   done
 
   # Add keys to agent
-  ssh-add ${SSH_CONFIG%/*}/*.pem
+  ssh-add "${SSH_CONFIG%/*}"/*.pem
 
-  ${DEBUG:+ runv} $_screen \
-      env "${_env[@]}" \
+  ${DEBUG:+ runv} "${_screen[@]}" \
+      /bin/env "${_env[@]}" \
       ${!_cmd} ${SSH_VERBOSE:- -q} \
       ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
       ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
@@ -162,8 +163,7 @@ function _ssh() {
       "$@"
 
   # Remove keys (requires .pub files)
-  ssh-add -d ${SSH_CONFIG%/*}/*.pem
-
+  ssh-add -d "${SSH_CONFIG%/*}"/*.pem
 }
 
 
