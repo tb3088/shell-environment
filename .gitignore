@@ -20,6 +20,7 @@ go
 .local
 .minttyrc
 .motd_shown
+.m2/
 .npm/
 .packer.d
 .pex/
