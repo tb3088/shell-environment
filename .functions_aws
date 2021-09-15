@@ -44,7 +44,7 @@ readonly AWS='eval `__aws_cmd` --output json'
 readonly JQ='jq --exit-status'
 # NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
 readonly JQR="$JQ --raw-output"
-readonly CURL='eval curl --connect-timeout 2 --silent ${VERBOSE:+ --verbose --progress-bar}'
+readonly CURL='eval curl --connect-timeout 5 --fail --silent ${VERBOSE:+ --verbose --progress-bar}'
 
 # CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
 __aws_default_region='us-east-1'
@@ -102,53 +102,69 @@ declare -Ar __aws_availability_zones=(
   )
 
 
-# clone of program provided by ec2-utils.rpm
+# approximate clone of program from ec2-utils.rpm
 function ec2.metadata() {
   local url='http://169.254.169.254/latest/meta-data'
   local item mac
-  : ${item:=`echo "$1" | sed 's/^-\+//'`}
-
-#-a/--ami-id               The AMI ID used to launch this instance
-#-l/--ami-launch-index     The index of this instance in the reservation (per AMI).
-#-m/--ami-manifest-path    The manifest path of the AMI with which the instance was launched.
-#-n/--ancestor-ami-ids     The AMI IDs of any instances that were rebundled to create this AMI.
-#-b/--block-device-mapping Defines native device names to use when exposing virtual devices.
-#-h/--local-hostname       The local hostname of the instance.
-#-o/--local-ipv4           Public IP address if launched with direct addressing; private IP address if launched with public addressing.
-#-k/--kernel-id            The ID of the kernel launched with this instance, if applicable.
-#-z/--availability-zone    The availability zone in which the instance launched. Same as placement
-#-c/--product-codes        Product codes associated with this instance.
-#-p/--public-hostname      The public hostname of the instance.
-#-v/--public-ipv4          NATted public IP Address
-#-u/--public-keys          Public keys. Only available if supplied at instance launch time
-#-r/--ramdisk-id           The ID of the RAM disk launched with this instance, if applicable.
-#-e/--reservation-id       ID of the reservation.
-#-s/--security-groups      Names of the security groups the instance is launched in. Only available if supplied at instance launch time
-#-d/--user-data            User-supplied data.Only available if supplied at instance launch time.
-
-  # special cases
-  case "$item" in
-    i|self)
-        item='instance-id' ;;
-    region)
-        $FUNCNAME availability-zone | sed 's/[a-z]$//'
-        return ;;
-    t|type)   
-        item='instance-type' ;;
-    vpc|vpc-id)
-        : ${mac:=`$FUNCNAME mac`}
-        item='vpc-id' ;;
-    z|az)
-        item='availability-zone' ;;
-  esac
-
   local -A mapping=(
-      [availability-zone]=placement/availability-zone
-      [vpc-id]=network/interfaces/macs/$mac/vpc-id
+      [a]='ami-id'
+      [b]='block-device-mapping/'
+      [availability-zone]='placement/availability-zone'
+      [e]='reservation-id'
+      [h]='local-hostname'
+      [i]='instance-id'
+      [l]='ami-launch-index'
+      [m]='ami-manifest-path'
+      [o]='local-ipv4'
+      [p]='public-hostname'
+      [s]='security-groups'
+      [t]='instance-type'
+      [u]='public-keys'
+      [v]='public-ipv4'
     )
 
-  # intermediary items (eg. macs) leave behind trailing '/'
-  ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||' || return 1
+  : ${item:=`echo "$1" | sed 's/^-\+//'`}
+
+  # special/custom cases
+  case "$item" in
+#-c/--product-codes        Product codes associated with this instance.
+#-d/--user-data            User-supplied data.Only available if supplied at instance launch time.
+    self)   item='i' ;;
+#-k/--kernel-id            The ID of the kernel launched with this instance, if applicable.
+#-n/--ancestor-ami-ids     The AMI IDs of any instances that were rebundled to create this AMI.
+    _public-keys*)
+            item="${item#_}" ;;
+    public-keys)
+            while read line; do
+              echo "$linew"
+              while read format; do
+                # convert multi-line to single
+                $FUNCNAME "_$item/${line%%=*}/$format" | sed ':a;N;s/\n//;ta'
+              done < <( $FUNCNAME "_$item/${line%%=*}" )
+              echo  #----------
+            done < <( $FUNCNAME "_$item" )
+            #TODO selective print by index or by key name
+            return
+            ;;
+    region) $FUNCNAME 'availability-zone' | sed 's/[a-z]$//'; return
+            ;;
+#-r/--ramdisk-id           The ID of the RAM disk launched with this instance, if applicable.
+    subnet?(-id))
+            item="network/interfaces/macs/`$FUNCNAME mac`/subnet-id"
+            ;;
+    type)   item='t' ;;
+    vpc?(-id))
+            item="network/interfaces/macs/`$FUNCNAME mac`/vpc-id"
+            ;;
+    z|az)   item='availability-zone' ;;
+
+# Interferes with fall-through
+#    *)  [ -n "${mapping[$item]}" ] ||
+#            log.error "unsupported format ($format)"; return 2
+  esac
+
+  # intermediary items (eg. MACs) leave behind trailing '/'
+  ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
 }
 
 
@@ -226,10 +242,10 @@ function aws.profile {
     # stacktrace if value of AWS_PROFILE is not defined in file(s).
     #
     # $? == 1 simply means no explicit declaration
-    local _region=`$AWS configure get region ${profile:+ --profile "$profile"} | head -n 1`
+    local _region=`$AWS configure get region --output text ${profile:+ --profile "$profile"} 2>/dev/null | head -n 1`
 
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
-        log.error "invalid profile ($profile, $config)"; return 255
+        log.error "unknown profile ($profile, $config)"; return 255
       }
 
   if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then

@@ -1,12 +1,14 @@
 # $Id$
 
+return 0    #disabled
+
 #FIXME Mixing Windows/Unix style PATH/DIRSEP doesn't work!
 #look at bashrc_golang for proper way
 #also consider punting if binary is win32 instead of native?
 
 is_exec ruby ||
     for v in `convert_path -p "$RUBY_BASE" "$PROGRAMFILES" "$LOCALAPPDATA"` /opt /usr/local; do
-      for p in "$v"{,/ruby$RUBY_VERSION}; do
+      for p in "$v"{,/ruby${RUBY_VERSION:-*}}; do
         [ -x "$p/bin/ruby" ] && { addPath "$p/bin"; break; }
       done
     done
