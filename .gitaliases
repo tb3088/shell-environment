@@ -31,4 +31,4 @@
 
   pf = pull --ff-only
 
-  publish = !"git push --set-upstream origin $(git current-branch)"
+  publish = !"git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)"
