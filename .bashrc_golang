@@ -23,7 +23,7 @@ is_exec go || {
 # Personally I prefer %LOCALAPPDATA%/go and $HOME/.go
 
 IFS=':' read -a items < <(convert_path `go env GOPATH`)
-for d in "${items[@]}"; do 
+for d in "${items[@]}"; do
     mkdir -p "$d"
 done
 # if `is_windows go` then mkdir "$LOCALAPPDATA/go" and GOPATH=`convert_path -t windows -E ...`

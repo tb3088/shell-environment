@@ -1,6 +1,6 @@
 is_exec git && {
 alias gsb='git status -sb'
-alias gbl='git show-branch --all --list'
+alias gbl='git show-branch --all --list 2>/dev/null'
 }
 
 is_exec python && {

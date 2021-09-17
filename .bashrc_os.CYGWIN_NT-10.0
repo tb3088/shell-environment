@@ -1,1 +1,58 @@
-.bashrc_os.cygwin
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+
+# prevent multiple-inclusion
+__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+[ ${!__tag:-0} = 0 ] || return 0
+eval $__tag=1
+#------------------
+
+
+# ignore if wrong OS
+_flavor=${BASH_SOURCE##*/}
+_flavor=${_flavor#?*.}
+[ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
+
+# '<blank>' problems within Dropbox hierarchy or Git-Bash's git
+# 'winsymlinks' needed wherever Native DOS/WIN programs access
+# 'nativestrict' works across MINGW/CYGWIN/WSL but NOT in Native
+#     and requires SeCreateSymbolicLink rights
+#
+# see: http://cygwin.com/cygwin-ug-net/using-cygwinenv.html
+#
+# enforce maximum compatability
+delim='' contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
+
+function command_not_found_handle() { cmd.exe /D /C "$@"; }
+
+if is_exec procps; then
+  alias ps='\procps -e ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
+  function pidof() {
+    \procps -eo pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+  }
+else
+  alias ps='\ps -f'
+  function pidof() {
+    \ps -s | awk -v pat="$1" '$NF ~ pat { print $1 }'
+  }
+fi
+readonly -f pidof
+
+shopt -s nocaseglob
+
+# Example of a semi-smart search, but probably best to define in .aliases.local
+# or better yet put $LOCALAPPDATA on $PATH and symlink to actual.
+#which 'notepad++' &>/dev/null || {
+#    bin='Notepad++/notepad++.exe'
+#    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+#      dir=`convert_path -E "${!dir}"`
+#      [ -x "$dir/$bin" ] && { alias npp="run \"$dir/$bin\""; break; }
+#    done
+#  }
+
+for f in "${BASH_SOURCE/bashrc/functions}"; do
+  [ -f "$f" ] || continue
+  source "$f" || echo >&2 "RC=$? during $f"
+done
+
+# vim: expandtab:ts=4:sw=4

@@ -4,7 +4,7 @@
 #
 # NOTE - this script ONLY works properly if DEST is local!
 # if remote, the hardlinks, mkdir, and PREVIOUS won't work.
-# 
+#
 # derived from http://www.sanitarium.net/golug/rsync_backups_2010.html
 
 _token='.in-flight'

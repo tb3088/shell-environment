@@ -1,6 +1,6 @@
 return 0
 
-#TOTP 
+#TOTP
 #https://markusholtermann.eu/2018/08/simple-bash-totp-script/
 #check also the STAR'd items in Github
 #

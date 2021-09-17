@@ -21,10 +21,10 @@ XTerm*colorULMode:  on
 XTerm*eightBitInput: true
 XTerm*eightBitOutput: true
 XTerm*titeInhibit:  true
- 
+
 XTerm*colorMode:    on
 !XTerm*dynamicColors: on
- 
+
 XTerm*color0:       black
 XTerm*color1:       red3
 XTerm*color2:       green3

@@ -5,7 +5,7 @@
 #
 # During interactive use '-n' turns on VERBOSE, prints current value if any, but does NOT set
 #
-# NOTE 
+# NOTE
 # 'no_proxy' specifies trailing DOMAINs. An IP is invalid!
 #
 # However since no TLD ends in [0-9] that is one way to allow connections using IP to bypass.

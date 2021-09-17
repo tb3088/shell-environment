@@ -6,17 +6,17 @@
 declare -A fields=(
   [status]=1	    [1]='Status'
   [extrequestid]=2  [2]=blah
-  [endtime]=3 
+  [endtime]=3
   [requestid]=4
-  [size]=5 
-  [starttime]=6 
-  [request]=7 
-  [otag]=8 
+  [size]=5
+  [starttime]=6
+  [request]=7
+  [otag]=8
   [etag]=9
-  [version]=10 
-  [retries]=11 
+  [version]=10
+  [retries]=11
   [sdkinvocationid]=12
-  [key]=13 
+  [key]=13
   [md5]=14
 )
 
@@ -28,7 +28,7 @@ declare -A flags=(
   [OFS]='\n'
 )
 
-#flags -k 
+#flags -k
 # -X strips the delim sequence, by unset ORS, but even with delim you can still use 'sort|uniq'
 # -1 puts all items on 1 row per record with space delim (by unset OFS) for use with read() or shell eval
 #   also implies -X

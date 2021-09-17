@@ -632,8 +632,8 @@ function log {
   fi
   [ -n "${FUNCNAME[$offset]}" ] &&
       fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
-  
-  while [ "${1+X}" ]; do 
+
+  while [ "${1+X}" ]; do
     >&2 echo -e "${level:-LOG}\t${fname}$1"
     shift
   done
@@ -655,7 +655,7 @@ function log.info {
   return ${RC:-$rc}
 }
 
-function log.notice { 
+function log.notice {
   local rc=$?
 
   log "$@"

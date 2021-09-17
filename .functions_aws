@@ -797,7 +797,7 @@ function aws.list() {
 #function s3.restore
 #aws s3 ls s3://<bucket_name> | awk '{print $4}' | xargs -L 1 aws s3api restore-object --restore-request Days=<days> --bucket <bucket_name> --key
 # or better
-# s3cmd restore --recursive s3://mybucketname/ 
+# s3cmd restore --recursive s3://mybucketname/
 
 # simple example of qlgrep but need to find my original from AWS
 # szcat <file> | grep '^Key=' | sed -e 's|^\([^/]\+/[^/]\+\).*|\1|' | sort | uniq -dc

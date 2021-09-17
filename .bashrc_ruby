@@ -13,7 +13,7 @@ is_exec ruby ||
       done
     done
 
-# setting GEM_HOME will alter 'INSTALLATION' and 'EXECUTABLE' directory. see 
+# setting GEM_HOME will alter 'INSTALLATION' and 'EXECUTABLE' directory. see
 #   gem env
 # However 'USER INSTALLATION DIRECTORY' is hard-coded to $HOME/.gem/ruby/<version>
 # To prevent Dropbox from syncing contents and making a royal mess:
