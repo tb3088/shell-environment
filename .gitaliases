@@ -1,0 +1,31 @@
+#ref: https://github.com/gitalias/gitalias
+
+[alias]
+  # add by patch & prompt
+  ap = add --patch
+  au = add --update
+  bv = branch --verbose
+
+  sb = status -sb
+  co = checkout
+  cb = checkout --branch
+  ci = commit --interactive
+  cm = commit --message
+  amend = commit --amend --message
+  history = log --pretty='format:%Cred%h%Creset %C(yellow)%d%Creset - %s %C(green)%ar%Creset %C(blue)%an%Creset' --graph --all --decorate
+  ll = log --graph --oneline
+  lp = log --patch
+
+  # review merge of B2 into B1
+  review = '!f() { git merge-tree $(git merge-base $2 $1) ${2:?source} ${1:?dest}; }; f'
+  whitespace = !git diff-tree --check $(git hash-object -t tree /dev/null) HEAD
+  find = '!f() { git branch -r --contains ${1:?commit}; }; f'
+
+  dca = diff --cached
+  dst = diff --staged
+  dws = diff -w
+  check = diff --check
+  # review of <commitA> <commitB> of <file> in split-screen Vim
+  dvim = difftool -t vimdiff -y
+
+  pf = pull --ff-only

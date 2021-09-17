@@ -10,7 +10,6 @@
 .dbus*
 .docker
 .gem
-.gitconfig
 .gnupg
 .go
 go

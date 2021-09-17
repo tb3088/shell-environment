@@ -1,0 +1,21 @@
+[include]
+	path = ~/.gitaliases
+	path = ~/.gitidentity
+[init]
+        defaultBranch = master
+[alias]
+
+[core]
+        autocrlf = input
+	symlinks = true
+[pull]
+	rebase = false
+[color]
+        ui = auto
+[diff]
+	wsErrorHighlight = new
+	compactionHeuristic = true
+[status]
+
+[rebase]
+        autoSquash = true
