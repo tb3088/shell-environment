@@ -1,6 +1,6 @@
 is_exec git && {
 alias gsb='git status -sb'
-alias gbl='git show-branch --all --list 2>/dev/null'
+alias gdrender="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 }
 
 is_exec python && {

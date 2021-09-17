@@ -4,6 +4,7 @@
   # add by patch & prompt
   ap = add --patch
   au = add --update
+  bls = show-branch --all --list
   bv = branch --verbose
 
   sb = status -sb
