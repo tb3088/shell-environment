@@ -18,9 +18,9 @@
   lp = log --patch
 
   # review merge of B2 into B1
-  review = '!f() { git merge-tree $(git merge-base $2 $1) ${2:?source} ${1:?dest}; }; f'
-  whitespace = !git diff-tree --check $(git hash-object -t tree /dev/null) HEAD
-  find = '!f() { git branch -r --contains ${1:?commit}; }; f'
+  review = !'f() { git merge-tree $(git merge-base $2 $1) ${2:?source} ${1:?dest}; }; f'
+  whitespace = !"git diff-tree --check $(git hash-object -t tree /dev/null) HEAD"
+  find = !'f() { git branch -r --contains ${1:?commit}; }; f'
 
   dca = diff --cached
   dst = diff --staged
@@ -30,3 +30,5 @@
   dvim = difftool -t vimdiff -y
 
   pf = pull --ff-only
+
+  publish = !"git push --set-upstream origin $(git current-branch)"
