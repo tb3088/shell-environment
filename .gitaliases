@@ -14,7 +14,7 @@
   ci = commit --interactive
   cm = commit --message
   amend = commit --amend --message
-  history = log --pretty='format:%Cred%h%Creset %C(yellow)%d%Creset - %s %C(green)%ar%Creset %C(blue)%an%Creset' --graph --all --decorate
+  hist = log --pretty='format:%Cred%h%Creset %C(yellow)%d%Creset - %s %C(green)%ar%Creset %C(blue)%an%Creset' --graph --all --decorate
   ll = log --graph --oneline
   lp = log --patch
 
@@ -22,7 +22,9 @@
   review = ! "f() { git merge-tree $(git merge-base $@ 2>/dev/null) $@; }; f"
   whitespace = ! "git diff-tree --check $(git hash-object -t tree /dev/null) HEAD"
   findsha = ! "f() { git branch -r --contains ${1:?commit}; }; f"
+# see .bashrc_devops for SHELL alias 'git.render' which strips diff markers for easy cut/paste
 
+  d = diff
   dca = diff --cached
   dst = diff --staged
   dws = diff -w

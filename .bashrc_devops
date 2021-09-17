@@ -1,6 +1,6 @@
 is_exec git && {
-alias gsb='git status -sb'
-alias gdrender="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
+alias g=git
+alias git.render="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 }
 
 is_exec python && {
