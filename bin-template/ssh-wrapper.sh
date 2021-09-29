@@ -91,15 +91,16 @@ function _ssh() {
     _screen=( wt new-tab '--title' "($PROFILE) $1" '--suppressApplicationTitle' '--' )
   fi
 
-  case ${1^^} in
-    SCP|SFTP)
+  case ${1,,} in
+    scp|sftp)
         _cmd=${1^^}
         ;&
-    SSH)
+    ssh)
         shift;
         # disable Screen where persistent command output is helpful
         unset _screen
         ;;
+    *)  _cmd=$1
   esac
 
   # check that SSH_* files exist
@@ -140,6 +141,9 @@ function _ssh() {
     log.debug "    $_file"
     [ -f "$_file" ] && SSH_KNOWN_HOSTS="$_file" || : ${SSH_KNOWN_HOSTS:?not found}
   }
+
+  # handy short-cut
+  [[ $_cmd =~ SSH|SCP|SFTP ]] || { $_cmd "${SSH_CONFIG}"; exit; }
 
   # propagate environment when running Screen
   local _env=()
