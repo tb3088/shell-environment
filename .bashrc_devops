@@ -1,7 +1,13 @@
 is_exec git && {
 alias g=git
+alias gsb='git status --short --branch'
 alias git.render="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 }
+
+# patterns to strip whitespace from code
+#sed -i 's/[ \t]\+$//'  dangling EOL
+#sed -i 's| {8}|\t|g'   spaces to tab
+#sed -i 's| \{1,7\}\t|\t|g'  remove prepended spaces before tabs
 
 is_exec python && {
 alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"

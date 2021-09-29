@@ -5,10 +5,10 @@
   # add by patch & prompt
   ap = add --patch
   au = add --update
-  bls = show-branch --all --list
+  bls = !"git show-branch --all --list 2>/dev/null"
   bv = branch --verbose
 
-  sb = status -sb
+  sb = status --short --branch
   co = checkout
   cb = checkout --branch
   ci = commit --interactive
