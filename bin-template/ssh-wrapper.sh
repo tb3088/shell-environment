@@ -100,7 +100,8 @@ function _ssh() {
         # disable Screen where persistent command output is helpful
         unset _screen
         ;;
-    *)  _cmd=$1
+    echo|edit|file)
+        _cmd=$1 ;;
   esac
 
   # check that SSH_* files exist
