@@ -1,3 +1,6 @@
+" docker on Windows and also when in screen
+nnoremap <C-Z> <nop>
+
 " system-wide VIMRC can interfere
 filetype off
 runtime bundle/vim-pathogen/autoload/pathogen.vim
@@ -56,3 +59,6 @@ if $COLORSCHEME != ""
   exec 'colorscheme '.$COLORSCHEME
 endif
 
+"ref: https://vim.fandom.com/wiki/Mapping_keys_in_Vim_-_Tutorial_(Part_1)
+" use F5 to grep for word under cursor in CWD
+nnoremap <F5> :grep <C-R><C-W> *<CR>
