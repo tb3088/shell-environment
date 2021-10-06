@@ -42,9 +42,8 @@ if [ -n "$GIT_PROMPT" ]; then
 
   #TODO
   # short-circuit on not a git repo
-  # set branch,upstream via git branch --show-current or git branch|awk 'print $2'
+  # set branch,upstream via git branch --show-current or git branch -vv --color | awk '{ print $2, $3, $4 }'
   # then get rid of '--branch' below
-  # git branch -vv yields '* master 6ea0e3e [origin/master]' which would be useful IMO
 
   eval $(
     set -e -o pipefail
