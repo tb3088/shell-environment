@@ -9,7 +9,7 @@ alias cp='\cp -v'
 alias df='\df -h'
 alias du='\du -hD'
 
-alias grep='\grep --color --line-number'
+alias grep='\grep --color=auto'
 
 alias ffs='eval sudo !!'    #alt: 'sudo $(fc -ln -1)'
 alias free='\free -m'
