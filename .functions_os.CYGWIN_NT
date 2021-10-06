@@ -34,7 +34,7 @@ function convert_path() {
     case $opt in
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
-      t)    egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
+      t)    \egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
                 format="-t $OPTARG" || {
                     log.error "unknown format ($OPTARG)"
                     return 2
@@ -94,7 +94,7 @@ function sudo() {
   shift $((OPTIND-1))
 
   : ${who:?missing argument \'-u USER\'}
-  line=`getent passwd $who || grep -s "^${who}:" /etc/passwd` || {
+  line=`getent passwd $who || \grep -s "^${who}:" /etc/passwd` || {
         log.error "unknown USER ($who)"
         return
     }
@@ -121,7 +121,7 @@ function is_windows() {
   # 'which' is multi-platform safe unlike 'type -p'
   bin=`$WHICH "${1:?}"`
   [[ "${bin:=$1}" =~ ^/cygdrive ]] || {
-      file "$bin" | grep -q 'for MS Windows'
+      \file "$bin" | \grep -q 'for MS Windows'
       #alt: sed -E 's/.* for ([[:alpha:]/]+) .*/\1/'
     }
 }

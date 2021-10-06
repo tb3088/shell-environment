@@ -16,7 +16,7 @@ for f in "$HOME"/.functions{,.local}; do
 done
 
 for f in "$HOME"/.{bashrc{.local,_os,_*},aliases{,.local},dircolors}; do
-  egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
+  \egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
   source "$f" || >&2 echo "RC=$? during $f"
 done
