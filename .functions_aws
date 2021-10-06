@@ -59,7 +59,7 @@ declare -Ar __aws_session=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# aws ec2 describe-regions | $JQR '.Regions[].RegionName | sort'
+# aws ec2 describe-regions | $JQR '.Regions[].RegionName | \sort'
 
 is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
@@ -182,15 +182,18 @@ function aws.region {
   [ -z "$region" -a -n "${AWS_DEFAULT_REGION:-$default}" ] && return
 
   if [ "$region" = 'prompt' ]; then
-    local -a list=( `echo "${__aws_regions[@]}" | sort` )
-    echo; printf ' %s\n' "${list[@]}" | column; echo
-    read -t 12 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$list}" || return
-    region=${REPLY,,}
+    echo
+    keys=1 array.print __aws_regions | \column
+    echo
+    read -t 12 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
+
+    [[ "$REPLY" =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
   fi
 
   # validity check
   [ -n "${__aws_availability_zones[$region]}" ] &&
-      export AWS_DEFAULT_REGION=$region || log.error "invalid region ($region)"
+      export AWS_DEFAULT_REGION=$region ||
+          log.error "invalid region ($region)"
 }
 
 
@@ -201,7 +204,9 @@ function aws.profile {
   fi
 
   # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
-  local profile=${1-'prompt'}; shift
+  local profile config
+  [ -n "${profile+X}" ] || { profile=${1-'prompt'}; shift; }
+
   # but force the issue if called from aws.session()
   if [ "${FUNCNAME[1]}" = 'aws.session' ]; then
     [ -n "$profile" ] || profile='prompt'
@@ -216,22 +221,25 @@ function aws.profile {
     :   # uncommon but technically valid
   fi
 
-  local config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
-  is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
+  [ -n "$config" ] || config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
+  VERBOSE=1 is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
 
   if [ "$profile" = 'prompt' ]; then
     local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config"` )
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
         list+=( `awk '/^\[\w+\]/ { gsub(/\[|\]/, ""); print; }' "$AWS_SHARED_CREDENTIALS_FILE"` )
 
-    list=( `IFS=$'\n'; sort -u <<< "${list[*]}" | grep -v default` )
+    list=( `IFS=$'\n'; \sort -u <<< "${list[*]}" | \grep -v default` )
 
     if [ ${#list[@]} -ge 1 ]; then
-      echo; printf ' %s\n' "${list[@]}" | column; echo
-      read -t 12 -ep "Choose PROFILE:  " || return
-      profile=$REPLY
+      echo
+      keys=1 array.print list | \column
+      echo
+      read -t 12 -ep "Choose PROFILE:  " -i "$list" || return
+
+      [[ "$REPLY" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
     else
-      log.notice "no profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"
+      log.notice "No non-default profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"
       unset profile
     fi
   fi
@@ -246,7 +254,7 @@ function aws.profile {
     local _region=`$AWS configure get region --output text ${profile:+ --profile "$profile"} 2>/dev/null | head -n 1`
 
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
-        log.error "unknown profile ($profile, $config)"; return 255
+        RC=255 log.error "unknown profile ($profile, $config)"
       }
 
   if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
@@ -280,13 +288,17 @@ function aws.session-load {
        find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))`
      )
 
-    [ ${#list[@]} -ge 1 ] || { log.error "no cached sessions ($cache_dir)"; return; }
+    [ ${#list[@]} -ge 1 ] || { log.warn "no cached sessions ($cache_dir)"; return; }
 
-    echo; printf ' %s\n' "${list[@]}" | column; echo
-    read -t 12 -ep "Choose cached SESSION:  " -i "${list[0]}" || return
-    input="$cache_dir"/$REPLY
+    echo
+    keys=1 array.print list | \column
+    echo
+    read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
+
+    [[ "$REPLY" =~ [0-9] ]] && input="$cache_dir/${list[$REPLY]}" || input="$cache_dir/$REPLY"
   fi
 
+  # read file into variable
   [ -f "$input" ] && input=$(<"$input")
 
   $JQ . <<< "$input" &>/dev/null && format='json'
@@ -435,7 +447,7 @@ function aws.session {
   fi
 
   aws.session-load "${cache:-$output}" || return
-  [ $write -eq 1 ] && aws.session-write
+  [ ${write:-0} -eq 1 ] && aws.session-write
 
   log.info `aws.printenv`
   export ${!AWS_*}
@@ -465,7 +477,8 @@ function aws.addPath {
     fi
 
     [ -n "$SSH_AUTH_SOCK" ] &&
-        ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} ${delete:+ -d} `readlink -e "$v"`/{id_*,*.pem}${delete:+.pub} 2>/dev/null
+        ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} ${delete:+ -d} \
+            `readlink -e "$v"`/{id_*,*.pem}${delete:+.pub} 2>/dev/null
   done
 }
 
@@ -481,10 +494,10 @@ function aws.route53-export {
 
   # if doesn't match pattern assume Domain name was specified
   #FIXME will pick first occurance which is likely not intended, use read() to prompt
-  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
+  \grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
       $AWS route53 list-hosted-zones |
-      $JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
-      cut -d'/' -f3 | head -n 1
+          $JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
+          cut -d'/' -f3 | head -n 1
     )
 
   for zone in $zone_id; do
@@ -801,7 +814,7 @@ function aws.list() {
 # s3cmd restore --recursive s3://mybucketname/
 
 # simple example of qlgrep but need to find my original from AWS
-# szcat <file> | grep '^Key=' | sed -e 's|^\([^/]\+/[^/]\+\).*|\1|' | sort | uniq -dc
+# szcat <file> | \grep '^Key=' | \sed -e 's|^\([^/]\+/[^/]\+\).*|\1|' | \sort | \uniq -dc
 
 
 # vim: expandtab:ts=8:sw=4

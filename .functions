@@ -189,7 +189,7 @@ function contains() {
 
   # empty string inside empty is valid
   case "$method" in
-    grep)   grep -q "$sub" <<< "$source" ;;
+    grep)   \grep -q "$sub" <<< "$source" ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
 #    insensitive)
@@ -409,7 +409,7 @@ function copy_function() {
 
   shift
 
-  if echo $fname | grep -q '() {'; then
+  if echo $fname | \grep -q '() {'; then
     body=$fname
     fname=`awk '{print $1; exit}' <<< "$body"`
   else
@@ -467,8 +467,9 @@ function join_string() {
 #  printf "${delim}${quote}%s${quote}" "${@:2}"
 }
 
-
 function join_quote() { quote=\' join_string "$@"; }
+
+
 
 # function __parse_options() {
     # local option{,2} arg IFS='
@@ -598,7 +599,21 @@ function values() { local -n nref=${1:?}; echo "${nref[@]}"; }
 
 function value()  { local -n nref=${1:?}; echo "${nref[${2:?}]}"; }
 
+function array.print() {
+  local format keys
+  local -n nref=${1:?}
+
+  if [ ${keys:-0} -eq 1 ]; then
+    for k in `keys $1`; do
+      printf "${format:-%s: %s\n}" "$k" `value $1 $k`
+    done
+  else
+    printf "${format:-%s\n}" `values $1`
+  fi
+}
+
 #TODO array functions; push, pop, delete, replace, truncate
+#TODO array.append|.add|.insert, prune|delete, length, equal, is_empty, clear, dedup, index_of|key,
 
 
 function expand_dvq() {
