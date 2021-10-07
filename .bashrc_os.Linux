@@ -7,22 +7,26 @@ __tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
 eval $__tag=1
 #------------------
 
-# ignore if wrong OS
-_flavor=${BASH_SOURCE##*/}
-_flavor=${_flavor#?*.}
-[ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
 
+#is_exec log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
-PATHSEP=':'
+[ `id -u` -eq 0 ] || : ${SUDO:=sudo}
+[ `ps -p 1 -o comm= 2>/dev/null` != 'systemd' ]
+SYSTEMD=$?
 
-#TODO support Debian/WSL?
-is_exec yum && {
-  alias yum.vars="python -c 'import yum, pprint; yb = yum.YumBase(); pprint.pprint(yb.conf.yumvar, width=1)'"
+function proc.cache-hit () {
+  [ $EUID -eq 0 ] || { echo "insufficent privileges (root)"; return 2; }
+
+  read rchar wchar rbytes wbytes <<< $( cat /proc/${1:?}/io | awk '
+      $1 == "rchar:" { print $2 }
+      $1 == "wchar:" { print $2 }
+      $1 == "read_bytes:" { print $2 }
+      $1 == "write_bytes:" { print $2 }'
+    )
+
+  echo -n "READ "; bc <<< "scale=3; (1 - $rbytes / $rchar)"
+  echo -n "WRITE "; bc <<< "scale=3; (1 - $wbytes / $wchar)"
 }
 
-for f in "${BASH_SOURCE/bashrc/functions}"; do
-  [ -f "$f" ] || continue
-  source "$f" || >&2 echo "RC=$? during $f"
-done
-
 # vim: expandtab:ts=4:sw=4
+

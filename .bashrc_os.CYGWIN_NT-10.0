@@ -55,4 +55,5 @@ for f in "${BASH_SOURCE/bashrc/functions}"; do
   source "$f" || echo >&2 "RC=$? during $f"
 done
 
-# vim: expandtab:ts=4:sw=4
+
+# vim: expandtab:ts=4:sw=4?
