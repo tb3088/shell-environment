@@ -2,11 +2,17 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
 # prevent multiple-inclusion
-__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+__link=`readlink "$BASH_SOURCE"`
+__tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${!__tag:-0} = 0 ] || return 0
 eval $__tag=1
 #------------------
 
+
+# ignore if wrong OS
+_flavor=${BASH_SOURCE##*/}
+_flavor=${_flavor#?*.}
+[ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
 
 #is_exec log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
@@ -28,5 +34,5 @@ function proc.cache-hit () {
   echo -n "WRITE "; bc <<< "scale=3; (1 - $wbytes / $wchar)"
 }
 
-# vim: expandtab:ts=4:sw=4
 
+# vim: expandtab:ts=4:sw=4

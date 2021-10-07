@@ -2,7 +2,8 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
 # prevent multiple-inclusion
-__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+__link=`readlink "$BASH_SOURCE"`
+__tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${!__tag:-0} = 0 ] || return 0
 eval $__tag=1
 #------------------
@@ -685,5 +686,6 @@ done
 # local _save=`shopt -p $1`
 # ...
 # ${_save}
+
 
 # vim: expandtab:ts=8:sw=4

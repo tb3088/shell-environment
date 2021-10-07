@@ -2,7 +2,8 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
 # prevent multiple-inclusion
-__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+__link=`readlink "$BASH_SOURCE"`
+__tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${!__tag:-0} = 0 ] || return 0
 eval $__tag=1
 #------------------
@@ -41,7 +42,7 @@ function convert_path() {
             ;;
       :)    log.error "missing argument to '-$OPTARG'"; return 2
             ;;
-      \?)   flags+=("-$OPTARG")
+      \?)   flags+=( "-$OPTARG" )
     esac
   done
   shift $((OPTIND-1))
@@ -122,8 +123,9 @@ function is_windows() {
   [[ "${bin:=$1}" =~ ^/cygdrive ]] || {
       file "$bin" | grep -q 'for MS Windows'
       #alt: sed -E 's/.* for ([[:alpha:]/]+) .*/\1/'
-    } || return
+    }
 }
 readonly -f is_windows
+
 
 # vim: expandtab:ts=4:sw=4

@@ -2,7 +2,8 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
 # prevent multiple-inclusion
-__tag=SOURCE_${BASH_SOURCE//[^a-zA-Z0-9_]/}
+__link=`readlink "$BASH_SOURCE"`
+__tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${!__tag:-0} = 0 ] || return 0
 eval $__tag=1
 #------------------
@@ -20,7 +21,7 @@ is_exec session-manager-plugin || {
     # Linux installs to /usr/local/bin
   }
 
-link=`type -p aws_bash_completer 2>/dev/null` &&
+link=`type -p aws_{,bash_}completer | head -n 1` &&
     for bc in {/etc/,"$HOME"/.}bash_completion.d; do
       [ -e "$bc/${link##*/}" ] && break
 
@@ -41,5 +42,6 @@ done
 
 alias aws.clearenv='aws.profile RESET'
 alias aws=\$AWS
+
 
 # vim: expandtab:ts=8:sw=4
