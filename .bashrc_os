@@ -17,7 +17,7 @@ function pidof() {
 }
 
 __uname=`uname`  # alt: uname|sed -E 's/(-[0-9.]+)+$//'
-for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{${__uname%%-*},$OSTYPE}; do
+for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%-*}}; do
   [ -f "$f" ] || continue
   #NOTE - Mingw/MSYS don't support symlinks! The resulting file has just
   # a sigle line in it with the link target, which when sourced'd tries to
