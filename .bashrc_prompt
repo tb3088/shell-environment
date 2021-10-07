@@ -39,6 +39,13 @@ function __prompt() {
 if [ -n "$GIT_PROMPT" ]; then
   local _branch _upstream _stat{us,} _delta
   local -i _mod _del _add _unk _ign _tot
+
+  #TODO
+  # short-circuit on not a git repo
+  # set branch,upstream via git branch --show-current or git branch|awk 'print $2'
+  # then get rid of '--branch' below
+  # git branch -vv yields '* master 6ea0e3e [origin/master]' which would be useful IMO
+
   eval $(
     set -e -o pipefail
     awk '
@@ -59,9 +66,9 @@ if [ -n "$GIT_PROMPT" ]; then
   )
 
   if [ -n "$_branch" ]; then
-    _upstream=${_branch#*...}
+    _upstream=${_branch#*...*/}
     _branch=${_branch%...*}
-    [ "$_upstream" != "$_branch" ] || unset _upstream
+    [ "$_upstream" = "$_branch" ] && unset _upstream
 
     # TODO handle both ahead AND behind?
     case "$_status" in
