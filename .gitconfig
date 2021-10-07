@@ -1,6 +1,6 @@
 [include]
-	path = ~/.gitaliases
-	path = ~/.gitidentity
+	path = .gitidentity
+	path = .gitaliases
 [init]
         defaultBranch = master
 [alias]
