@@ -3,9 +3,9 @@
 
 # prevent multiple-inclusion
 __link=`readlink -f "$BASH_SOURCE"`
-__tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${!__tag:-0} = 0 ] || return 0
-eval $__tag=1
+declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
+[ ${__tag:-0} = 0 ] || return 0
+__tag=1
 #------------------
 
 [[ $BASH_VERSION =~ 4.[2-4] ]] || [[ $BASH_VERSION =~ 5 ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
