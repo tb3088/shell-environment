@@ -56,4 +56,4 @@ for f in "${BASH_SOURCE/bashrc/functions}"; do
 done
 
 
-# vim: expandtab:ts=4:sw=4?
+# vim: expandtab:ts=4:sw=4
