@@ -12,7 +12,14 @@ __tag=1
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 #TODO rename functions as 'aws::<foo>' instead of dot?
 
-is_exec aws${AWS_VERSION} jq curl || return 2
+is_exec aws${AWS_VERSION} jq curl || {
+    >&2 echo -e "ERROR\tmissing tools (aws, jq, curl)"
+    return 2
+  }
+
+if is_windows "aws${AWS_VERSION}"; then
+  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]] && source ~/.bashrc_os
+fi
 
 function __aws_cmd() {
   local -a cmd=()
@@ -59,7 +66,7 @@ declare -Ar __aws_session=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# aws ec2 describe-regions | $JQR '.Regions[].RegionName | \sort'
+# aws ec2 describe-regions | $JQR '.Regions[].RegionName | sort'
 
 is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(

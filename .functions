@@ -1,5 +1,6 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+[[ "$BASH_VERSION" =~ 5|4.[2-4] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 
 # prevent multiple-inclusion
 __link=`readlink -f "$BASH_SOURCE"`
@@ -7,8 +8,6 @@ declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${__tag:-0} = 0 ] || return 0
 __tag=1
 #------------------
-
-[[ $BASH_VERSION =~ 4.[2-4] ]] || [[ $BASH_VERSION =~ 5 ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 
 
 shopt -s globstar extglob nullglob
