@@ -91,22 +91,22 @@ declare -ar __aws_regions=(
 
 is_hash __aws_availability_zones &>/dev/null && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
 declare -Ar __aws_availability_zones=(
-    [ap-northeast-1]=`printf "%s " ap-northeast-1{a,c,d}`
-    [ap-northeast-2]=`printf "%s " ap-northeast-2{a,c}`
-    [ap-south-1]=`printf "%s " ap-south-1{a..b}`
-    [ap-southeast-1]=`printf "%s " ap-southeast-1{a..c}`
-    [ap-southeast-2]=`printf "%s " ap-southeast-2{a..c}`
-    [ca-central-1]=`printf "%s " ca-central-1{a..b}`
-    [eu-central-1]=`printf "%s " eu-central-1{a..c}`
-    [eu-north-1]=`printf "%s " eu-north-1{a..c}`
-    [eu-west-1]=`printf "%s " eu-west-1{a..c}`
-    [eu-west-2]=`printf "%s " eu-west-2{a..c}`
-    [eu-west-3]=`printf "%s " eu-west-3{a..c}`
-    [sa-east-1]=`printf "%s " sa-east-1{a,c}`
-    [us-east-1]=`printf "%s " us-east-1{a..f}`
-    [us-east-2]=`printf "%s " us-east-2{a..c}`
-    [us-west-1]=`printf "%s " us-west-1{a,c}`
-    [us-west-2]=`printf "%s " us-west-2{a..c}`
+    [ap-northeast-1]=`echo ap-northeast-1{a,c,d}`
+    [ap-northeast-2]=`echo ap-northeast-2{a,c}`
+    [ap-south-1]=`echo ap-south-1{a..b}`
+    [ap-southeast-1]=`echo ap-southeast-1{a..c}`
+    [ap-southeast-2]=`echo ap-southeast-2{a..c}`
+    [ca-central-1]=`echo ca-central-1{a..b}`
+    [eu-central-1]=`echo eu-central-1{a..c}`
+    [eu-north-1]=`echo eu-north-1{a..c}`
+    [eu-west-1]=`echo eu-west-1{a..c}`
+    [eu-west-2]=`echo eu-west-2{a..c}`
+    [eu-west-3]=`echo eu-west-3{a..c}`
+    [sa-east-1]=`echo sa-east-1{a,c}`
+    [us-east-1]=`echo us-east-1{a..f}`
+    [us-east-2]=`echo us-east-2{a..c}`
+    [us-west-1]=`echo us-west-1{a,c}`
+    [us-west-2]=`echo us-west-2{a..c}`
   )
 
 
