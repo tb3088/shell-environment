@@ -1,18 +1,14 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 [[ "$BASH_VERSION" =~ 5|4.[2-4] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
-
-# prevent multiple-inclusion
-__link=`readlink -f "$BASH_SOURCE"`
-declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
-__tag=1
 #------------------
 
-
-shopt -s globstar extglob nullglob
-shopt -u failglob
-set -o pipefail
+# change settings if running as script
+[[ $- =~ i ]] || {
+    shopt -u nullglob
+    shopt -u failglob
+    set -o pipefail
+  }
 
 WHICH="which --skip-alias --skip-functions"
 
@@ -132,9 +128,15 @@ for f in array exec hash integer string file function readonly; do
 done
 
 
-function is_windows() {
-  # deliberate NOOP
-  return 1
+is_windows () {
+  [ -n "$1" ] || {
+      [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
+      return
+    }
+
+  bin=`$WHICH "$1"`;
+  [[ "${bin:=$1}" =~ ^/cygdrive ]] ||
+      \file "$bin" | \grep -q 'for MS Windows'
 }
 
 
@@ -143,17 +145,42 @@ function _continue() { [ -n "$CONTINUE" ]; }
 
 
 function convert_path() {
+  # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
+  # This *magical* behavior does NOT extend to other PATH-like variables!
+  #     eg. GOPATH, RUBYPATH, RUBYLIB, PUPPET_MODULE_PATH, JAVA_HOME
+  #
+  # However, interactive use of paths must be inside quotes or escaped
+  # since the $SHELL parser is not so gifted.
+  #
+  # cygpath only modifies the first occurance of '/cygdrive' or '[A-Z]:'
+  # unless '-p' but delimiter in input MUST consistently match opposite
+  # of desired output format (';' for Windows, ':' for Unix). Any intermix
+  # or requesting Windows output from Windows input yields garbage. But
+  # Unix output from Unix input is usually benign.
+
+  local format flags=()
   local -i escape
   local OPTIND
 
-  while getopts ":eE" opt; do
+  while getopts ":eEt:" opt; do
     case $opt in
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
-      \?)   ;;
+      t)    is_windows || return 2
+	    \egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
+                format="-t $OPTARG" || {
+                    log.error "unknown format ($OPTARG)"
+                    return 2
+                }
+            ;;
+      :)    log.error "missing argument to '-$OPTARG'"; return 2
+            ;;
+      \?)   flags+=( "-$OPTARG" )
     esac
   done
   shift $((OPTIND - 1))
+
+  #TODO detect bad input, word-split on PATHSEP?
 
   # read from stdin if no args
   set -- "${@:-$(</dev/stdin)}"
@@ -164,6 +191,8 @@ function convert_path() {
 
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
+    is_windows &&
+        p=`cygpath --path $format ${flags[@]} -- "$p"`
 
     [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
     shift
@@ -453,12 +482,17 @@ function join_string() {
   [ "$quote" = "$delim" ] && escape=$delim
   [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
 
+  [ -z "$quote" -a ${#delim} -le 1 ] && {
+      IFS=$delim; echo "$*"
+      return
+    }
+
   local IFS=
   # prepend each word during expansion
-  local _str="${*/#/${delim}${quote}}"
+  local _str=${*/#/${quote}${delim}${quote}}
 
   # strip leading 'delim' and tack on trailing 'quote'
-  echo "${_str#${delim}}${quote}"
+  echo "${_str#${quote}${delim}}$quote"
 
   #alt: slower
 #  printf "${quote}%s${quote}" "$1"
@@ -500,25 +534,25 @@ function join_quote() { quote=\' join_string "$@"; }
 
 
 #TODO move to .functions_os
-function userinfo() {
-  # analogous to /bin/usermod
-  #while [ "${1+xxx}" ] && [[ "$1" =~ -* ]]; do
-  local OPTIND
-#  FIXME use getopts like a sane person!
-  [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
-
-#FIXME define a HASH for lookups instead of this crap
-  case $flag in
-    l)  field=1 ;;&
-    u)  field=2 ;;&
-    g)  field=3 ;;&
-    d)  field=6 ;;&
-    L)  field=lock ;&
-    # TODO needs if/else
-    p)  getent shadow ${1:-`id -u`} | awk -F: -v field=$field '{ print $2 }' ;;
-    '') id -nu $1 ;;
-    *)  getent passwd ${1:-`id -u`}
-  esac
+#function userinfo() {
+#  # analogous to /bin/usermod
+#  #while [ "${1+xxx}" ] && [[ "$1" =~ -* ]]; do
+#  local OPTIND
+##  FIXME use getopts like a sane person!
+#  [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
+#
+##FIXME define a HASH for lookups instead of this crap
+#  case $flag in
+#    l)  field=1 ;;&
+#    u)  field=2 ;;&
+#    g)  field=3 ;;&
+#    d)  field=6 ;;&
+#    L)  field=lock ;&
+#    # TODO needs if/else
+#XX    p)  getent shadow ${1:-`id -u`} | awk -F: -v field=$field '{ print $2 }' ;;
+#XX    '') id -nu $1 ;;
+#XX    *)  getent passwd ${1:-`id -u`}
+#  esac
 #  # login:x:uid:gid:gecos:home:shell
 #  -c, --comment COMMENT         new value of the GECOS field
 #  -d, --home HOME_DIR           new home directory for the user account
@@ -531,7 +565,7 @@ function userinfo() {
 #  -p, --password PASSWORD       use encrypted password for the new password
 #  -s, --shell SHELL             new login shell for the user account
 #  -u, --uid UID                 new UID for the user account
-}
+#}
 
 
 #[ os.is_command tree -o declare -F tree ] &>/dev/null ||
@@ -569,7 +603,8 @@ _EOF
 
   while read item; do
     out=$( echo "$item" | sed -e 's/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|- \1/' )
-    [ -h "$item" ] && out="$out\t-> `readlink "$item"`"
+    #TODO handle filenames with spaces
+    [ -h "$item" ] && out+="\t-> $(readlink -e "$item")"
     echo -e "$out"
   done < <( ${DEBUG:+ runv} $_find -H ${1:-.} ${flags[@]} )
   echo
@@ -577,20 +612,20 @@ _EOF
 
 
 function min() {
-  local flag=() values=()
+  local flag=()
 
-  while [ ${1+x} ]; do
-    [[ $1 = -[a-zA-Z] ]] && flag+=($1) || {
-        IFS=' ' read -a v <<< "$1"
-        values+=( ${v[@]} )
-      }
+  while (( $# )); do
+    [ -n "$1" ] || { shift; continue; }
+
+    [[ $1 = -[a-zA-Z] ]] && flag+=($1) || break
     shift
   done
-  printf "%s\n" ${values[@]} | sort "${flag[@]}" | head -n 1
+#  printf "%s\n" ${values[@]} | sort "${flag[@]}" | head -n 1
+  local IFS=$'\n'
+  \sort -n "${flag[@]}" "$*" | head -n 1
 }
 
-
-function max()  { min -r "$@"; }
+alias max='min -r'
 
 function keys() { local -n nref=${1:?}; echo "${!nref[@]}"; }
 
@@ -603,11 +638,11 @@ function array.print() {
   local -n nref=${1:?}
 
   if [ ${keys:-0} -eq 1 ]; then
-    for k in `keys $1`; do
-      printf "${format:-%s: %s\n}" "$k" `value $1 $k`
+    for k in $(keys $1); do
+      printf "${format:-%s: %s\n}" "$k" $(value "$1" "$k")
     done
   else
-    printf "${format:-%s\n}" `values $1`
+    printf "${format:-%s\n}" $(values "$1")
   fi
 }
 
@@ -626,7 +661,7 @@ function expand_dvq() {
     # String compare is more robust than Integer
     [ -z "${!v}" -o "${!v}" = "0" ] && continue
 
-    level=`printf "%d" ${!v} 2>/dev/null` || level=1
+    level=$(printf "%d" ${!v} 2>/dev/null) || level=1
     # {1..$level} doesn't work without eval
     eval printf -v vref "%0.s$c" {1..$level}
     # prepend '-' (dash)
@@ -636,6 +671,7 @@ function expand_dvq() {
 
 
 # rudimentary logging implementation
+declare -F log >/dev/null ||
 function log {
   local -u level
   local fname=
@@ -654,8 +690,10 @@ function log {
   done
 }
 
+declare -F log.none >/dev/null ||
 function log.none { return; }
 
+declare -F log.debug >/dev/null ||
 function log.debug {
   local rc=$?
 
@@ -663,6 +701,7 @@ function log.debug {
   return ${RC:-$rc}
 }
 
+declare -F log.info >/dev/null ||
 function log.info {
   local rc=$?
 
@@ -670,6 +709,7 @@ function log.info {
   return ${RC:-$rc}
 }
 
+declare -F log.notice >/dev/null ||
 function log.notice {
   local rc=$?
 
@@ -677,29 +717,29 @@ function log.notice {
   return ${RC:-$rc}
 }
 
+declare -F log.error >/dev/null ||
 function log.error {
   local rc=$?
 
   log "$@"
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
-      [[ `\ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
+      [[ $(\ps -p $PPID | awk 'END { print $NF; }') =~ screen ]]; then
     return ${RC:-$rc}
   fi
   exit ${RC:-$rc}
 }
 
+declare -F log.trace >/dev/null ||
 copy_function log.debug log.trace
+
+declare -F log.warn >/dev/null ||
 copy_function log.notice log.warn
+
 
 for f in "${BASH_SOURCE}"_logging; do
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? during $f"
 done
-
-# toggle_shopt()
-# local _save=`shopt -p $1`
-# ...
-# ${_save}
 
 
 # vim: expandtab:ts=8:sw=4

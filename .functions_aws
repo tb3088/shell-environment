@@ -1,25 +1,13 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
-
-# prevent multiple-inclusion
-__link=`readlink -f "$BASH_SOURCE"`
-declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
-__tag=1
 #------------------
-
-
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
-#TODO rename functions as 'aws::<foo>' instead of dot?
 
 is_exec aws${AWS_VERSION} jq curl || {
     >&2 echo -e "ERROR\tmissing tools (aws, jq, curl)"
     return 2
   }
 
-if is_windows "aws${AWS_VERSION}"; then
-  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]] && source ~/.bashrc_os
-fi
 
 function __aws_cmd() {
   local -a cmd=()
@@ -518,7 +506,7 @@ function aws.route53-export {
 
 
 #TODO rewrite as aws.describe() item
-function aws.sshkeys {
+function iam.ssh-keys {
   # Example: $FUNCNAME `$AWS iam get-group --group-name <group> | $JQR '.Users[].UserName'`
   local -u format
   local status

@@ -12,62 +12,6 @@ __tag=1
 PATHSEP=';'
 readonly PATHSEP
 
-function convert_path() {
-  # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
-  # This *magical* behavior does NOT extend to other PATH-like variables!
-  #     eg. GOPATH, RUBYPATH, RUBYLIB, PUPPET_MODULE_PATH, JAVA_HOME
-  #
-  # However, interactive use of paths must be inside quotes or escaped
-  # since the $SHELL parser is not so gifted.
-  #
-  # cygpath only modifies the first occurance of '/cygdrive' or '[A-Z]:'
-  # unless '-p' but delimiter in input MUST consistently match opposite
-  # of desired output format (';' for Windows, ':' for Unix). Any intermix
-  # or requesting Windows output from Windows input yields garbage. But
-  # Unix output from Unix input is usually benign.
-
-  local format flags=()
-  local -i escape
-  local OPTIND
-
-  while getopts ":eEt:" opt; do
-    case $opt in
-      e)    escape=1 ;;     # default
-      E)    escape=0 ;;
-      t)    \egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
-                format="-t $OPTARG" || {
-                    log.error "unknown format ($OPTARG)"
-                    return 2
-                }
-            ;;
-      :)    log.error "missing argument to '-$OPTARG'"; return 2
-            ;;
-      \?)   flags+=( "-$OPTARG" )
-    esac
-  done
-  shift $((OPTIND-1))
-
-  #TODO detect bad input, word-split on PATHSEP?
-
-  # read from stdin if no args
-  set -- "${@:-$(</dev/stdin)}"
-
-  # silently ignore empty param
-  while (( $# )); do
-	[ -n "$1" ] || { echo; shift; continue; }
-
-    ${DEBUG:+ log.trace "raw:    '$1'"}
-	# damn Windows! unescape whitespace
-	local p=`cygpath --path $format ${flags[@]} -- "${1//\\ / }"`
-    ${DEBUG:+ log.trace "cooked: '$p'"}
-
-	[ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
-	shift
-  done
-}
-readonly -f convert_path
-
-
 is_exec sudo ||
 function sudo() {
   local opt who cmd line env shell flags preserve=''
@@ -114,18 +58,6 @@ function sudo() {
   ${DEBUG:+ runv} ${exec:+ exec} env ${preserve- -i} $env ${cmd:-$shell ${initial:+ -l}} $flags "$@"
 }
 readonly -f sudo
-
-
-function is_windows() {
-  # detects if path or binary is Cygwin or native Windows
-  # 'which' is multi-platform safe unlike 'type -p'
-  bin=`$WHICH "${1:?}"`
-  [[ "${bin:=$1}" =~ ^/cygdrive ]] || {
-      \file "$bin" | \grep -q 'for MS Windows'
-      #alt: sed -E 's/.* for ([[:alpha:]/]+) .*/\1/'
-    }
-}
-readonly -f is_windows
 
 
 # vim: expandtab:ts=4:sw=4
