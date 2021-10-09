@@ -11,18 +11,8 @@ if [ -z "$SSH_AUTH_SOCK" -a `type -p ssh-agent` ]; then
   trap "kill -9 $SSH_AGENT_PID" EXIT
 fi
 
-for f in ${BASH_SOURCE}.local "$HOME"/.bashrc; do
-  [ -f "$f" ] || continue
-  source "$f" || >&2 echo "RC=$? during $f"
-done
-
-: ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
-: ${PAGER:='less -RF'}
-export EDITOR PAGER
-
 # Amazon Linux family doesn't support '-q' or much of anything
-[ -n "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem}
-
+[ -n "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
 
 # CAC/PIF card support
 #FIXME paths should come from bashrc_`uname`, not hard-coded here
@@ -36,5 +26,16 @@ export EDITOR PAGER
 #        : ${OPENSC_LIB:=/usr/local/lib/opensc-pkcs11.so}
 #esac
 #[ -f "$OPENSC_LIB" -a  -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB" 2>/dev/null
+
+
+for f in ${BASH_SOURCE}.local "$HOME"/.bashrc; do
+  [ -f "$f" ] || continue
+  source "$f" || >&2 echo "RC=$? during $f"
+done
+
+: ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
+: ${PAGER:='less -RF'}
+export EDITOR PAGER
+
 
 # vim: expandtab:ts=4:sw=4

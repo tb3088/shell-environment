@@ -47,17 +47,18 @@ set -o ignoreeof checkjobs
 #set -o vi
 
 # ref: https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
-shopt -s globstar extglob
+shopt -s globstar extglob dotglob
 
-# nullglob=off returns glob despite no match, which (if failglob=off too) can be
+# nullglob=off returns glob-spec despite no match, which (if failglob=off too) can be
 # useful for passing thru to '/bin/ls' etc without SHELL preemption.
 #
-#   nullglob=on + failglob=on   (interactive)
-#   nullglob=on + failglob=off  (scripts)
+#   nullglob=off + failglob=on   (interactive)
+#   nullglob=off + failglob=off  (scripts)
 #
 # ref: http://mywiki.wooledge.org/glob#nullglob
-shopt -s nullglob       # failglob
-shopt -u failglob
+shopt -u nullglob
+shopt -s failglob
+
 # compgen (aka autocomplete) on Ubuntu(WSL, but not Cygwin) used to fail
 # TAB-completion if nullglob=on. (Jan 2021: this may be fixed)
 #[[ `uname -r` =~ microsoft ]] && shopt -u nullglob
