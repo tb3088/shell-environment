@@ -3,10 +3,9 @@
 [[ "$BASH_VERSION" =~ 5|4.[2-4] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 #------------------
 
-# change settings if running as script
+# when running as script
 [[ $- =~ i ]] || {
-    shopt -u nullglob
-    shopt -u failglob
+    shopt -u nullglob failglob
     set -o pipefail
   }
 
