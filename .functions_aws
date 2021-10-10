@@ -186,7 +186,9 @@ function aws.region {
     echo
     read -t 15 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
 
-    [[ "$REPLY" =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
+    [[ "${#REPLY}" -le 2 && "$REPLY" =~ [0-9] ]] &&
+        region=${__aws_regions[$REPLY]} ||
+        region=$REPLY
   fi
 
   # validity check
@@ -239,7 +241,9 @@ function aws.profile {
       echo
       read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
 
-      [[ "${REPLY:0:3}" =~ [0-9]: ]] && profile=${list[$REPLY]} || profile=$REPLY
+      [[ "${#REPLY}" -le 2 && "$REPLY" =~ [0-9] ]] &&
+          profile=${list[$REPLY]} ||
+          profile=$REPLY
     else
       log.notice "No non-default profiles found ($config, $creds)"
       unset profile
@@ -299,7 +303,9 @@ function aws.session-load {
     echo
     read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
 
-    [[ "$REPLY" =~ [0-9] ]] && input="$cache_dir/${list[$REPLY]}" || input="$cache_dir/$REPLY"
+    [[ "${#REPLY}" -le 2 && "$REPLY" =~ [0-9] ]] &&
+        input="$cache_dir/${list[$REPLY]}" ||
+        input="$cache_dir/$REPLY"
   fi
 
   # read file into variable
