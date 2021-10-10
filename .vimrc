@@ -1,5 +1,5 @@
 " docker on Windows and also when in screen
-nnoremap <C-Z> <nop>
+"nnoremap <C-Z> <nop>
 
 " system-wide VIMRC can interfere
 filetype off
