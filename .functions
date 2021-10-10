@@ -262,12 +262,10 @@ function addPath() {
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; } || v=$1
 
-    # unroll and check validity
     # ref: https://sourceware.org/git/?p=newlib-cygwin.git;a=commit;h=aec6479820fee5f71d50930bf0dde2bbf386bd4b
-    v=`readlink -e "$v"` && [ -d "$v" ] || {
-        log.notice "bad path ($v)"
-        shift; continue
-      }
+#    unroll and check validity
+#    v=`readlink -e "$v"` && <<< then MUST do same in rmPath()
+    [ -d "$v" ] || { log.notice "bad path ($v)"; shift; continue; }
 
     # do *NOT* prefix call to convert_path() with '${DEBUG:+ runv}'
     v=`convert_path ${flags[@]} "$v"`

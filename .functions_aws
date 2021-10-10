@@ -3,7 +3,7 @@
 #------------------
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 
-is_exec aws${AWS_VERSION} jq curl || {
+is_exec "aws${AWS_VERSION}" jq curl || {
     >&2 echo -e "ERROR\tmissing tools (aws, jq, curl)"
     return 2
   }
@@ -16,19 +16,19 @@ function __aws_cmd() {
 
   if is_windows "aws${AWS_VERSION}"; then
     [ -n "$AWS_CONFIG_FILE" ] &&
-        cmd+=( env AWS_CONFIG_FILE=`convert_path -w "$AWS_CONFIG_FILE"` )
+        cmd+=( env AWS_CONFIG_FILE="$(convert_path -w "$AWS_CONFIG_FILE")" )
 
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
-        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -w "$AWS_SHARED_CREDENTIALS_FILE"` )
+        cmd+=( AWS_SHARED_CREDENTIALS_FILE="$(convert_path -w "$AWS_SHARED_CREDENTIALS_FILE")" )
   fi
 
-  cmd+=( aws${AWS_VERSION} )
+  cmd+=( "aws${AWS_VERSION}" )
 
   # HACK - work around missing settings
   if [ -z "${AWS_DEFAULT_REGION}" ]; then
     #WARN may override caller's own '--region' directive
-    ${cmd[@]} configure get region &>/dev/null || {
-        is_ec2 && cmd+=( '--region' `ec2.metadata region` )
+    "${cmd[@]}" configure get region &>/dev/null || {
+        is_ec2 && cmd+=( '--region' "$(ec2.metadata region)" )
       }
   fi
 
@@ -38,7 +38,7 @@ function __aws_cmd() {
 readonly -f __aws_cmd
 
 # all output is in JSON with rare exception
-readonly AWS='eval `__aws_cmd` --output json'
+readonly AWS='eval $(__aws_cmd) --output json'
 readonly JQ='jq --exit-status'
 # NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
 readonly JQR="$JQ --raw-output"
@@ -83,22 +83,22 @@ declare -ar __aws_regions=(
 
 is_hash __aws_availability_zones &>/dev/null && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
 declare -Ar __aws_availability_zones=(
-    [ap-northeast-1]=`echo ap-northeast-1{a,c,d}`
-    [ap-northeast-2]=`echo ap-northeast-2{a,c}`
-    [ap-south-1]=`echo ap-south-1{a..b}`
-    [ap-southeast-1]=`echo ap-southeast-1{a..c}`
-    [ap-southeast-2]=`echo ap-southeast-2{a..c}`
-    [ca-central-1]=`echo ca-central-1{a..b}`
-    [eu-central-1]=`echo eu-central-1{a..c}`
-    [eu-north-1]=`echo eu-north-1{a..c}`
-    [eu-west-1]=`echo eu-west-1{a..c}`
-    [eu-west-2]=`echo eu-west-2{a..c}`
-    [eu-west-3]=`echo eu-west-3{a..c}`
-    [sa-east-1]=`echo sa-east-1{a,c}`
-    [us-east-1]=`echo us-east-1{a..f}`
-    [us-east-2]=`echo us-east-2{a..c}`
-    [us-west-1]=`echo us-west-1{a,c}`
-    [us-west-2]=`echo us-west-2{a..c}`
+    [ap-northeast-1]=$(echo ap-northeast-1{a,c,d})
+    [ap-northeast-2]=$(echo ap-northeast-2{a,c})
+    [ap-south-1]=$(echo ap-south-1{a..b})
+    [ap-southeast-1]=$(echo ap-southeast-1{a..c})
+    [ap-southeast-2]=$(echo ap-southeast-2{a..c})
+    [ca-central-1]=$(echo ca-central-1{a..b})
+    [eu-central-1]=$(echo eu-central-1{a..c})
+    [eu-north-1]=$(echo eu-north-1{a..c})
+    [eu-west-1]=$(echo eu-west-1{a..c})
+    [eu-west-2]=$(echo eu-west-2{a..c})
+    [eu-west-3]=$(echo eu-west-3{a..c})
+    [sa-east-1]=$(echo sa-east-1{a,c})
+    [us-east-1]=$(echo us-east-1{a..f})
+    [us-east-2]=$(echo us-east-2{a..c})
+    [us-west-1]=$(echo us-west-1{a,c})
+    [us-west-2]=$(echo us-west-2{a..c})
   )
 
 
@@ -123,7 +123,7 @@ function ec2.metadata() {
       [v]='public-ipv4'
     )
 
-  : ${item:=`echo "$1" | sed 's/^-\+//'`}
+  : ${item:=$(echo "$1" | sed -E 's/^-+//')}
 
   # special/custom cases
   case "$item" in
@@ -137,12 +137,12 @@ function ec2.metadata() {
             item="${item#_}" ;;
     public-keys)
             while read line; do
-              echo "$linew"
+#              echo "$line"
               while read format; do
                 # convert multi-line to single
                 $FUNCNAME "_$item/${line%%=*}/$format" | sed ':a;N;s/\n//;ta'
               done < <( $FUNCNAME "_$item/${line%%=*}" )
-              echo  #----------
+#              echo  #----------
             done < <( $FUNCNAME "_$item" )
             #TODO selective print by index or by key name
             return
@@ -186,23 +186,20 @@ function aws.region {
     echo
     read -t 15 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
 
-    [[ "${#REPLY}" -le 2 && "$REPLY" =~ [0-9] ]] &&
-        region=${__aws_regions[$REPLY]} ||
-        region=$REPLY
+    [[ "{$REPLY:0:1}" =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
   fi
 
   # validity check
-  [ -n "${__aws_availability_zones[$region]}" ] &&
-      export AWS_DEFAULT_REGION=$region ||
-          log.error "invalid region ($region)"
+  [ -n "${__aws_availability_zones[$region]}" ] || {
+      log.error "invalid region ($region)"; return
+    }
+
+  export AWS_DEFAULT_REGION=$region
 }
 
 
 function aws.profile {
-  if [ "${1^^}" = 'RESET' ]; then
-    aws.rmPath; unset ${!AWS_*}
-    return
-  fi
+  [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return; }
 
   # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
   local profile
@@ -214,17 +211,21 @@ function aws.profile {
       [ -n "$profile" ] || profile='prompt'
     }
 
-  local config=$(readlink -ve "${AWS_CONFIG_FILE:-$__aws_default_config}") || return
-  local creds=$(readlink -ve "${AWS_SHARED_CREDENTIALS_FILE:-$__aws_default_credentials}") || return
-
-  if [ "${config%/*}" != "${creds%/*}" ]; then
-    AWS_SHARED_CREDENTIALS_FILE=$(readlink -ve "${config%/*}/credentials") || return
-    log.warn "overriding AWS_SHARED_CREDENTIALS_FILE ($creds -> $AWS_SHARED_CREDENTIALS_FILE)"
-    creds=$AWS_SHARED_CREDENTIALS_FILE
+  local config creds
+  if [ -n "$AWS_CONFIG_FILE" ]; then
+    config=$(readlink -ve "$AWS_CONFIG_FILE") || return
+    creds=$(readlink -ve "${AWS_SHARED_CREDENTIALS_FILE:=${config%/*}/credentials}") || return
+    # somewhat gratuitous
+    if [ "${config%/*}" != "${creds%/*}" ]; then
+        AWS_SHARED_CREDENTIALS_FILE=$(readlink -ve "${config%/*}/credentials") || return
+        log.warn "overriding CREDENTIALS_FILE ($creds -> $AWS_SHARED_CREDENTIALS_FILE)"
+        creds=$AWS_SHARED_CREDENTIALS_FILE
+    fi
+  else
+    unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
+    config=$(readlink -ve "$__aws_default_config") || return
+    creds=$(readlink -ve "$__aws_default_credentials") || return
   fi
-  # discard if defaults
-  [ "$config" = "$(readlink -f "$__aws_default_config")" ] &&
-      unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
 
   if [ "$profile" = 'prompt' ]; then
     local pattern='$1 ~ /^\[\w+/ { gsub(/\[|\]/, "", $NF); print $NF; }'
@@ -233,7 +234,7 @@ function aws.profile {
         $(awk -- "$pattern" "$creds")
       )
     # sanitize
-    list=( `IFS=$'\n'; \sort -u <<< "${list[*]}" | \grep -v default` )
+    list=( $(IFS=$'\n'; \sort -u <<< "${list[*]}") )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo
@@ -241,12 +242,10 @@ function aws.profile {
       echo
       read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
 
-      [[ "${#REPLY}" -le 2 && "$REPLY" =~ [0-9] ]] &&
-          profile=${list[$REPLY]} ||
-          profile=$REPLY
+      [[ "${REPLY:0:1}" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
     else
-      log.notice "No non-default profiles found ($config, $creds)"
-      unset profile
+      log.error "No profiles found ($config, $creds)"
+      return
     fi
   fi
 
@@ -260,7 +259,7 @@ function aws.profile {
     #
     # $? == 1 simply means no explicit declaration
     local _region=$( $AWS configure get region --output text 
-        ${profile:+ --profile "$profile"} 2>/dev/null | head -n 1)
+        ${profile:+ --profile "$profile"} 2>/dev/null | head -n 1 | tr -d '\r' )
 
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
         RC=255 log.error "undefined profile ($profile)"; return
@@ -268,14 +267,14 @@ function aws.profile {
 
   if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
     # cleanup previous environment
-    ${DEBUG:+ runv} aws.rmPath
+    aws.rmPath
     unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
   fi
 
   [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
   default="$_region" aws.region "$@" || return
 
-  ${DEBUG:+ runv} aws.addPath
+  aws.addPath
   export ${!AWS_*}
 }
 
@@ -292,8 +291,8 @@ function aws.session-load {
   local cache_dir="$HOME"/.aws/cli/cache
 
   if [ -z "$input" ]; then
-    local -a list=( `cd "$cache_dir" 2>/dev/null &&
-       find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60))`
+    local -a list=( $( cd "$cache_dir" 2>/dev/null &&
+       find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60)) )
      )
 
     [ ${#list[@]} -ge 1 ] || { log.warn "no cached sessions ($cache_dir)"; return; }
@@ -303,13 +302,11 @@ function aws.session-load {
     echo
     read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
 
-    [[ "${#REPLY}" -le 2 && "$REPLY" =~ [0-9] ]] &&
-        input="$cache_dir/${list[$REPLY]}" ||
-        input="$cache_dir/$REPLY"
+    [[ "${REPLY:0:1}" =~ [0-9] ]] && input="$cache_dir/${list[$REPLY]}" || input="$cache_dir/$REPLY"
   fi
 
   # read file into variable
-  [ -f "$input" ] && input=$(<"$input")
+  [ -f "$input" ] && input=$( <"$input" )
 
   $JQ . <<< "$input" &>/dev/null && format='json'
 
@@ -318,19 +315,19 @@ function aws.session-load {
             local header rest
             log.debug "$input"
 #FIXME something very wrong in 'text' mode
-log.error "code is broken ($FUNCNAME, $format)"; return 1
+log.error "code is broken ($FUNCNAME, $format)"; return 128
 #            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
 #                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
 
     json)   local field; local -u envvar
-            log.debug `$JQ -MS '.Credentials' <<< "$input"`
-            for field in `keys __aws_session`; do
-              envvar=`value __aws_session $field`
+            $JQ -MS '.Credentials' <<< "$input" | log.debug
+            for field in $(keys __aws_session); do
+              envvar=$(value __aws_session $field)
               local -n nref=$envvar
-              nref=`$JQR --arg field "$field" '.Credentials[$field]' <<< "$input"`
+              nref=$( $JQR --arg field "$field" '.Credentials[$field]' <<< "$input" )
             done
-            log.info `$JQR '.AssumedRoleUser' <<< "$input"`
+            $JQR '.AssumedRoleUser' <<< "$input" | log.info
             ;;
 
     *)      log.error "unsupported format ($format)"; return 2
@@ -344,8 +341,8 @@ log.error "code is broken ($FUNCNAME, $format)"; return 1
 function aws.session-write {
     local field; local -u envvar
 
-    for field in `keys __aws_session`; do
-      envvar=`value __aws_session $field`
+    for field in $(keys __aws_session); do
+      envvar=$(value __aws_session "$field")
       ${DEBUG:+ runv} $AWS configure set "${envvar,,}" "${!envvar}"
     done
 }
@@ -355,7 +352,7 @@ function aws.session {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
-  local -ir now=`date '+%s'`
+  local -ir now=$(date '+%s')
   local -i duration write=0 force=0
   # Bash 'integer' doesn't handle leading ZEROs
   local cache output role profile token mfa
@@ -365,6 +362,7 @@ function aws.session {
     case "$opt" in
       c)    for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
+
               expires=$(date --date `$JQR '.Credentials.Expiration' "$f"` '+%s')
               [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
 
@@ -419,7 +417,7 @@ function aws.session {
 #    return
 #  fi
 
-  : ${role:=`$AWS configure get role_arn 2>/dev/null`}
+  : ${role:=$($AWS configure get role_arn 2>/dev/null)}
   local cmd=()
 
   if [ -n "$role" ]; then
@@ -459,36 +457,32 @@ function aws.session {
   aws.session-load "${cache:-$output}" || return
   [ ${write:-0} -eq 1 ] && aws.session-write
 
-  log.info `aws.printenv`
+  log.info $(aws.printenv)
   export ${!AWS_*}
 }
 
 
+#TODO? call recursively
 function aws.addPath {
-  local v f
   local -i delete
-
-  #NOTE  incomplete search - reorder terms to suit.
-  #TODO abstract out search mechanism from ~/bin-template/ssh-wrapper.sh
-  local -a dirs=()
+  local -a dirs
   [ -n "$AWS_CONFIG_FILE" ] &&
-      dirs+=( `eval echo "${AWS_CONFIG_FILE%/*}"${AWS_DEFAULT_REGION:+\{"/$AWS_DEFAULT_REGION",\}}${AWS_PROFILE:+\{"/$AWS_PROFILE",\}}` )
+      dirs+=( "${AWS_CONFIG_FILE%/*}"/**/bin )
+  # sanitize
+  dirs=( $(IFS=$'\n'; \sort -u <<< "${dirs[*]}") )
 
-  [ -n "$AWS_PROFILE" ] &&
-      dirs+=( `echo "$HOME"/.{aws,ssh}/$AWS_PROFILE` )
-
-  for v in "$@" "${dirs[@]}"; do
-    [ -n "$v" ] || continue
+  for v in "${dirs[@]}"; do
+    [ -d "$v" ] || continue
 
     if [ ${delete:-0} -eq 1 ]; then
-      rmPath "$v/bin"
+      rmPath "$v"
+      ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} -d \
+          $(readlink -e "${v%/bin}")/{id_*,*.pem}.pub &>/dev/null
     else
-      prepend=1 addPath "$v/bin"
+      prepend=1 addPath "$v"
+      ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} \
+          $(readlink -e "${v%/bin}")/{id_*,*.pem} &>/dev/null
     fi
-
-    [ -n "$SSH_AUTH_SOCK" ] &&
-        ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} ${delete:+ -d} \
-            $(readlink -e "$v")/{id_*,*.pem}${delete:+.pub} &>/dev/null
   done
 }
 
@@ -529,11 +523,13 @@ function iam.ssh-keys {
   : ${format:=ssh}
   : ${status:=Active}
 
-  while [ "$1" ];do
+  while (( $# ));do
+    [ "$1" ] || { shift; continue; }
+
     for kid in $( $AWS iam list-ssh-public-keys --user-name "$1" |
         $JQR --arg STATUS "$status" '.SSHPublicKeys[] | select(.Status == $STATUS) | .SSHPublicKeyId //empty'
-      )
-    do
+      ); do
+#TODO use JQ and drop @sh?
       $AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
           $JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
     done
@@ -600,7 +596,7 @@ function aws.describe() {
             shift
 
             # select specified tags
-            [ -n "$1" ] && filter+=( "Name=key,Values=`join_string ',' "$@"`" )
+            [ -n "$1" ] && filter+=( Name=key,Values=$(join_string ',' "$@") )
 
             field='Tags'
             post=( $JQ -s 'from_entries' )
@@ -626,13 +622,13 @@ function aws.describe() {
             ;;
 
     vpc?(s)) cmd=( ec2 describe-vpcs )
-            [ -n "$1" ] && filter=( "Name=vpc-id,Values=`join_string ',' "$@"`" )
+            [ -n "$1" ] && filter=( Name=vpc-id,Values=$(join_string ',' "$@") )
             field='Vpcs'
             ;;
 
     vpc-endpoint-service?(s))
             ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoint-services \
-                --service-name "com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_default_region}.${1:?service}" |
+                --service-name com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_default_region}.${1:?service} |
                 $JQ '.ServiceDetails[]'
             ;;
 
@@ -656,12 +652,9 @@ function aws.describe() {
   [ -n "$filter" ] && cmd+=( '--filters' "${filter[@]}" )
 
   if [ -n "$post" ]; then
-    ${DEBUG:+ runv} $AWS "${cmd[@]}" |
-        ${DEBUG:+ runv} $JQ --arg field "${field:?}" '.[$field][]' |
-        ${DEBUG:+ runv} "${post[@]}"
+    $AWS "${cmd[@]}" | $JQ --arg field "${field:?}" '.[$field][]' | "${post[@]}"
   elif [ -n "$field" ]; then
-    ${DEBUG:+ runv} $AWS "${cmd[@]}" |
-        ${DEBUG:+ runv} $JQ --arg field "${field:?}" '.[$field][]'
+    $AWS "${cmd[@]}" | $JQ --arg field "${field:?}" '.[$field][]'
   else
     log.notice "FIXME legacy entry ($resource)"; return 0
   fi
@@ -676,7 +669,7 @@ function aws.get() {
   [ -n "$resource" ] || { resource=${1:?item}; shift; }
 
   case "$resource" in
-    *.tag)  aws.describe "$resource" "${1:?resouce-id}" "${2:?key}" |
+    *.tag)  aws.describe "$resource" ${1:?resource-id} "${2:?key}" |
                 $JQR --arg key "$2" '.[$key] //empty'
             ;;
 
