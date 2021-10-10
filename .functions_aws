@@ -8,6 +8,8 @@ is_exec aws${AWS_VERSION} jq curl || {
     return 2
   }
 
+# extended globbing used below
+shopt -s extglob
 
 function __aws_cmd() {
   local -a cmd=()
@@ -44,6 +46,8 @@ readonly CURL='eval curl --connect-timeout 5 --fail --silent ${VERBOSE:+ --verbo
 
 # CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
 __aws_default_region='us-east-1'
+__aws_default_config="$HOME/.aws/config"
+__aws_default_credentials="$HOME/.aws/credentials"
 
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
@@ -128,6 +132,7 @@ function ec2.metadata() {
     self)   item='i' ;;
 #-k/--kernel-id            The ID of the kernel launched with this instance, if applicable.
 #-n/--ancestor-ami-ids     The AMI IDs of any instances that were rebundled to create this AMI.
+#-r/--ramdisk-id           The ID of the RAM disk launched with this instance, if applicable.
     _public-keys*)
             item="${item#_}" ;;
     public-keys)
@@ -144,13 +149,12 @@ function ec2.metadata() {
             ;;
     region) $FUNCNAME 'availability-zone' | sed 's/[a-z]$//'; return
             ;;
-#-r/--ramdisk-id           The ID of the RAM disk launched with this instance, if applicable.
     subnet?(-id))
-            item="network/interfaces/macs/`$FUNCNAME mac`/subnet-id"
+            item="network/interfaces/macs/$($FUNCNAME mac)/subnet-id"
             ;;
     type)   item='t' ;;
     vpc?(-id))
-            item="network/interfaces/macs/`$FUNCNAME mac`/vpc-id"
+            item="network/interfaces/macs/$($FUNCNAME mac)/vpc-id"
             ;;
     z|az)   item='availability-zone' ;;
 
@@ -180,7 +184,7 @@ function aws.region {
     echo
     keys=1 array.print __aws_regions | \column
     echo
-    read -t 12 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
+    read -t 15 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
 
     [[ "$REPLY" =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
   fi
@@ -199,45 +203,50 @@ function aws.profile {
   fi
 
   # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
-  local profile config
-  [ -n "${profile+X}" ] || { profile=${1-'prompt'}; shift; }
+  local profile
+  : ${profile=${1-'prompt'}}
+  shift
 
   # but force the issue if called from aws.session()
-  if [ "${FUNCNAME[1]}" = 'aws.session' ]; then
-    [ -n "$profile" ] || profile='prompt'
-  fi
+  [ "${FUNCNAME[1]}" = 'aws.session' ] && {
+      [ -n "$profile" ] || profile='prompt'
+    }
 
-  if [ -n "$AWS_CONFIG_FILE" ]; then
-    #WARN blindly overwrites if respective dirname() doesn't match
-#TODO use readlink for valid compare
-    [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] ||
-        AWS_SHARED_CREDENTIALS_FILE="${AWS_CONFIG_FILE%/*}/credentials"
-  else
-    :   # uncommon but technically valid
-  fi
+  local config=$(readlink -ve "${AWS_CONFIG_FILE:-$__aws_default_config}") || return
+  local creds=$(readlink -ve "${AWS_SHARED_CREDENTIALS_FILE:-$__aws_default_credentials}") || return
 
-  [ -n "$config" ] || config=${AWS_CONFIG_FILE:-"$HOME"/.aws/config}
-  VERBOSE=1 is_file "$config" "$AWS_SHARED_CREDENTIALS_FILE" || return
+  if [ "${config%/*}" != "${creds%/*}" ]; then
+    AWS_SHARED_CREDENTIALS_FILE=$(readlink -ve "${config%/*}/credentials") || return
+    log.warn "overriding AWS_SHARED_CREDENTIALS_FILE ($creds -> $AWS_SHARED_CREDENTIALS_FILE)"
+    creds=$AWS_SHARED_CREDENTIALS_FILE
+  fi
+  # discard if defaults
+  [ "$config" = "$(readlink -f "$__aws_default_config")" ] &&
+      unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
 
   if [ "$profile" = 'prompt' ]; then
-    local -a list=( `awk '$1 ~ /^\[profile/ { sub(/]\s*/, "", $2); print $2; }' "$config"` )
-    [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
-        list+=( `awk '/^\[\w+\]/ { gsub(/\[|\]/, ""); print; }' "$AWS_SHARED_CREDENTIALS_FILE"` )
-
+    local pattern='$1 ~ /^\[\w+/ { gsub(/\[|\]/, "", $NF); print $NF; }'
+    local -a list=( 
+        $(awk -- "$pattern" "$config")
+        $(awk -- "$pattern" "$creds")
+      )
+    # sanitize
     list=( `IFS=$'\n'; \sort -u <<< "${list[*]}" | \grep -v default` )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo
       keys=1 array.print list | \column
       echo
-      read -t 12 -ep "Choose PROFILE:  " -i "$list" || return
+      read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
 
-      [[ "$REPLY" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
+      [[ "${REPLY:0:3}" =~ [0-9]: ]] && profile=${list[$REPLY]} || profile=$REPLY
     else
-      log.notice "No non-default profiles found ($config, $AWS_SHARED_CREDENTIALS_FILE)"
+      log.notice "No non-default profiles found ($config, $creds)"
       unset profile
     fi
   fi
+
+  [ "$profile" = 'default' ] && unset profile
 
     # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
     # nor fall-thru to 'default' if --profile is specified.
@@ -246,10 +255,11 @@ function aws.profile {
     # stacktrace if value of AWS_PROFILE is not defined in file(s).
     #
     # $? == 1 simply means no explicit declaration
-    local _region=`$AWS configure get region --output text ${profile:+ --profile "$profile"} 2>/dev/null | head -n 1`
+    local _region=$( $AWS configure get region --output text 
+        ${profile:+ --profile "$profile"} 2>/dev/null | head -n 1)
 
     [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
-        RC=255 log.error "unknown profile ($profile, $config)"
+        RC=255 log.error "undefined profile ($profile)"; return
       }
 
   if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
@@ -259,7 +269,6 @@ function aws.profile {
   fi
 
   [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
-
   default="$_region" aws.region "$@" || return
 
   ${DEBUG:+ runv} aws.addPath
@@ -473,7 +482,7 @@ function aws.addPath {
 
     [ -n "$SSH_AUTH_SOCK" ] &&
         ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} ${delete:+ -d} \
-            `readlink -e "$v"`/{id_*,*.pem}${delete:+.pub} 2>/dev/null
+            $(readlink -e "$v")/{id_*,*.pem}${delete:+.pub} &>/dev/null
   done
 }
 
