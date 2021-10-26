@@ -482,7 +482,7 @@ function aws.addPath {
     else
 # WARN! use 'IdentitiesOnly yes' in ssh_config or else you may
 # experience Auth Failure by virtue of too many attempts
-      [ ${LOAD_SSHKEYS:-0 -eq 1 ] && 
+      [ ${LOAD_SSHKEYS:-0} -eq 1 ] && 
           ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} $(readlink -e "${v%/bin}")/{id_*,*.pem}
       prepend=1 addPath "$v"
     fi
