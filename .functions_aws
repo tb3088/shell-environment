@@ -214,12 +214,13 @@ function aws.profile {
   local config creds
   if [ -n "$AWS_CONFIG_FILE" ]; then
     config=$(readlink -ve "$AWS_CONFIG_FILE") || return
-    creds=$(readlink -ve "${AWS_SHARED_CREDENTIALS_FILE:=${config%/*}/credentials}") || return
-    # somewhat gratuitous
+    : ${AWS_SHARED_CREDENTIALS_FILE:=${config%/*}/credentials}
+    creds=$(readlink -ve "$AWS_SHARED_CREDENTIALS_FILE") || return
+
     if [ "${config%/*}" != "${creds%/*}" ]; then
-        AWS_SHARED_CREDENTIALS_FILE=$(readlink -ve "${config%/*}/credentials") || return
-        log.warn "overriding CREDENTIALS_FILE ($creds -> $AWS_SHARED_CREDENTIALS_FILE)"
-        creds=$AWS_SHARED_CREDENTIALS_FILE
+      AWS_SHARED_CREDENTIALS_FILE=$(readlink -ve "${config%/*}/credentials") || return
+      log.warn "overriding CREDENTIALS_FILE ($creds -> $AWS_SHARED_CREDENTIALS_FILE)"
+      creds=$AWS_SHARED_CREDENTIALS_FILE
     fi
   else
     unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
@@ -464,7 +465,7 @@ function aws.session {
 
 #TODO? call recursively
 function aws.addPath {
-  local -i delete
+  local -i DELETE
   local -a dirs
   [ -n "$AWS_CONFIG_FILE" ] &&
       dirs+=( "${AWS_CONFIG_FILE%/*}"/**/bin )
@@ -474,21 +475,23 @@ function aws.addPath {
   for v in "${dirs[@]}"; do
     [ -d "$v" ] || continue
 
-    if [ ${delete:-0} -eq 1 ]; then
-      rmPath "$v"
-      ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} -d \
+    if [ ${DELETE:-0} -eq 1 ]; then
+      ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d \
           $(readlink -e "${v%/bin}")/{id_*,*.pem}.pub &>/dev/null
+      rmPath "$v"
     else
+# WARN! use 'IdentitiesOnly yes' in ssh_config or else you may
+# experience Auth Failure by virtue of too many attempts
+      [ ${LOAD_SSHKEYS:-0 -eq 1 ] && 
+          ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} $(readlink -e "${v%/bin}")/{id_*,*.pem}
       prepend=1 addPath "$v"
-      ${DEBUG:+ runv} ssh-add ${VERBOSE:- -q} \
-          $(readlink -e "${v%/bin}")/{id_*,*.pem} &>/dev/null
     fi
   done
 }
 
 
 function aws.rmPath {
-  delete=1 aws.addPath "$@"
+  DELETE=1 aws.addPath "$@"
 }
 
 
@@ -515,7 +518,7 @@ function aws.route53-export {
 
 
 #TODO rewrite as aws.describe() item
-function iam.ssh-keys {
+function iam.sshkeys {
   # Example: $FUNCNAME `$AWS iam get-group --group-name <group> | $JQR '.Users[].UserName'`
   local -u format
   local status
@@ -714,6 +717,29 @@ function aws.get() {
 #
 #      #alt: $JQR --arg instance "${instance_id:?}" 'select(.TargetHealthDescriptions[].Target.Id == $instance)'
 #      done
+
+
+function aws.set() {
+  local item resource
+  local -a filter=() cmd=()
+
+  [ -n "$resource" ] || { resource=${1:?resource}; shift; }
+
+  case "$resource" in
+#    *.tag)
+#            ;;
+
+    ssm.parameter)
+            [ -n "$DELETE" ] &&
+                cmd=( delete-parameter ) ||
+                cmd=( put-parameter '--type' String '--overwrite' '--value' "${2:?value}" )
+
+            ${DEBUG:+ runv} $AWS ssm "${cmd[@]}" --name "${1:?key}"
+            ;;
+
+    *)      log.error "unsupported keyword ($resource)"; return 2
+  esac
+}
 
 
 function asg.suspend() {
