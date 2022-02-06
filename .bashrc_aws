@@ -8,7 +8,6 @@ declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 __tag=1
 #------------------
 
-
 is_exec aws${AWS_VERSION} || return 0
 
 addPath /usr/local/ec2-ami-tools*/**/bin
@@ -41,7 +40,7 @@ for f in "${BASH_SOURCE/bashrc/functions}"; do
 done
 
 alias aws.clearenv='aws.profile RESET'
-alias aws=\$AWS
+alias aws='__AWS'
 
 
 # vim: expandtab:ts=8:sw=4
