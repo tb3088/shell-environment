@@ -3,13 +3,15 @@
 [[ "$BASH_VERSION" =~ 5|4.[2-4] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 #------------------
 
-# when running as script
-[[ $- =~ i ]] || {
-    shopt -u nullglob failglob
-    set -o pipefail
-  }
+function is_interactive {
+  [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]
+}
 
-WHICH="which --skip-alias --skip-functions"
+is_interactive || { shopt -u failglob; shopt -s nullglob; }
+set -o pipefail
+
+WHICH="\which --skip-alias --skip-functions"
+READLINK="\readlink --no-newline"
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
@@ -23,10 +25,6 @@ function runv() {
   "$@" > >( tee "$outf" ) 2> >( tee "${outf}.err" >&2 )
 }
 
-
-function is_interactive {
-  [[ $- =~ i ]] || tty -s || [ -n `tset -q` ]
-}
 
 #TODO is_what() returns 'type -t' or 'declare -p' mapped back to English
 #function is_what
@@ -67,10 +65,11 @@ function __is_type {
         while (( $# )); do
           [ -n "$1" ] || { shift; continue; }
 
-          $WHICH "$1" &>/dev/null || {
+          bin=`$WHICH "$1" 2>/dev/null` || {
               [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "unknown command ($1)"
               return 1
             }
+          [ -n "$VERBOSE" ] && echo "$bin"
           shift
         done
         return
@@ -104,10 +103,12 @@ function __is_type {
     [ -n "$1" ] || { shift; continue; }
 
     # suss out functions during 'readonly'
-    [ $_readonly -eq 1 -a `type -t "$1"` = 'function' ] && flag=F || flag=
+    _type=`type -t "$1"`
+    [ ${_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag=F || flag=
 
     whatami=`declare -p${flag} "$1" 2>/dev/null | awk '{ print $2; }'` || {
-        [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "item not found ($1)"; return
+        [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "item not found ($1)"
+        return
       }
 
     whatami=${whatami#-}
@@ -133,6 +134,7 @@ is_windows () {
       return
     }
 
+  # handle files and directories
   bin=`$WHICH "$1"`;
   [[ "${bin:=$1}" =~ ^/cygdrive ]] ||
       \file "$bin" | \grep -q 'for MS Windows'
@@ -157,14 +159,15 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local format flags=()
+  local format flags=() quote
   local -i escape
   local OPTIND
 
-  while getopts ":eEt:" opt; do
+  while getopts ":eEqt:" opt; do
     case $opt in
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
+      q)    : ${quote:=\'}; escape=0 ;;
       t)    is_windows || return 2
 	    \egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
                 format="-t $OPTARG" || {
@@ -190,10 +193,12 @@ function convert_path() {
 
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
-    is_windows &&
-        p=`cygpath --path $format ${flags[@]} -- "$p"`
+    if is_windows; then     # Windows programs can't handle symlinks
+      p=`readlink -m "$p"`
+      p=`cygpath --path $format ${flags[@]} -- "$p"`
+    fi
 
-    [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "$p"
+    [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "${quote}$p${quote}"
     shift
   done
 }
@@ -252,23 +257,19 @@ function addPath() {
   : ${delim:=${PATHSEP:-':'}}
   local -n kval=$k
 
-  ${DEBUG:+ log.trace "$k before (delim=$delim)" "$kval"}
+#  log.trace "$k before (delim=$delim)" "$kval"
 
   while (( $# )); do
-    [ -n "$1" ] || { shift; continue; }
-
     prepend=$_prepend   # restore initial state
 
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; } || v=$1
 
     # ref: https://sourceware.org/git/?p=newlib-cygwin.git;a=commit;h=aec6479820fee5f71d50930bf0dde2bbf386bd4b
-#    unroll and check validity
-#    v=`readlink -e "$v"` && <<< then MUST do same in rmPath()
-    [ -d "$v" ] || { log.notice "bad path ($v)"; shift; continue; }
+    v=`readlink -e "${v:?path}"` || { log.warn "directory not found ($1)"; shift; continue; }
 
     # do *NOT* prefix call to convert_path() with '${DEBUG:+ runv}'
-    v=`convert_path ${flags[@]} "$v"`
+    v=`convert_path "${flags[@]}" "$v"`
 
     delim=$delim contains "$kval" "$v" || {
         [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
@@ -282,10 +283,10 @@ function addPath() {
   kval=${kval##$delim}
   kval=${kval%%$delim}
 
-  ${DEBUG:+ log.trace "$k after" "$kval"}
+#  log.trace "$k after" "$kval"
 }
 
-
+#TODO simply treat as DELETE=1 addPath
 function rmPath() {
   local k v flag delim
 
@@ -296,17 +297,18 @@ function rmPath() {
   [ "$k" = 'PATH' ] && { delim=':'; flag='-E'; }
   : ${delim:=${PATHSEP:-\:}}
 
-  ${DEBUG:+ log.trace "$k before" "$kval"}
+#  log.trace "$k before" "$kval"
 
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
+    v=`readlink -m "$1"`
 
     #alt: nref=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "$nref"`
     kval=$(
         IFS=$delim
         read -ra items <<< "$kval"
         for i in ${!items[@]}; do
-          [ "${items[i]}" = "$1" ] && unset 'items[i]'
+          [ "${items[i]}" = "$v" ] && unset 'items[i]'
         done
         echo "${items[*]}"
     )
@@ -318,7 +320,7 @@ function rmPath() {
   kval=${kval##$delim}
   kval=${kval%%$delim}
 
-  ${DEBUG:+ log.trace "$k after" "$kval"}
+#  log.trace "$k after" "$kval"
 }
 
 

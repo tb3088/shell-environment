@@ -1,53 +1,65 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 #------------------
-#ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 
-is_exec "aws${AWS_VERSION}" jq curl || {
-    >&2 echo -e "ERROR\tmissing tools (aws, jq, curl)"
-    return 2
-  }
-
-# extended globbing used below
 shopt -s extglob
 
-function __aws_cmd() {
+#ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
+
+is_exec jq curl || { >&2 echo -e "ERROR\tmissing tools (jq, curl)"; exit 2; }
+__aws_bin=`VERBOSE=1 is_exec "aws${AWS_VERSION}"` || exit 2
+
+
+function __AWS {
   local -a cmd=()
 
-  if is_windows "aws${AWS_VERSION}"; then
+  # windows binary can't walk symlinks or handle unix'y paths
+  if is_windows "$__aws_bin"; then
     [ -n "$AWS_CONFIG_FILE" ] &&
-        cmd+=( env AWS_CONFIG_FILE="$(convert_path -w "$AWS_CONFIG_FILE")" )
+        cmd+=( AWS_CONFIG_FILE=`convert_path -w "$AWS_CONFIG_FILE"` )
 
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
-        cmd+=( AWS_SHARED_CREDENTIALS_FILE="$(convert_path -w "$AWS_SHARED_CREDENTIALS_FILE")" )
+        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -w "$AWS_SHARED_CREDENTIALS_FILE"` )
+
+    [[ "$cmd" =~ AWS_ ]] && cmd=( env "${cmd[@]}" )
   fi
 
-  cmd+=( "aws${AWS_VERSION}" )
+  cmd+=( "${__aws_bin:?}" '--output' json )
 
-  # HACK - work around missing settings
-  if [ -z "${AWS_DEFAULT_REGION}" ]; then
-    #WARN may override caller's own '--region' directive
-    "${cmd[@]}" configure get region &>/dev/null || {
-        is_ec2 && cmd+=( '--region' "$(ec2.metadata region)" )
-      }
-  fi
+  # HACK - EC2 instances may lack AWS config
+  # interactive use assumes correctness and may blow up
+  [ -z "${AWS_DEFAULT_REGION}" ] && is_ec2 && {
+      local _region=`__AWS configure get region || ec2.metadata region`
+      cmd+=( '--region' "${_region:?}" )
+    }
 
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
-  echo "${cmd[@]}"
-}
-readonly -f __aws_cmd
 
-# all output is in JSON with rare exception
-readonly AWS='eval $(__aws_cmd) --output json'
-readonly JQ='jq --exit-status'
-# NOTICE! 'jq -r' returns "null" on empty so either check RC or embed '//empty' into queries
-readonly JQR="$JQ --raw-output"
-readonly CURL='eval curl --connect-timeout 5 --fail --silent ${VERBOSE:+ --verbose --progress-bar}'
+  # all output is in JSON with rare exception
+  ${DEBUG:+ runv} "${cmd[@]}" "$@"
+}
+#readonly -f __aws_cmd
+
+declare -F __JQ &>/dev/null ||
+function __JQ { ${DEBUG:+ runv} \jq --exit-status "$@"; }
+#readonly -f __JQ
+
+# NOTICE! 'jq -r' returns literal "null" on empty, so either check RC or embed '//empty' into queries
+declare -F __JQR &>/dev/null ||
+function __JQR { ${DEBUG:+ runv} \jq --exit-status --raw-output "$@"; }
+#readonly -f __JQR
+
+declare -F __CURL &>/dev/null ||
+function __CURL { ${DEBUG:+ runv} \curl --connect-timeout 5 --fail --silent \
+       ${VERBOSE:+ --verbose --progress-bar} "$@"; }
+#readonly -f __CURL
 
 # CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
-__aws_default_region='us-east-1'
-__aws_default_config="$HOME/.aws/config"
-__aws_default_credentials="$HOME/.aws/credentials"
+declare -A __aws_defaults=(
+    [region]='us-east-1'
+    [config]="$HOME/.aws/config"
+    [credentials]="$HOME/.aws/credentials"
+  )
 
 declare -p __aws_session &>/dev/null ||
 declare -Ar __aws_session=(
@@ -57,8 +69,16 @@ declare -Ar __aws_session=(
     [Expiration]='aws_session_expire'
   )
 
+declare -p __aws_regex &>/dev/null ||
+declare -Ar __aws_regex=(
+    [token]='^[0-9]{6}'
+    [role]='^arn:aws:iam:'
+    [region]='^[a-z]{2}-[a-z]+-[0-9]'
+    [profile]='^[a-zA-Z]+'
+  )
+
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# aws ec2 describe-regions | $JQR '.Regions[].RegionName | sort'
+# aws ec2 describe-regions | JQR '.Regions[].RegionName | sort'
 
 is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
@@ -78,10 +98,10 @@ declare -ar __aws_regions=(
 #  __aws_availability_zones[$region]=`aws ec2 describe-availability-zones \
 #      --region $region \
 #      --query 'AvailabilityZones[].{ Name:ZoneName }' --output text`
-#  #alt: ... | $JQR '.AvailabilityZones[].ZoneName | @sh'`
+#  #alt: ... | JQR '.AvailabilityZones[].ZoneName | @sh'`
 #done
 
-is_hash __aws_availability_zones &>/dev/null && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
+is_hash __aws_availability_zones && [ ${#__aws_availability_zones[@]} -ge 16 ] ||
 declare -Ar __aws_availability_zones=(
     [ap-northeast-1]=$(echo ap-northeast-1{a,c,d})
     [ap-northeast-2]=$(echo ap-northeast-2{a,c})
@@ -164,7 +184,7 @@ function ec2.metadata() {
   esac
 
   # intermediary items (eg. MACs) leave behind trailing '/'
-  ${DEBUG:+ runv} $CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
+  __CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
 }
 
 
@@ -174,7 +194,8 @@ function is_ec2 { ec2.metadata self &>/dev/null; }
 function aws.region {
   # 'default' supplied by `aws configure` in aws.profile()
   local default
-  local region=${1-'prompt'}; shift
+  local region=${1-'prompt'}
+  shift
 
   # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set,
   # or can fall-back on configuration default
@@ -213,19 +234,20 @@ function aws.profile {
 
   local config creds
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    config=$(readlink -ve "$AWS_CONFIG_FILE") || return
-    : ${AWS_SHARED_CREDENTIALS_FILE:=${config%/*}/credentials}
-    creds=$(readlink -ve "$AWS_SHARED_CREDENTIALS_FILE") || return
-
-    if [ "${config%/*}" != "${creds%/*}" ]; then
-      AWS_SHARED_CREDENTIALS_FILE=$(readlink -ve "${config%/*}/credentials") || return
-      log.warn "overriding CREDENTIALS_FILE ($creds -> $AWS_SHARED_CREDENTIALS_FILE)"
-      creds=$AWS_SHARED_CREDENTIALS_FILE
-    fi
+    config=`$READLINK -ve "$AWS_CONFIG_FILE"` || return
+    [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] && {
+        creds=`$READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
+      }
   else
     unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
-    config=$(readlink -ve "$__aws_default_config") || return
-    creds=$(readlink -ve "$__aws_default_credentials") || return
+    config=`$READLINK -ve "${__aws_defaults[config]}"` || return
+    creds=`$READLINK -ve "${__aws_defaults[credentials]}"` || return
+  fi
+
+  if [ "${config%/*}" != "${creds%/*}" ]; then
+    AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
+    log.notice "overriding CREDENTIALS_FILE (${creds:-unset} -> $AWS_SHARED_CREDENTIALS_FILE)"
+    creds=`$READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
   fi
 
   if [ "$profile" = 'prompt' ]; then
@@ -259,11 +281,12 @@ function aws.profile {
     # stacktrace if value of AWS_PROFILE is not defined in file(s).
     #
     # $? == 1 simply means no explicit declaration
-    local _region=$( $AWS configure get region --output text 
-        ${profile:+ --profile "$profile"} 2>/dev/null | head -n 1 | tr -d '\r' )
+    local _region=$( __AWS --output text configure get region
+        ${profile:+ --profile "$profile"} 2>/dev/null | tr -d $'\r' )
 
-    [[ $? -eq 255 || "$_region" =~ ProfileNotFound ]] && {
-        RC=255 log.error "undefined profile ($profile)"; return
+    [[ $? -eq 255 || "${_region:-unset}" =~ ProfileNotFound ]] && {
+        log.error "undefined profile ($profile)"
+        return 255
       }
 
   if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
@@ -309,7 +332,7 @@ function aws.session-load {
   # read file into variable
   [ -f "$input" ] && input=$( <"$input" )
 
-  $JQ . <<< "$input" &>/dev/null && format='json'
+  __JQ . <<< "$input" &>/dev/null && format='json'
 
   case "$format" in
     text)   # see 'aws.session()' call to 'aws sts'
@@ -322,13 +345,13 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
             ;;
 
     json)   local field; local -u envvar
-            $JQ -MS '.Credentials' <<< "$input" | log.debug
+            __JQ -MS '.Credentials' <<< "$input" | log.debug
             for field in $(keys __aws_session); do
               envvar=$(value __aws_session $field)
               local -n nref=$envvar
-              nref=$( $JQR --arg field "$field" '.Credentials[$field]' <<< "$input" )
+              nref=$( __JQR --arg field "$field" '.Credentials[$field]' <<< "$input" )
             done
-            $JQR '.AssumedRoleUser' <<< "$input" | log.info
+            __JQR '.AssumedRoleUser' <<< "$input" | log.info
             ;;
 
     *)      log.error "unsupported format ($format)"; return 2
@@ -344,7 +367,7 @@ function aws.session-write {
 
     for field in $(keys __aws_session); do
       envvar=$(value __aws_session "$field")
-      ${DEBUG:+ runv} $AWS configure set "${envvar,,}" "${!envvar}"
+      ${DEBUG:+ runv} __AWS configure set "${envvar,,}" "${!envvar}"
     done
 }
 
@@ -364,8 +387,8 @@ function aws.session {
       c)    for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
 
-              expires=$(date --date `$JQR '.Credentials.Expiration' "$f"` '+%s')
-              [ $now -lt ${expires:-0} ] || { rm -f "$f"; continue; }
+              expires=$(date --date `__JQR '.Credentials.Expiration' "$f"` '+%s')
+              [ ${expires:-0} -ge ${now:-0} ] || { \rm -f "$f"; continue; }
 
               #FIXME first valid != desired AWS_PROFILE, is $profile set?
               cache=$f
@@ -374,7 +397,8 @@ function aws.session {
             ;;
       f)    force=1 ;;
       p)    profile=$OPTARG ;;
-      r)    role=$OPTARG ;;
+      R)    role=$OPTARG ;;
+      r)    region=$OPTARG ;;
       T)    duration=$OPTARG ;;
       t)    [[ "$OPTARG" =~ [0-9]{6} ]] && token=$OPTARG || {
                 log.error "invalid Token ($OPTARG)"
@@ -396,35 +420,30 @@ function aws.session {
 
   #WARN unsafe backwards compat
   while [ "${1+x}" ]; do
-    if [[ $1 =~ [0-9]{6} ]]; then
+    if [[ $1 =~ ${__aws_regex[token]} ]]; then
       token=$1
-    elif [[ $1 =~ ^arn:aws:iam: ]]; then
+    elif [[ $1 =~ ${__aws_regex[role]} ]]; then
       role=$1
-    elif [[ $1 =~ ^[a-zA-Z]+ ]]; then
+    elif [[ ${1,,} =~ ${__aws_regex[region]} ]]; then
+      region=$1
+    elif [[ $1 =~ ${__aws_regex[profile]} ]]; then
       profile=$1
     else
-      log.warn "unknown format ($1)"
-      break
+      log.error "unknown format ($1)"
+      return
     fi
     shift
   done
 
-  aws.profile "${profile:-$AWS_PROFILE}" "$AWS_DEFAULT_REGION" || return
+  aws.profile "${profile:-$AWS_PROFILE}" "${region:-$AWS_DEFAULT_REGION}" || return
+  : ${role:=`__AWS configure get role_arn | tr -d $'\r'`}
 
-#  mfa=`$AWS configure get mfa_serial`
-#  if [[ $? -eq 255 || "$mfa" =~ ProfileNotFound ]]; then
-#    # not reached, aws.profile() should have caught it
-#    RC=1 log.critical "unknown profile ($profile, $AWS_CONFIG_FILE)"
-#    return
-#  fi
-
-  : ${role:=$($AWS configure get role_arn 2>/dev/null)}
   local cmd=()
 
   if [ -n "$role" ]; then
     # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
     local session_name="${role#*:role/}"
-    local session_suffix="${AWS_PROFILE}.$$"
+    local session_suffix="${AWS_PROFILE:?}.$$"
     session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
     session_name="${session_name//:/.}"
     cmd=( 'assume-role' '--role-arn' "$role" '--role-session-name' "$session_name" )
@@ -444,7 +463,7 @@ function aws.session {
           unset $key
         done
 
-        ${DEBUG:+ runv} $AWS sts "${cmd[@]}" \
+        ${DEBUG:+ runv} __AWS sts "${cmd[@]}" \
             ${mfa:+ --serial-number "$mfa" \
             ${token:+ --token-code $token}} \
             ${duration:+ --duration-seconds $duration}
@@ -458,7 +477,7 @@ function aws.session {
   aws.session-load "${cache:-$output}" || return
   [ ${write:-0} -eq 1 ] && aws.session-write
 
-  log.info $(aws.printenv)
+  log.info `aws.printenv`
   export ${!AWS_*}
 }
 
@@ -470,25 +489,23 @@ function aws.addPath {
   [ -n "$AWS_CONFIG_FILE" ] &&
       dirs+=( "${AWS_CONFIG_FILE%/*}"/**/bin )
   # sanitize
-  dirs=( $(IFS=$'\n'; \sort -u <<< "${dirs[*]}") )
+  dirs=( `IFS=$'\n'; \sort -u <<< "${dirs[*]}"` )
 
   for v in "${dirs[@]}"; do
     [ -d "$v" ] || continue
 
     if [ ${DELETE:-0} -eq 1 ]; then
-      ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d \
-          $(readlink -e "${v%/bin}")/{id_*,*.pem}.pub &>/dev/null
+      ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${v%/bin}"/{id_*,*.pem}.pub &>/dev/null
       rmPath "$v"
     else
 # WARN! use 'IdentitiesOnly yes' in ssh_config or else you may
 # experience Auth Failure by virtue of too many attempts
       [ ${LOAD_SSHKEYS:-0} -eq 1 ] && 
-          ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} $(readlink -e "${v%/bin}")/{id_*,*.pem}
+          ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${v%/bin}"/{id_*,*.pem}
       prepend=1 addPath "$v"
     fi
   done
 }
-
 
 function aws.rmPath {
   DELETE=1 aws.addPath "$@"
@@ -502,16 +519,16 @@ function aws.route53-export {
   # if doesn't match pattern assume Domain name was specified
   #FIXME will pick first occurance which is likely not intended, use read() to prompt
   \grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
-      $AWS route53 list-hosted-zones |
-          $JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
+      __AWS route53 list-hosted-zones |
+          __JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
           cut -d'/' -f3 | head -n 1
     )
 
   for zone in $zone_id; do
     echo -e "; $zone\n"
     #TODO use printf() with width
-    $AWS route53 list-resource-record-sets --hosted-zone-id=${zone:?} |
-        $JQR -j '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
+    __AWS route53 list-resource-record-sets --hosted-zone-id=${zone:?} |
+        __JQR -j '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
     echo
   done
 }
@@ -519,7 +536,7 @@ function aws.route53-export {
 
 #TODO rewrite as aws.describe() item
 function iam.sshkeys {
-  # Example: $FUNCNAME `$AWS iam get-group --group-name <group> | $JQR '.Users[].UserName'`
+  # Example: $FUNCNAME `__AWS iam get-group --group-name <group> | JQR '.Users[].UserName'`
   local -u format
   local status
 
@@ -529,12 +546,12 @@ function iam.sshkeys {
   while (( $# ));do
     [ "$1" ] || { shift; continue; }
 
-    for kid in $( $AWS iam list-ssh-public-keys --user-name "$1" |
-        $JQR --arg STATUS "$status" '.SSHPublicKeys[] | select(.Status == $STATUS) | .SSHPublicKeyId //empty'
+    for kid in $( __AWS iam list-ssh-public-keys --user-name "$1" |
+        __JQR --arg STATUS "$status" '.SSHPublicKeys[] | select(.Status == $STATUS) | .SSHPublicKeyId //empty'
       ); do
 #TODO use JQ and drop @sh?
-      $AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
-          $JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
+      __AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
+          __JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
     done
     shift
   done
@@ -563,22 +580,22 @@ function aws.describe() {
 
 #FIXME rewrite all to use --filter syntax and generic ending below
 
-  case $resource in
+  case "$resource" in
 #    asg|autoscaling-group)
 
 #    iam.user)
 #    iam.group?)
 #    iam.policy)
     iam.role)
-            ${DEBUG:+ runv} $AWS iam get-role --role-name "${1:?role}" | $JQ '.Role'
+            __AWS iam get-role --role-name "${1:?role}" | __JQ '.Role'
             ;;
-
     s3|*bucket)
-            ${DEBUG:+ runv} $AWS s3api list-buckets | $JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)'
+            __AWS s3api list-buckets | __JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)'
             ;;
     *bucket-policy)
-            # last JQ used to un-escape embedded stanza
-            ${DEBUG:+ runv} $AWS s3api get-bucket-policy --bucket "${1:?bucket}" | $JQR '.Policy' | $JQ . ;;
+            # last JQ used to un-escape embedded stanza (was: | __JQ .)
+            __AWS s3api get-bucket-policy --bucket "${1:?bucket}" | __JQ '.Policy | from_json'
+            ;;
 
 #    ec2|*instance)
 #    instance-role)
@@ -587,10 +604,12 @@ function aws.describe() {
 #    nat-gateway
 
     # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
-    ec2.tag?(s)) type='instance' ;;&
-    eip.tag?(s)) type='elastic-ip' ;;&
-    #WARN non-EC2 items (eg. SQS will catch this and fail)
+    ec2.tag?(s)) type='instance'
+            ;;&
+    eip.tag?(s)) type='elastic-ip'
+            ;;&
     *.tag?(s))
+            #FIXME non-EC2 items (eg. SQS will catch this and fail)
             cmd=( ec2 describe-tags )
             filter=(
                 "Name=resource-type,Values=${type:-${resource%.tags}}"
@@ -602,26 +621,26 @@ function aws.describe() {
             [ -n "$1" ] && filter+=( Name=key,Values=$(join_string ',' "$@") )
 
             field='Tags'
-            post=( $JQ -s 'from_entries' )
+            post=( __JQ -s 'from_entries' )
             ;;
 #    route)
 #    subnet)
     *target-group?(s))
         #FIXME use filter to pick items
-            ${DEBUG:+ runv} $AWS elbv2 describe-target-groups |
-                $JQ --arg tg ${1:?target_group_name} '.TargetGroups[] | select(.TargetGroupName == $tg)'
+            __AWS elbv2 describe-target-groups |
+                __JQ --arg tg ${1:?target_group_name} '.TargetGroups[] | select(.TargetGroupName == $tg)'
             ;;
 
 #   ebs|volume) describe-volume
     *volume-attachment)
-            ${DEBUG:+ runv} $AWS ec2 describe-volumes --volume-ids ${1:?volume_id} |
-                $JQ '.Volumes[].Attachments[0]'
+            __AWS ec2 describe-volumes --volume-ids ${1:?volume_id} |
+                __JQ '.Volumes[].Attachments[0]'
             ;;
 
     *volume-status)
             # ok, creating, ?
-            ${DEBUG:+ runv} $AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} |
-                $JQR '.VolumeStatuses[].VolumeStatus.Status //empty'
+            __AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} |
+                __JQR '.VolumeStatuses[].VolumeStatus.Status //empty'
             ;;
 
     vpc?(s)) cmd=( ec2 describe-vpcs )
@@ -630,15 +649,14 @@ function aws.describe() {
             ;;
 
     vpc-endpoint-service?(s))
-            ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoint-services \
-                --service-name com.amazonaws.${AWS_DEFAULT_REGION:-$__aws_default_region}.${1:?service} |
-                $JQ '.ServiceDetails[]'
+            __AWS ec2 describe-vpc-endpoint-services \
+                --service-name "com.amazonaws.${AWS_DEFAULT_REGION:-${__aws_defaults[region]}}.${1:?service}" |
+                __JQ '.ServiceDetails[]'
             ;;
 
     vpc-endpoint?(s))
-            ${DEBUG:+ runv} $AWS ec2 describe-vpc-endpoints \
-                --vpc-endpoint-ids ${1:?endpoint_id} |
-                $JQ '.VpcEndpoints[]'
+            __AWS ec2 describe-vpc-endpoints --vpc-endpoint-ids ${1:?endpoint_id} |
+                __JQ '.VpcEndpoints[]'
             ;;
 
 #    target-group)
@@ -655,9 +673,9 @@ function aws.describe() {
   [ -n "$filter" ] && cmd+=( '--filters' "${filter[@]}" )
 
   if [ -n "$post" ]; then
-    $AWS "${cmd[@]}" | $JQ --arg field "${field:?}" '.[$field][]' | "${post[@]}"
+    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field][]' | "${post[@]}"
   elif [ -n "$field" ]; then
-    $AWS "${cmd[@]}" | $JQ --arg field "${field:?}" '.[$field][]'
+    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field][]'
   else
     log.notice "FIXME legacy entry ($resource)"; return 0
   fi
@@ -673,7 +691,7 @@ function aws.get() {
 
   case "$resource" in
     *.tag)  aws.describe "$resource" ${1:?resource-id} "${2:?key}" |
-                $JQR --arg key "$2" '.[$key] //empty'
+                __JQR --arg key "$2" '.[$key] //empty'
             ;;
 
 #    *.tags) aws.describe "$resource" "${1:?resouce-id}" "${@:2}" |
@@ -681,20 +699,23 @@ function aws.get() {
 #            ;;
 
     ssm.parameter)
-            ${DEBUG:+ runv} $AWS ssm get-parameter --name "${1:?parameter}" --with-decryption |
-                $JQR '.Parameter.Value //empty'
+            #TODO? join_string('/', "$prefix", ${@:?parameter})
+            __AWS ssm get-parameter --name "${1:?parameter}" --with-decryption |
+                __JQR '.Parameter.Value //empty'
             ;;
 
     ssm.parameters)
             # key and value emitted on successive lines to simplify whitespace handling.
             # consume via loop since direct eval() of ^/.+ which is not legal in SHELL:
             #   while read -r key; do read -r value; ... done
-            ${DEBUG:+ runv} $AWS ssm get-parameters --names "${@:?parameter}" --with-decryption |
-                $JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
+            __AWS ssm get-parameters --names "${@:?parameter}" --with-decryption |
+                __JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
+#FIXME return associative array so no caller parsing
+#                __JQR '.Parameters[] | "[\(.Name)]=\'\(.Value)\'"'
             ;;
 
     sts.account)
-            ${DEBUG:+ runv} $AWS sts get-caller-identity | $JQR '.Account //empty'
+            __AWS sts get-caller-identity | __JQR '.Account //empty'
             ;;
 
     *)      log.error "unsupported keyword ($resource)"; return 2
@@ -706,16 +727,16 @@ function aws.get() {
     #lb.membership - return all LB of which instance is a target. if LB is new (ie. has member TG) iterate thru them
     #tg.membership - for new style
 
-#aws elb describe-load-balancers | $JQR '.LoadBalancerDescriptions[] | select(.Instances[].InstanceId == "<YOUR-INSTANCE-ID>") | . LoadBalancerName '
+#aws elb describe-load-balancers | __JQR '.LoadBalancerDescriptions[] | select(.Instances[].InstanceId == "<YOUR-INSTANCE-ID>") | . LoadBalancerName '
 # or
 #aws elb describe-load-balancers --query "LoadBalancerDescriptions[?Instances[?InstanceId=='${instanceId}']].LoadBalancerName"
 # but does NOT work with elbv2!!! have to loop thru all known target-groups
 #
-#    for tg in `aws elbv2 describe-target-groups --query "TargetGroups[?VpcId=='${vpc_id}'].TargetGroupArn" | $JQR '.[]'`; do
-#              $AWS elbv2 describe-target-health --target-group-arn "$tg" --query "TargetHealthDescriptions[?Target.Id=='${instance_id}']" | $JQ
+#    for tg in `aws elbv2 describe-target-groups --query "TargetGroups[?VpcId=='${vpc_id}'].TargetGroupArn" | __JQR '.[]'`; do
+#              __AWS elbv2 describe-target-health --target-group-arn "$tg" --query "TargetHealthDescriptions[?Target.Id=='${instance_id}']" | __JQ
 #    '.[]' >/dev/null && echo $tg
 #
-#      #alt: $JQR --arg instance "${instance_id:?}" 'select(.TargetHealthDescriptions[].Target.Id == $instance)'
+#      #alt: __JQR --arg instance "${instance_id:?}" 'select(.TargetHealthDescriptions[].Target.Id == $instance)'
 #      done
 
 
@@ -732,9 +753,9 @@ function aws.set() {
     ssm.parameter)
             [ -n "$DELETE" ] &&
                 cmd=( delete-parameter ) ||
-                cmd=( put-parameter '--type' String '--overwrite' '--value' "${2:?value}" )
+                cmd=( put-parameter '--type' String '--overwrite' '--value' "$2" )
 
-            ${DEBUG:+ runv} $AWS ssm "${cmd[@]}" --name "${1:?key}"
+            __AWS ssm "${cmd[@]}" --name "${1:?key}" >/dev/null
             ;;
 
     *)      log.error "unsupported keyword ($resource)"; return 2
@@ -745,7 +766,7 @@ function aws.set() {
 function asg.suspend() {
   local asg=${1:?ASG name}; shift
 
-  ${DEBUG:+ runv} $AWS autoscaling enter-standby \
+  __AWS autoscaling enter-standby \
       --auto-scaling-group-name "$asg" \
       --should-decrement-desired-capacity \
       ${1:+ --instance-ids "$@"}
@@ -755,7 +776,7 @@ function asg.suspend() {
 function asg.resume() {
   local asg=${1:?ASG name}; shift
 
-  ${DEBUG:+ runv} $AWS autoscaling exit-standby \
+  __AWS autoscaling exit-standby \
       --auto-scaling-group-name "$asg" \
       ${1:+ --instance-ids "$@"}
 }
@@ -772,7 +793,7 @@ function asg.set-capacity() {
   [ -n "${min}${desired}${max}" ] || return 2
   asg=${1:?ASG name}; shift
 
-  ${DEBUG:+ runv} $AWS autoscaling update-auto-scaling-group \
+  __AWS autoscaling update-auto-scaling-group \
       --auto-scaling-group-name "$asg" \
       ${min:+ --min-size $min} \
       ${desired:+ --desired-capacity $desired} \
@@ -802,30 +823,30 @@ function aws.list() {
   resource=${1:?resource}; shift
 
   case "$resource" in
-    vpc?(s))   field='VpcId' ;;
+    vpc?(s)) field='VpcId' ;;
 
     *)      log.error "unsupported keyword ($resource)"; return 2
   esac
 
-#TODO if name=0  cmd[1]=$JQ --arg field "$field" '.[$field], ""'
+#TODO if name=0  cmd[1]=__JQ --arg field "$field" '.[$field], ""'
 #TODO if sort=1  can JQ sort?
 
   # shell-friendly output
   case "${format:-json}" in
     # 2 lines per entry. readarray -t VAR < <(aws.list ...)
     a|array) aws.describe $resource "$@" |
-                ${DEBUG:+ runv} $JQR --arg field "$field" '.[$field], (.Tags | from_entries | .Name // "")'
+                ${DEBUG:+ runv} __JQR --arg field "$field" '.[$field], (.Tags | from_entries | .Name // "")'
             ;;
 
     # format? if TAB, 'while IFS=$'\t' read -t key val
     # otherwise, read key && read val
     A|hash) aws.describe $resource "$@" |
-                ${DEBUG:+ runv} $JQR --arg field "$field" '".[$field]=\(.Tags | from_entries | .Name // "")"'
+                ${DEBUG:+ runv} __JQR --arg field "$field" '".[$field]=\(.Tags | from_entries | .Name // "")"'
             ;;
 
     json)   aws.describe $resource "$@" |
-                ${DEBUG:+ runv} $JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
-                ${DEBUG:+ runv} $JQ -s 'add'
+                ${DEBUG:+ runv} __JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
+                ${DEBUG:+ runv} __JQ -s 'add'
             ;;
     # not reached
     *)      log.error "unsupported format ($opt)"; return 2
