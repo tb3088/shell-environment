@@ -10,8 +10,13 @@ alias git.render="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 #sed -i 's| \{1,7\}\t|\t|g'  remove prepended spaces before tabs
 
 is_exec python && {
-alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
-alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(yaml.load(sys.stdin), sys.stdout, indent=4)'"
+#TODO convert to function that can process args and fallback to STDIN
+alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)'"
+alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(json.load(sys.stdin), sys.stdout, indent=2)'"
+}
+is_exec yq && {     #ref: https://github.com/mikefarah/yq
+alias yaml2json='yq eval -j'
+alias json2yaml='yq eval -P'
 }
 
 is_exec docker && {

@@ -26,11 +26,11 @@ shopt -s globstar extglob dotglob
 # nullglob=off returns glob-spec despite no match, which (if failglob=off too) can be
 # useful for passing thru to '/bin/ls' etc without SHELL preemption.
 #
-#   nullglob=on + failglob=on    (interactive)
-#   nullglob=off + failglob=off  (scripts)
+#   nullglob=?  + failglob=on    (interactive)
+#   nullglob=on + failglob=off  (scripts)
 #
 # ref: http://mywiki.wooledge.org/glob#nullglob
-#shopt -u nullglob
+#shopt -s nullglob
 #shopt -s failglob
 
 # compgen (aka autocomplete) on Ubuntu(WSL, but not Cygwin) used to fail
