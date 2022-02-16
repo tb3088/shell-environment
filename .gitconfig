@@ -10,6 +10,7 @@
 	symlinks = true
 [pull]
 	rebase = false
+	pruneTags = true
 [color]
         ui = auto
 [diff]
@@ -19,3 +20,5 @@
 
 [rebase]
         autoSquash = true
+[fetch]
+	pruneTags = true

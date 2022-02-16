@@ -32,6 +32,10 @@
   # review of <commitA> <commitB> of <file> in split-screen Vim
   dvim = difftool -t vimdiff -y
 
-  pf = pull --ff-only
+  oops = commit --amend --no-edit
 
+  pf = pull --ff-only
   publish = ! "git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)"
+
+  undo = reset --soft HEAD~
+  unstage = restore --staged
