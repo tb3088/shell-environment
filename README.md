@@ -3,7 +3,7 @@ This is intended to be checked out into your HOME directory. Typically that is n
 a simple `git clone` will not work. The following sequence is best way forward.
 
 1. git init
-1. git remote add origin [URL]
+1. git remote add origin [REPO](https://github.com/tb3088/shell-environment.git)
 1. git fetch; git checkout master
 1. git submodule update --init --recursive
 
@@ -61,4 +61,7 @@ options = "metadata,umask=22,fmask=11"
 [interop]
 enabled = false
 appendWindowsPath = false
+
+[boot]
+command=chmod a+w,o+t /run;/etc/rc.init;/etc/init.d/<service>;...
 ```
