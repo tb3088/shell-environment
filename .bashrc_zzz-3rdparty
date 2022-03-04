@@ -1,0 +1,66 @@
+# simple auto-detect of supported 3rd-party software
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+
+# Can be invoked 3 ways:
+#   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
+#   2) args: .bashrc_3rdparty mvn java
+#   3) plain: run all keys
+
+declare -A map=(
+    ['mvn']=apache-maven
+    ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'${JAVA_VERSION}}
+    ['puppet']=${PUPPET_BASE:-puppetlabs}
+    ['go']=${GOROOT:-'go{,lang}{-,}'${GO_VERSION}}
+  )
+
+function add_program() {
+  is_exec "${1:?}" && return
+
+  local k=${map[$1]}
+  [ -n "$k" ] || { log.error "unknown software ($1)"; return; }
+
+  if [ "${k:0:1}" = '/' ]; then
+    [ -x "${k}/bin/$1" ] && { addPath "${k}/bin"; return; }
+  fi 
+
+  local pbin=$(
+      shopt -s nullglob extglob globstar
+      shopt -u failglob
+
+      # process embedded glob patterns
+      for v in `eval echo $k`; do
+        # WARN '/**/' can be VERY slow
+        for p in {/opt,/usr/local,"$PROGRAMFILES"/**/,"$LOCALAPPDATA"}/${v}*/bin/$1; do
+          dirname "$p"; break 2
+        done
+      done
+    )
+
+  [ -n "$pbin" ] && addPath "$pbin"
+}
+
+
+#----- main -----
+
+prog=`readlink -e "$BASH_SOURCE"`
+
+k=${BASH_SOURCE#*.bashrc_}
+if [ "${prog#*/.bashrc_}" != "$k" ]; then
+  add_program "$k"
+  return
+fi
+
+if [ $# -eq 0 ]; then
+  for k in "${!map[@]}"; do
+    add_program "$k"
+  done
+else
+  while [ $# -gt 0 ]; do
+    add_program "$1"
+    shift
+  done
+fi
+
+
+# vim: expandtab:ts=4:sw=4

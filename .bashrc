@@ -10,48 +10,8 @@ ${CONTINUE:+ set +e}
 # don't search PATH for target of 'source'
 shopt -u sourcepath
 
-# Get immediate notification of background job termination
-# set -o notify
-
-# Disable [CTRL-D] to exit the shell
-set -o ignoreeof checkjobs
-
-# use VI mode on command-line (else emacs)
-# http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
-#set -o vi
-
-# ref: https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
-shopt -s globstar extglob dotglob
-
-# nullglob=off returns glob-spec despite no match, which (if failglob=off too) can be
-# useful for passing thru to '/bin/ls' etc without SHELL preemption.
-#
-#   nullglob=?  + failglob=on    (interactive)
-#   nullglob=on + failglob=off  (scripts)
-#
-# ref: http://mywiki.wooledge.org/glob#nullglob
-#shopt -s nullglob
-#shopt -s failglob
-
-# compgen (aka autocomplete) on Ubuntu(WSL, but not Cygwin) used to fail
-# TAB-completion if nullglob=on. (Jan 2021: this may be fixed)
-#[[ `uname -r` =~ microsoft ]] && shopt -u nullglob
-
-# When changing directory small typos can be ignored by bash
-# for example, cd /vr/lgo/apaache would find /var/log/apache
-shopt -s cdspell autocd
-
-# History Options
-shopt -s histappend histreedit no_empty_cmd_completion
-
-HISTCONTROL="erasedups ignorespace"
-HISTFILESIZE=100
-HISTSIZE=500
-HISTTIMEFORMAT="%H:%M "
-# Ignore some controlling instructions
-HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
-
 #---------------
+shopt -s nullglob
 
 for f in "$HOME"/.functions{,.local}; do
   [ -f "$f" ] || continue
@@ -76,6 +36,47 @@ case $- in
         ;;
   *c*)  SSH_AGENT=
 esac
+
+#---------------
+
+# Get immediate notification of background job termination
+# set -o notify
+
+# Disable [CTRL-D] to exit the shell
+set -o ignoreeof checkjobs
+
+# use VI mode on command-line (else emacs)
+# http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
+#set -o vi
+
+# ref: https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
+shopt -s globstar extglob dotglob
+
+# ref: http://mywiki.wooledge.org/glob#nullglob
+# nullglob=off returns glob-spec despite no match, which (if failglob=off too) can be
+# useful for passing thru to '/bin/ls' etc without SHELL preemption.
+#
+#   nullglob=off + failglob=?   (interactive)
+#   nullglob=on + failglob=off  (scripts)
+shopt -u nullglob
+
+# compgen (aka autocomplete) on Ubuntu(WSL, but not Cygwin) used to fail
+# TAB-completion if nullglob=on. (Jan 2021: this may be fixed)
+#[[ `uname -r` =~ microsoft ]] && shopt -u nullglob
+
+# When changing directory small typos can be ignored by bash
+# for example, cd /vr/lgo/apaache would find /var/log/apache
+shopt -s cdspell autocd
+
+# History Options
+shopt -s histappend histreedit no_empty_cmd_completion
+
+HISTCONTROL="erasedups ignorespace"
+HISTFILESIZE=100
+HISTSIZE=500
+HISTTIMEFORMAT="%H:%M "
+# Ignore some controlling instructions
+HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
 
 
 # vim: expandtab:ts=4:sw=4

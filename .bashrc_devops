@@ -1,9 +1,7 @@
 is_exec git && {
-alias g=git
-alias gsb='git status --short --branch'
-alias git.render="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
+  alias gsb='git status --short --branch'
+  alias git.render="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 }
-
 # patterns to strip whitespace from code
 #sed -i 's/[ \t]\+$//'  dangling EOL
 #sed -i 's| {8}|\t|g'   spaces to tab
@@ -11,16 +9,17 @@ alias git.render="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 
 is_exec python && {
 #TODO convert to function that can process args and fallback to STDIN
-alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)'"
-alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(json.load(sys.stdin), sys.stdout, indent=2)'"
+  alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)'"
+  alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(json.load(sys.stdin), sys.stdout, indent=2)'"
 }
+
 is_exec yq && {     #ref: https://github.com/mikefarah/yq
-alias yaml2json='yq eval -j'
-alias json2yaml='yq eval -P'
+  alias yaml2json='yq eval -j'
+  alias json2yaml='yq eval -P'
 }
 
 is_exec docker && {
-alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
+  alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
 }
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
