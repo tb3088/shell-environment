@@ -1,27 +1,28 @@
 # simple auto-detect of supported 3rd-party software
-#----- header -----
+
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
 # Can be invoked 3 ways:
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty mvn java
-#   3) plain: run all keys
+#   3) plain: run all keys (disabled)
 
 declare -A map=(
     ['mvn']=apache-maven
     ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'${JAVA_VERSION}}
     ['puppet']=${PUPPET_BASE:-puppetlabs}
     ['go']=${GOROOT:-'go{,lang}{-,}'${GO_VERSION}}
+    ['ruby']=${RUBY_BASE:-'ruby{-,}'${RUBY_VERSION}}
   )
 
 function add_program() {
   is_exec "${1:?}" && return
 
-  local k=${map[$1]}
-  [ -n "$k" ] || { log.error "unknown software ($1)"; return; }
+  local m=${map[$1]}
+  [ -n "$m" ] || { log.error "unknown software ($1)"; return; }
 
-  if [ "${k:0:1}" = '/' ]; then
-    [ -x "${k}/bin/$1" ] && { addPath "${k}/bin"; return; }
+  if [ "${m:0:1}" = '/' ]; then
+    [ -x "${m}/bin/$1" ] && { addPath "${m}/bin"; return; }
   fi 
 
   local pbin=$(
@@ -29,7 +30,7 @@ function add_program() {
       shopt -u failglob
 
       # process embedded glob patterns
-      for v in `eval echo $k`; do
+      for v in `eval echo $m`; do
         # WARN '/**/' can be VERY slow
         for p in {/opt,/usr/local,"$PROGRAMFILES"/**/,"$LOCALAPPDATA"}/${v}*/bin/$1; do
           dirname "$p"; break 2
@@ -41,26 +42,20 @@ function add_program() {
 }
 
 
-#----- main -----
+s=`$READLINK -e "$BASH_SOURCE"`
+k="${BASH_SOURCE#*.bashrc_}"
+[ "${s#*/.bashrc_}" = "$k" ] || { add_program "$k"; return; }
 
-prog=`readlink -e "$BASH_SOURCE"`
+#if [ $# -eq 0 ]; then
+#  for k in "${!map[@]}"; do
+#    add_program "$k"
+#  done
+#else
 
-k=${BASH_SOURCE#*.bashrc_}
-if [ "${prog#*/.bashrc_}" != "$k" ]; then
-  add_program "$k"
-  return
-fi
-
-if [ $# -eq 0 ]; then
-  for k in "${!map[@]}"; do
-    add_program "$k"
-  done
-else
-  while [ $# -gt 0 ]; do
-    add_program "$1"
-    shift
-  done
-fi
+while (( $# )); do
+  [ -n "$1" ] && add_program "$1"
+  shift
+done
 
 
 # vim: expandtab:ts=4:sw=4

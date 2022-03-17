@@ -5,7 +5,7 @@
   # add by patch & prompt
   ap = add --patch
   au = add --update
-  bls = !"git show-branch --all --list 2>/dev/null"
+  bls = ! "git show-branch --all --list 2>/dev/null"
   bv = branch --verbose
 
   sb = status --short --branch
@@ -13,6 +13,8 @@
   cb = checkout --branch
   ci = commit --interactive
   cm = commit --message
+  dfc = diff --cached
+
   amend = commit --amend --message
   hist = log --pretty='format:%Cred%h%Creset %C(yellow)%d%Creset - %s %C(green)%ar%Creset %C(blue)%an%Creset' --graph --all --decorate
   ll = log --graph --oneline
@@ -22,19 +24,17 @@
   review = ! "f() { git merge-tree $(git merge-base $@ 2>/dev/null) $@; }; f"
   whitespace = ! "git diff-tree --check $(git hash-object -t tree /dev/null) HEAD"
   findsha = ! "f() { git branch -r --contains ${1:?commit}; }; f"
-# see .bashrc_devops for SHELL alias 'git.render' which strips diff markers for easy cut/paste
+  # see .bashrc_devops for alias to 'git.render' which strips diff markers for easy cut/paste
 
   d = diff
-  dca = diff --cached
-  dst = diff --staged
   dws = diff -w
   check = diff --check
   # review of <commitA> <commitB> of <file> in split-screen Vim
   dvim = difftool -t vimdiff -y
 
-  oops = commit --amend --no-edit
-
-  pf = pull --ff-only
+  pf = ! "git prune-all; git pull --ff-only"
+  prune-all = fetch --prune --prune-tags --force
+	# alt: !git tag -d $(git tag) && git fetch --tags
   publish = ! "git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)"
 
   undo = reset --soft HEAD~

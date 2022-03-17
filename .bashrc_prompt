@@ -88,7 +88,7 @@ if [ -n "$GIT_PROMPT" ]; then
     done
 
     _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
-    _prompt+="\n${UL}Git:$RS ${HC}${_upstream:-$_branch}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
+    _prompt+="\n${UL}Git:$RS ${HC}$_branch${_upstream:+...$_upstream}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
   fi
 fi
 
