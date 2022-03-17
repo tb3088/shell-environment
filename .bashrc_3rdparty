@@ -2,17 +2,17 @@
 
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
-# Can be invoked 3 ways:
+# Usage:
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty mvn java
-#   3) plain: run all keys (disabled)
 
 declare -A map=(
+    ['aws']=${AWSCLI:-'aws{cli,}{v,}'$AWS_VERSION}
     ['mvn']=apache-maven
-    ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'${JAVA_VERSION}}
+    ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'$JAVA_VERSION}
     ['puppet']=${PUPPET_BASE:-puppetlabs}
-    ['go']=${GOROOT:-'go{,lang}{-,}'${GO_VERSION}}
-    ['ruby']=${RUBY_BASE:-'ruby{-,}'${RUBY_VERSION}}
+    ['go']=${GOROOT:-'go{,lang}{-,}'$GO_VERSION}
+    ['ruby']=${RUBY_BASE:-'ruby{-,}'$RUBY_VERSION}
   )
 
 function add_program() {
@@ -22,22 +22,25 @@ function add_program() {
   [ -n "$m" ] || { log.error "unknown software ($1)"; return; }
 
   if [ "${m:0:1}" = '/' ]; then
-    [ -x "${m}/bin/$1" ] && { addPath "${m}/bin"; return; }
+    for p in "$m"/{bin/,}"$1"; do
+      [ -x "$p" ] && { addPath `dirname "$p"`; return; }
+    done
+    return 1
   fi 
 
+  #TODO https://unix.stackexchange.com/questions/406216/check-for-bash-options
   local pbin=$(
       shopt -s nullglob extglob globstar
       shopt -u failglob
 
       # process embedded glob patterns
-      for v in `eval echo $m`; do
+      for v in `eval echo "$m"`; do
         # WARN '/**/' can be VERY slow
-        for p in {/opt,/usr/local,"$PROGRAMFILES"/**/,"$LOCALAPPDATA"}/${v}*/bin/$1; do
-          dirname "$p"; break 2
+        for p in {/opt,/usr/local,"$PROGRAMFILES"/**/,"$LOCALAPPDATA"}/"$v"*/{bin/,}"$1"; do
+          [ -x "$p" ] && { dirname "$p"; break 2; }
         done
       done
     )
-
   [ -n "$pbin" ] && addPath "$pbin"
 }
 
@@ -45,12 +48,6 @@ function add_program() {
 s=`$READLINK -e "$BASH_SOURCE"`
 k="${BASH_SOURCE#*.bashrc_}"
 [ "${s#*/.bashrc_}" = "$k" ] || { add_program "$k"; return; }
-
-#if [ $# -eq 0 ]; then
-#  for k in "${!map[@]}"; do
-#    add_program "$k"
-#  done
-#else
 
 while (( $# )); do
   [ -n "$1" ] && add_program "$1"
