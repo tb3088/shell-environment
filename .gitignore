@@ -20,10 +20,11 @@ go
 .local
 .minttyrc
 .motd_shown
-.m2/
+.m2
 .npm/
 .packer.d
 .pex/
+.pgpass
 RCS/
 .rnd
 .screen_exchange
