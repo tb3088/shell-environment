@@ -26,12 +26,12 @@ function __AWS {
 
   cmd+=( "${__aws_bin:?}" '--output' json )
 
-  # HACK - EC2 instances may lack AWS config
-  # interactive use assumes correctness and may blow up
-  [ -z "${AWS_DEFAULT_REGION}" ] && is_ec2 && {
-      local _region=`__AWS configure get region || ec2.metadata region`
-      cmd+=( '--region' "${_region:?}" )
-    }
+  # NOTE - EC2 instances may lack AWS config
+  # interactive use assumes correctness or may blow up
+  if [ -z "${AWS_DEFAULT_REGION}" ]; then
+    local region=`is_ec2 && ec2.metadata region || "${cmd[@]}" configure get region`
+    cmd+=( '--region' "${region:?}" )
+  fi
 
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
 
@@ -41,16 +41,16 @@ function __AWS {
 #readonly -f __aws_cmd
 
 declare -F __JQ &>/dev/null ||
-function __JQ { ${DEBUG:+ runv} \jq --exit-status "$@"; }
+function __JQ { ${DEBUG:+ runv} jq --exit-status "$@"; }
 #readonly -f __JQ
 
 # NOTICE! 'jq -r' returns literal "null" on empty, so either check RC or embed '//empty' into queries
 declare -F __JQR &>/dev/null ||
-function __JQR { ${DEBUG:+ runv} \jq --exit-status --raw-output "$@"; }
+function __JQR { ${DEBUG:+ runv} jq --exit-status --raw-output "$@"; }
 #readonly -f __JQR
 
 declare -F __CURL &>/dev/null ||
-function __CURL { ${DEBUG:+ runv} \curl --connect-timeout 5 --fail --silent \
+function __CURL { ${DEBUG:+ runv} curl --connect-timeout 5 --fail --silent \
        ${VERBOSE:+ --verbose --progress-bar} "$@"; }
 #readonly -f __CURL
 
@@ -609,7 +609,11 @@ function aws.describe() {
     eip.tag?(s)) type='elastic-ip'
             ;;&
     *.tag?(s))
-            #FIXME non-EC2 items (eg. SQS will catch this and fail)
+            #TODO non-EC2 items
+            # sqs: list-queue-tags
+            # dynamodb: list-tags-of-resource
+            #
+            # ec2: customer-gateway | dedicated-host | dhcp-options | elastic-ip | fleet | fpga-image | host-reservation | image | instance | internet-gateway | key-pair | launch-template | natgateway | network-acl | network-interface | placement-group | reserved-instances | route-table | security-group | snapshot | spot-instances-request | subnet | volume | vpc | vpc-endpoint | vpc-endpoint-service | vpc-peering-connection | vpn-connection | vpn-gateway
             cmd=( ec2 describe-tags )
             filter=(
                 "Name=resource-type,Values=${type:-${resource%.tags}}"
@@ -618,7 +622,7 @@ function aws.describe() {
             shift
 
             # select specified tags
-            [ -n "$1" ] && filter+=( Name=key,Values=$(join_string ',' "$@") )
+            [ -n "$1" ] && filter+=( Name=key,Values=`join_string ',' "$@"` )
 
             field='Tags'
             post=( __JQ -s 'from_entries' )
@@ -747,13 +751,18 @@ function aws.set() {
   [ -n "$resource" ] || { resource=${1:?resource}; shift; }
 
   case "$resource" in
+#    sqs.tag)
+#    dynamodb.tag)
+#    ec2.tag)
 #    *.tag)
-#            ;;
 
     ssm.parameter)
+            #[ "$1" = '-s' ] && { secure=1; shift; }
+            #or inspect ${1%%:*} where member of String, List|StringList, Secure|SecureString
+            #_type=String
             [ -n "$DELETE" ] &&
                 cmd=( delete-parameter ) ||
-                cmd=( put-parameter '--type' String '--overwrite' '--value' "$2" )
+                cmd=( put-parameter '--type' ${_type:-String} '--overwrite' '--value' "$2" )
 
             __AWS ssm "${cmd[@]}" --name "${1:?key}" >/dev/null
             ;;

@@ -10,8 +10,9 @@ function is_interactive {
 is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
 
-WHICH="\which --skip-alias --skip-functions"
-READLINK="\readlink --no-newline"
+#TODO use 'command -v' instead
+WHICH='which --skip-alias --skip-functions'
+READLINK='readlink --no-newline'
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
@@ -30,7 +31,7 @@ function runv() {
 #function is_what
 
 function __is_type {
-  # short-circuits on first error
+# NOTE short-circuits on first error
   local compare
   local -Ar types=(
       [a]='array'       [array]='a'
@@ -49,6 +50,7 @@ function __is_type {
   case "${compare:=${FUNCNAME[1]#is_}}" in
     file)
         while (( $# )); do
+          # skip NULL args
           [ -n "$1" ] || { shift; continue; }
 
           #alt: readlink -qe "$1"
@@ -63,6 +65,7 @@ function __is_type {
 
     exec*)
         while (( $# )); do
+          # skip NULL args
           [ -n "$1" ] || { shift; continue; }
 
           bin=`$WHICH "$1" 2>/dev/null` || {
@@ -77,6 +80,7 @@ function __is_type {
 
     func*)
         while (( $# )); do
+          # skip NULL args
           [ -n "$1" ] || { shift; continue; }
 
           declare -F "$1" >/dev/null || {
@@ -100,6 +104,7 @@ function __is_type {
 
   local whatami flag
   while (( $# )); do
+    # skip NULL args
     [ -n "$1" ] || { shift; continue; }
 
     # suss out functions during 'readonly'
@@ -194,7 +199,7 @@ function convert_path() {
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
     if is_windows; then     # Windows programs can't handle symlinks
-      p=`readlink -m "$p"`
+      p=`$READLINK -m "$p"`
       p=`cygpath --path $format ${flags[@]} -- "$p"`
     fi
 
@@ -239,34 +244,32 @@ function addPath() {
   (( $# )) || return
 
 #TODO use join_string() to handle arbitrary delimiters and whitespace
-#TODO? rewrite callers as PATH=`join_string $1 $2 $delim`
+#TODO? rewrite callers as PATH=`delim=$delim join_string $1 $2`
 
   local k delim flags=()
   local -i prepend
   local -ir _prepend=${prepend:-0}
 
   # short-cut to 'PATH' mode
-  [ "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
+  [ $# -eq 1 -o "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
+  [ "$k" = 'PATH' ] && { delim=':' flags+=('-E'); }
 
   # check variable name
   [[ "$k" =~ ^[A-Za-z] ]] || { log.error "invalid variable ($k)"; return; }
 
-  # special case
-  [ "$k" = 'PATH' ] && { delim=':' flags+=('-E'); }
-
   : ${delim:=${PATHSEP:-':'}}
   local -n kval=$k
 
-#  log.trace "$k before (delim=$delim)" "$kval"
-
   while (( $# )); do
-    prepend=$_prepend   # restore initial state
-
+    prepend=$_prepend   # reset initial state
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; } || v=$1
 
-    # ref: https://sourceware.org/git/?p=newlib-cygwin.git;a=commit;h=aec6479820fee5f71d50930bf0dde2bbf386bd4b
-    v=`readlink -e "${v:?path}"` || { log.warn "directory not found ($1)"; shift; continue; }
+    # expand all elements for consistent match
+    v=`$READLINK -e "${v:?path}"` || {
+        log.warn "directory not found ($1)"
+        shift; continue
+      }
 
     # do *NOT* prefix call to convert_path() with '${DEBUG:+ runv}'
     v=`convert_path "${flags[@]}" "$v"`
@@ -278,49 +281,46 @@ function addPath() {
     shift
   done
 
-  # remove duplicate and dangling delimiter
-  kval=${kval//$delim$delim/$delim}
-  kval=${kval##$delim}
-  kval=${kval%%$delim}
-
-#  log.trace "$k after" "$kval"
+  # remove leading, trailing and any leftover repeated delimiter
+  kval=${kval##$delim}; kval=${kval%%$delim}
+  kval=${kval//${delim}${delim}/$delim}
 }
 
 #TODO simply treat as DELETE=1 addPath
 function rmPath() {
-  local k v flag delim
+  local k flag delim
 
-  [ $# -eq 1 ] && k='PATH' || { k="$1"; shift; }
-  [[ "$k" =~ ^[A-Za-z] ]] || { RC=2 log.error "invalid variable ($k)"; return; }
-  local -n kval=$k
+  # short-cut to 'PATH' mode
+  [ $# -eq 1 -o "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
+  [ "$k" = 'PATH' ] && { delim=':' flags+=('-E'); }
 
-  [ "$k" = 'PATH' ] && { delim=':'; flag='-E'; }
+  # check variable name
+  [[ "$k" =~ ^[A-Za-z] ]] || { log.error "invalid variable ($k)"; return; }
+
   : ${delim:=${PATHSEP:-\:}}
-
-#  log.trace "$k before" "$kval"
+  local -n kval=$k
 
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
-    v=`readlink -m "$1"`
 
-    #alt: nref=`sed -E "s|${delim}?$v${delim}?|${delim}|" <<< "$nref"`
+    # expand all elements for consistent match
+    v=`$READLINK -m "$1"`
     kval=$(
         IFS=$delim
         read -ra items <<< "$kval"
-        for i in ${!items[@]}; do
-          [ "${items[i]}" = "$v" ] && unset 'items[i]'
+        # nifty way around `seq 0 ${#}-1`
+        for i in "${!items[@]}"; do
+          [ "${items[i]}" = "$v" ] && unset items[$i]
         done
         echo "${items[*]}"
-    )
+      )
+      #alt: sed -E "s|$v||" <<< "$kval"
     shift
   done
 
-  # remove duplicate and dangling delimiter
-  kval=${kval//$delim$delim/$delim}
-  kval=${kval##$delim}
-  kval=${kval%%$delim}
-
-#  log.trace "$k after" "$kval"
+  # remove leading, trailing and any leftover repeated delimiter
+  kval=${kval##$delim}; kval=${kval%%$delim}
+  kval=${kval//${delim}${delim}/$delim}
 }
 
 
@@ -481,22 +481,15 @@ function join_string() {
   [ "$quote" = "$delim" ] && escape=$delim
   [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
 
-  [ -z "$quote" -a ${#delim} -le 1 ] && {
-      IFS=$delim; echo "$*"
-      return
-    }
-
   local IFS=
   # prepend each word during expansion
-  local _str=${*/#/${quote}${delim}${quote}}
+  local str=${*/#/${quote}${delim}${quote}}
+
+  #TODO collapse repeated delim
+#  str=${str//${delim}{delim}/$delim}
 
   # strip leading 'delim' and tack on trailing 'quote'
-  echo "${_str#${quote}${delim}}$quote"
-
-  #alt: slower
-#  printf "${quote}%s${quote}" "$1"
-#  [ $# -gt 1 ] || return 0
-#  printf "${delim}${quote}%s${quote}" "${@:2}"
+  echo "${str#${quote}${delim}}$quote"
 }
 
 function join_quote() { quote=\' join_string "$@"; }
