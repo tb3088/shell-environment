@@ -13,13 +13,14 @@ set -o pipefail
 #TODO use 'command -v' instead
 WHICH='which --skip-alias --skip-functions'
 READLINK='readlink --no-newline'
+[ ${NOOP:-0} -eq 1 ] && : ${DEBUG:=1}
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
   local indent=`printf '%.0s+' {1..$SHLVL}`
   >&2 printf "%s %s\n" "$indent" "$*"
 
-  [ -z "$NOOP" ] || return
+  [ -z "$NOOP" ] || return 0
 
   local command=${1/eval/${2//\`/}}
   local outf=`mktemp -t "${command##*/}-XXXXX"`
@@ -142,7 +143,7 @@ is_windows () {
   # handle files and directories
   bin=`$WHICH "$1"`;
   [[ "${bin:=$1}" =~ ^/cygdrive ]] ||
-      \file "$bin" | \grep -q 'for MS Windows'
+      file "$bin" | grep -q 'for MS Windows'
 }
 
 
@@ -164,25 +165,28 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local format flags=() quote
+  local flags=() quote
   local -i escape
-  local OPTIND
+  local OPTIND opt
 
-  while getopts ":eEqt:" opt; do
+  while getopts ':eEqt:' opt; do
     case $opt in
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
       q)    : ${quote:=\'}; escape=0 ;;
-      t)    is_windows || return 2
-	    \egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG" &&
-                format="-t $OPTARG" || {
-                    log.error "unknown format ($OPTARG)"
-                    return 2
-                }
+      t)    #is_windows || { continue; shift; }
+            #FIXME do we really care?
+#            if egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG"; then
+              flags+=( '--type' "$OPTARG" )
+#           else
+#              log.error "unknown format ($OPTARG)"
+#              return 2
+#            fi
             ;;
-      :)    log.error "missing argument to '-$OPTARG'"; return 2
-            ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      # pass-thru unhandled args
       \?)   flags+=( "-$OPTARG" )
+      #h)
     esac
   done
   shift $((OPTIND - 1))
@@ -192,15 +196,15 @@ function convert_path() {
   # read from stdin if no args
   set -- "${@:-$(</dev/stdin)}"
 
-  # silently ignore empty param
   while (( $# )); do
+    # silently ignore empty param
     [ -n "$1" ] || { echo; shift; continue; }
 
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
     if is_windows; then     # Windows programs can't handle symlinks
       p=`$READLINK -m "$p"`
-      p=`cygpath --path $format ${flags[@]} -- "$p"`
+      p=`cygpath --path "${flags[@]}" -- "$p"`
     fi
 
     [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "${quote}$p${quote}"
@@ -226,7 +230,7 @@ function contains() {
 
   # empty string inside empty is valid
   case "$method" in
-    grep)   \grep -q "$sub" <<< "$source" ;;
+    grep)   grep -q "$sub" <<< "$source" ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
 #    insensitive)
@@ -436,7 +440,7 @@ function copy_function() {
 
   shift
 
-  if echo $fname | \grep -q '() {'; then
+  if echo $fname | grep -q '() {'; then
     body=$fname
     fname=`awk '{print $1; exit}' <<< "$body"`
   else
@@ -472,21 +476,65 @@ function rename_function() {
 
 
 function join_string() {
-  local quote escape= delim
+  local quote escape= delim flags=
+  local OPTIND opt
 
-  [ -n "${delim+X}" ] || { delim=$1; shift; }
+  while getopts ':d:luz' opt; do
+    case "$opt" in
+      d)    delim=$OPTARG ;;
+      l)    flags+=l ;;     # to_lower
+      u)    flags+=u ;;     # to_upper
+      z)    flags+=z ;;     # remove blanks
+
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 cat <<_EOF
+Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
+
+  -l        to lower case
+  -u        to upper case
+  -z        remove blank args
+_EOF
+            return 2
+            ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  if [ -n "${delim+X}" ]; then
+    :
+#  elif [ -n "${DELIM+X}" ]; then
+#    delim=$DELIM
+  else
+    [ $# -gt 2 ] || { log.error "insufficient args ($#)"; return 2; }
+    delim=$1; shift
+  fi
+
+  if [[ $flags =~ z ]]; then
+    declare -a _args=( "$@" )
+    for (( i=0; i < $#; i++ )) do
+      [ -n "${_args[$i]}" ] || unset _args[$i]
+    done
+    set -- "${_args[@]}"
+  fi
 
   # escape whitespace, or even delimiter (rare)
   [ -n "$quote" ] || escape=${IFS:0:1}
   [ "$quote" = "$delim" ] && escape=$delim
+
   [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
+
+  [[ $flags =~ l ]] && set -- "${@,,}"
+  [[ $flags =~ u ]] && set -- "${@^^}"
+
+  [ -z "$quote" -a ${#delim} -le 1 ] && { local IFS=$delim; echo "$*"; return; }
 
   local IFS=
   # prepend each word during expansion
   local str=${*/#/${quote}${delim}${quote}}
 
-  #TODO collapse repeated delim
-#  str=${str//${delim}{delim}/$delim}
+  # DONOT collapse repeated delim - empty arguments are legal
+#  str=${str//${delim}${delim}/$delim}
 
   # strip leading 'delim' and tack on trailing 'quote'
   echo "${str#${quote}${delim}}$quote"
@@ -564,18 +612,18 @@ function join_quote() { quote=\' join_string "$@"; }
 function tree() {
   local OPTIND opt
   local filter= type= reverse= flags=()
-  local _find='find'    #alt: 'ls -R'
+  local -a cmd=( 'find' )    #alt: 'ls -R'
 
-  while getopts ":hdlL:P:x" opt 2>/dev/null; do
+  while getopts ':hdlL:P:x' opt 2>/dev/null; do
     case "$opt" in
-      d)    flags+=('-type d') ;;
-      l)    _find+=" -L" ;;
-      L)    flags+=("-maxdepth $OPTARG") ;;
-      P)    flags+=("-name $OPTARG") ;;
-      x)    flags+=('-xdev') ;;
+      d)    flags+=( '-type' d ) ;;
+      l)    cmd+=( '-L' ) ;;
+      L)    flags+=( '-maxdepth' "$OPTARG" ) ;;
+      P)    flags+=( '-name' "$OPTARG" ) ;;
+      x)    flags+=( '-xdev' ) ;;
 
-      :)    RC=2 log.error "missing argument to '-$OPTARG'"; return ;;
-      \?)   RC=2 log.error "unknown option '-$OPTARG'" ;&
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
 
@@ -587,7 +635,7 @@ Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
 
 ref: http://mama.indstate.edu/users/ice/tree/tree.1.html
 _EOF
-            return $RC
+            return 2
             ;;
     esac
   done
@@ -596,9 +644,9 @@ _EOF
   while read item; do
     out=$( echo "$item" | sed -e 's/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|- \1/' )
     #TODO handle filenames with spaces
-    [ -h "$item" ] && out+="\t-> $(readlink -e "$item")"
-    echo -e "$out"
-  done < <( ${DEBUG:+ runv} $_find -H ${1:-.} ${flags[@]} )
+    [ -h "$item" ] && out+=" -> "`$READLINK -ve "$item"`
+    echo "$out"
+  done < <( ${DEBUG:+ runv} "${cmd[@]}" -H ${1:-.} ${flags[@]} )
   echo
 }
 
