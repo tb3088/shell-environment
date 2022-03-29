@@ -9,7 +9,7 @@ shopt -s extglob
 is_exec jq curl || { >&2 echo -e "ERROR\tmissing tools (jq, curl)"; exit 2; }
 __aws_bin=`VERBOSE=1 is_exec "aws${AWS_VERSION}"` || exit 2
 
-
+is_function __AWS ||
 function __AWS {
   local -a cmd=()
 
@@ -38,30 +38,32 @@ function __AWS {
   # all output is in JSON with rare exception
   ${DEBUG:+ runv} "${cmd[@]}" "$@"
 }
-#readonly -f __aws_cmd
+readonly -f __AWS
 
-declare -F __JQ &>/dev/null ||
+is_function __JQ ||
 function __JQ { ${DEBUG:+ runv} jq --exit-status "$@"; }
-#readonly -f __JQ
+readonly -f __JQ
 
 # NOTICE! 'jq -r' returns literal "null" on empty, so either check RC or embed '//empty' into queries
-declare -F __JQR &>/dev/null ||
-function __JQR { ${DEBUG:+ runv} jq --exit-status --raw-output "$@"; }
-#readonly -f __JQR
+is_function __JQR ||
+#function __JQR { ${DEBUG:+ runv} jq --exit-status --raw-output "$@"; }
+function __JQR { __JQ "$@" | jq --raw-output '. // empty'; }
+readonly -f __JQR
 
-declare -F __CURL &>/dev/null ||
+is_function __CURL ||
 function __CURL { ${DEBUG:+ runv} curl --connect-timeout 5 --fail --silent \
        ${VERBOSE:+ --verbose --progress-bar} "$@"; }
-#readonly -f __CURL
+readonly -f __CURL
 
 # CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
-declare -A __aws_defaults=(
+is_hash __aws_defaults ||
+declare -Ar __aws_defaults=(
     [region]='us-east-1'
     [config]="$HOME/.aws/config"
     [credentials]="$HOME/.aws/credentials"
   )
 
-declare -p __aws_session &>/dev/null ||
+is_hash __aws_session ||
 declare -Ar __aws_session=(
     [AccessKeyId]='aws_access_key_id'
     [SecretAccessKey]='aws_secret_access_key'
@@ -69,7 +71,7 @@ declare -Ar __aws_session=(
     [Expiration]='aws_session_expire'
   )
 
-declare -p __aws_regex &>/dev/null ||
+is_hash __aws_regex ||
 declare -Ar __aws_regex=(
     [token]='^[0-9]{6}'
     [role]='^arn:aws:iam:'
@@ -79,8 +81,7 @@ declare -Ar __aws_regex=(
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
 # aws ec2 describe-regions | JQR '.Regions[].RegionName | sort'
-
-is_array __aws_regions &>/dev/null && [ ${#__aws_regions[@]} -ge 16 ] ||
+is_array __aws_regions && [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
     ap-northeast-{1,2}
     ap-south-1
@@ -203,7 +204,7 @@ function aws.region {
 
   if [ "$region" = 'prompt' ]; then
     echo
-    keys=1 array.print __aws_regions | \column
+    keys=1 array.print __aws_regions | column
     echo
     read -t 15 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
 
@@ -252,16 +253,16 @@ function aws.profile {
 
   if [ "$profile" = 'prompt' ]; then
     local pattern='$1 ~ /^\[\w+/ { gsub(/\[|\]/, "", $NF); print $NF; }'
-    local -a list=( 
+    local -a list=(
         $(awk -- "$pattern" "$config")
         $(awk -- "$pattern" "$creds")
       )
     # sanitize
-    list=( $(IFS=$'\n'; \sort -u <<< "${list[*]}") )
+    list=( $(IFS=$'\n'; sort -u <<< "${list[*]}") )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo
-      keys=1 array.print list | \column
+      keys=1 array.print list | column
       echo
       read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
 
@@ -303,7 +304,7 @@ function aws.profile {
 }
 
 
-function aws.printenv() {
+function aws.printenv {
   local v
   for v in ${!AWS_*}; do echo "$v=${!v}"; done
 }
@@ -322,7 +323,7 @@ function aws.session-load {
     [ ${#list[@]} -ge 1 ] || { log.warn "no cached sessions ($cache_dir)"; return; }
 
     echo
-    keys=1 array.print list | \column
+    keys=1 array.print list | column
     echo
     read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
 
@@ -388,7 +389,7 @@ function aws.session {
               [ -f "$f" ] || continue
 
               expires=$(date --date `__JQR '.Credentials.Expiration' "$f"` '+%s')
-              [ ${expires:-0} -ge ${now:-0} ] || { \rm -f "$f"; continue; }
+              [ ${expires:-0} -ge ${now:-0} ] || { rm -f "$f"; continue; }
 
               #FIXME first valid != desired AWS_PROFILE, is $profile set?
               cache=$f
@@ -408,8 +409,8 @@ function aws.session {
       # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
       W)    write=1 ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   log.error "invalid option (-$OPTARG)" ;&
-      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
   done
@@ -489,7 +490,7 @@ function aws.addPath {
   [ -n "$AWS_CONFIG_FILE" ] &&
       dirs+=( "${AWS_CONFIG_FILE%/*}"/**/bin )
   # sanitize
-  dirs=( `IFS=$'\n'; \sort -u <<< "${dirs[*]}"` )
+  dirs=( `IFS=$'\n'; sort -u <<< "${dirs[*]}"` )
 
   for v in "${dirs[@]}"; do
     [ -d "$v" ] || continue
@@ -500,7 +501,7 @@ function aws.addPath {
     else
 # WARN! use 'IdentitiesOnly yes' in ssh_config or else you may
 # experience Auth Failure by virtue of too many attempts
-      [ ${LOAD_SSHKEYS:-0} -eq 1 ] && 
+      [ ${LOAD_SSHKEYS:-0} -eq 1 ] &&
           ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${v%/bin}"/{id_*,*.pem}
       prepend=1 addPath "$v"
     fi
@@ -518,7 +519,7 @@ function aws.route53-export {
 
   # if doesn't match pattern assume Domain name was specified
   #FIXME will pick first occurance which is likely not intended, use read() to prompt
-  \grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
+  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
       __AWS route53 list-hosted-zones |
           __JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
           cut -d'/' -f3 | head -n 1
@@ -578,6 +579,7 @@ function aws.describe() {
 
   [ -n "$resource" ] || { resource=${1:?resource}; shift; }
 
+#TODO getopts() and support output as json, array or Hash
 #FIXME rewrite all to use --filter syntax and generic ending below
 
   case "$resource" in
@@ -608,12 +610,17 @@ function aws.describe() {
             ;;&
     eip.tag?(s)) type='elastic-ip'
             ;;&
-    *.tag?(s))
-            #TODO non-EC2 items
+    tag?(s)|*.tag?(s))
+            #TODO non-EC2 items, but do we really need?
             # sqs: list-queue-tags
             # dynamodb: list-tags-of-resource
             #
-            # ec2: customer-gateway | dedicated-host | dhcp-options | elastic-ip | fleet | fpga-image | host-reservation | image | instance | internet-gateway | key-pair | launch-template | natgateway | network-acl | network-interface | placement-group | reserved-instances | route-table | security-group | snapshot | spot-instances-request | subnet | volume | vpc | vpc-endpoint | vpc-endpoint-service | vpc-peering-connection | vpn-connection | vpn-gateway
+            # ec2: customer-gateway | dedicated-host | dhcp-options | elastic-ip | fleet
+            #      fpga-image | host-reservation | image | instance | internet-gateway
+            #      key-pair | launch-template | natgateway | network-acl | network-interface
+            #      placement-group | reserved-instances | route-table | security-group
+            #      snapshot | spot-instances-request | subnet | volume | vpc | vpc-endpoint
+            #      vpc-endpoint-service | vpc-peering-connection | vpn-connection | vpn-gateway
             cmd=( ec2 describe-tags )
             filter=(
                 "Name=resource-type,Values=${type:-${resource%.tags}}"
@@ -622,7 +629,7 @@ function aws.describe() {
             shift
 
             # select specified tags
-            [ -n "$1" ] && filter+=( Name=key,Values=`join_string ',' "$@"` )
+            [ $# -gt 0 ] && filter+=( Name=key,Values=`join_string -zd ',' "$@"` )
 
             field='Tags'
             post=( __JQ -s 'from_entries' )
@@ -686,26 +693,27 @@ function aws.describe() {
 }
 
 
-# similar to aws.describe() but intended to return singleton values, not long-winded JSON
+# similar to aws.describe() but intended to return singleton values safe for shell consumption, not long-winded JSON
 function aws.get() {
-  local item resource
+  local keyword
   local -a filter=()
+  #TODO format with 'a' or 'A' like aws.list and use getopts()
 
-  [ -n "$resource" ] || { resource=${1:?item}; shift; }
+  keyword=${1:?item}; shift
 
-  case "$resource" in
-    *.tag)  aws.describe "$resource" ${1:?resource-id} "${2:?key}" |
-                __JQR --arg key "$2" '.[$key] //empty'
+  case "$keyword" in
+    *.tag)  aws.describe "$keyword" ${1:?resource-id} "${2:?key}" |
+                __JQR --arg key "$2" '.[$key]'
             ;;
 
-#    *.tags) aws.describe "$resource" "${1:?resouce-id}" "${@:2}" |
+#    *.tags) aws.describe "$keyword" "${1:?resouce-id}" "${@:2}" |
 #             format with 'a' or 'A' like aws.list
 #            ;;
 
     ssm.parameter)
-            #TODO? join_string('/', "$prefix", ${@:?parameter})
+            #TODO? join_string('/', "$prefix", ${@:?parameter-key})
             __AWS ssm get-parameter --name "${1:?parameter}" --with-decryption |
-                __JQR '.Parameter.Value //empty'
+                __JQR '.Parameter.Value'
             ;;
 
     ssm.parameters)
@@ -714,15 +722,16 @@ function aws.get() {
             #   while read -r key; do read -r value; ... done
             __AWS ssm get-parameters --names "${@:?parameter}" --with-decryption |
                 __JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
-#FIXME return associative array so no caller parsing
+#FIXME return associative array so no caller parsing, use format from above
 #                __JQR '.Parameters[] | "[\(.Name)]=\'\(.Value)\'"'
             ;;
 
     sts.account)
-            __AWS sts get-caller-identity | __JQR '.Account //empty'
+            __AWS sts get-caller-identity | __JQR '.Account'
             ;;
 
-    *)      log.error "unsupported keyword ($resource)"; return 2
+    *)      log.error "unsupported keyword ($keyword)"
+            return 2
   esac
 }
 
@@ -744,17 +753,92 @@ function aws.get() {
 #      done
 
 
+# Abstract out various incompatible syntax for setting Tags
+function aws.format_tag() {
+  local delim format json=0
+  local -A __printf=(
+      [KV]=		# $key=$value
+	  [jKV]=	# compose JSON via eg. jq --null-input --arg K "$k" --arg V "$v" '{ "Key": $k, "Value": $v}'
+	  [KkVv]=	# Key=$key,Value=$value
+	  [jKkVv]=
+    )
+
+#TODO specify input_format?
+  local OPTIND opt
+  while getopts ':f:h' opt; do
+    case "${opt}" in
+      sqs)  format=${__printf[XXX]}; delim=X
+			cmd=( 'XXX' )
+			;;
+      ddb|dynamodb)
+	        format=${__printf[XXX]}; delim=X
+			;;
+	  ec2)  format=${__printf[KkVv]}; delim=' '
+			cmd=( '--tags' )
+			;;
+      :)    log.error "missing argument (-$OPTARG)"
+			return 2
+			;;
+      \?|*) log.error "unsupported (-${OPTARG:-opt})" ;&
+      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+  
+  #TODO if first char of $1 is '{' use JQ
+
+  while (( $# )); do
+	[ -n "$1" ] || { shift; continue; }
+			  
+	if __JQ '.' <<< "$1"		  kv=( `sed 's/[=,]/\n/g' <<< "$1"` )
+			  if [[ ${kv[0]:-X} =~ [kK]ey$ && ${kv[2]:-X} =~ [vV]alue$ ]]; then
+			    args+=( "Key=${kv[1]},Value=${kv[3]}" )
+			  else
+			  [ ${#kv[@]} -eq 2 ]; then
+				args+=( "Key=${kv[0]},Value=${kv[1]}"
+			  else
+			    log.error "invalid format ($1)"; return 2
+			  fi
+			done
+
+
+}
+
+# Invoked as single-ton - use external loop, though some items allow cheating via comma-delimited
 function aws.set() {
-  local item resource
-  local -a filter=() cmd=()
+  local keyword resource
+  local -a cmd args kv
 
-  [ -n "$resource" ] || { resource=${1:?resource}; shift; }
+  keyword=${1:?item}; shift
 
-  case "$resource" in
+  case "$keyword" in
+
 #    sqs.tag)
 #    dynamodb.tag)
 #    ec2.tag)
 #    *.tag)
+
+    # ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/ec2/create-tags.html
+    ec2.tag?(s))
+            cmd=( ec2 create-tags )
+            local item=${1:?resource}
+            #TODO escape special chars like '[],' nee Key=\"[Group]\",Value=test or 'Key="[Group]",Value=test'
+			while (( $# )); do
+			  [ -n "$1" ] || { shift; continue; }
+			  
+			  kv=( `sed 's/[=,]/\n/g' <<< "$1"` )
+			  if [[ ${kv[0]:-X} =~ [kK]ey$ && ${kv[2]:-X} =~ [vV]alue$ ]]; then
+			    args+=( "Key=${kv[1]},Value=${kv[3]}" )
+			  else
+			  [ ${#kv[@]} -eq 2 ]; then
+				args+=( "Key=${kv[0]},Value=${kv[1]}"
+			  else
+			    log.error "invalid format ($1)"; return 2
+			  fi
+			done
+            __AWS "${cmd[@]}" --resources "${item//,/ }" --tags "${args[@]:-$@}"
+            ;;
 
     ssm.parameter)
             #[ "$1" = '-s' ] && { secure=1; shift; }
@@ -764,10 +848,11 @@ function aws.set() {
                 cmd=( delete-parameter ) ||
                 cmd=( put-parameter '--type' ${_type:-String} '--overwrite' '--value' "$2" )
 
-            __AWS ssm "${cmd[@]}" --name "${1:?key}" >/dev/null
+            __AWS ssm "${cmd[@]}" --name "${1:?key}"
             ;;
 
-    *)      log.error "unsupported keyword ($resource)"; return 2
+    *)      log.error "unsupported keyword ($keyword)"
+            return 2
   esac
 }
 
@@ -821,20 +906,21 @@ function aws.list() {
     case "$opt" in
       a)    format='array' ;;
       A)    format='hash' ;;
+
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   log.error "invalid option (-$OPTARG)" ;&
+      \?)   log.error "unsupported (-$OPTARG)" ;&
       h)    >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
   done
   shift $((OPTIND - 1))
 
-  resource=${1:?resource}; shift
+  keyword=${1:?item}; shift
 
-  case "$resource" in
+  case "$keyword" in
     vpc?(s)) field='VpcId' ;;
 
-    *)      log.error "unsupported keyword ($resource)"; return 2
+    *)      log.error "unsupported keyword ($keyword)"; return 2
   esac
 
 #TODO if name=0  cmd[1]=__JQ --arg field "$field" '.[$field], ""'
@@ -843,19 +929,19 @@ function aws.list() {
   # shell-friendly output
   case "${format:-json}" in
     # 2 lines per entry. readarray -t VAR < <(aws.list ...)
-    a|array) aws.describe $resource "$@" |
-                ${DEBUG:+ runv} __JQR --arg field "$field" '.[$field], (.Tags | from_entries | .Name // "")'
+    a|array) aws.describe "$keyword" "$@" |
+                __JQR --arg field "$field" '.[$field], (.Tags | from_entries | .Name // "")'
             ;;
 
     # format? if TAB, 'while IFS=$'\t' read -t key val
     # otherwise, read key && read val
-    A|hash) aws.describe $resource "$@" |
-                ${DEBUG:+ runv} __JQR --arg field "$field" '".[$field]=\(.Tags | from_entries | .Name // "")"'
+    A|hash) aws.describe "$keyword" "$@" |
+                __JQR --arg field "$field" '".[$field]=\(.Tags | from_entries | .Name // "")"'
             ;;
 
-    json)   aws.describe $resource "$@" |
-                ${DEBUG:+ runv} __JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
-                ${DEBUG:+ runv} __JQ -s 'add'
+    json)   aws.describe "$keyword" "$@" |
+                __JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
+                __JQ -s 'add'
             ;;
     # not reached
     *)      log.error "unsupported format ($opt)"; return 2
@@ -873,7 +959,7 @@ function aws.list() {
 # s3cmd restore --recursive s3://mybucketname/
 
 # simple example of qlgrep but need to find my original from AWS
-# szcat <file> | \grep '^Key=' | \sed -e 's|^\([^/]\+/[^/]\+\).*|\1|' | \sort | \uniq -dc
+# szcat <file> | grep '^Key=' | sed -e 's|^\([^/]\+/[^/]\+\).*|\1|' | sort | uniq -dc
 
 
 # vim: expandtab:ts=8:sw=4
