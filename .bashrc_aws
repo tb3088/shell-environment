@@ -44,4 +44,258 @@ alias aws='__AWS'
 alias ec2.connect='__AWS ssm start-session --target'
 
 
+function aws.route53-export() {
+  local -u zone_id=${1:?zone_id}
+  local domain=${1%.}; domain+='.'
+
+  # if doesn't match pattern assume Domain name was specified
+  #FIXME will pick first occurance which is likely not intended, use read() to prompt
+  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
+      __AWS route53 list-hosted-zones |
+          __JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
+          cut -d'/' -f3 | head -n 1
+    )
+
+  for zone in $zone_id; do
+    echo -e "; $zone\n"
+    #TODO use printf() with width
+    __AWS route53 list-resource-record-sets --hosted-zone-id=${zone:?} |
+        __JQR -j '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
+    echo
+  done
+}
+
+
+#TODO rewrite as aws.describe() item
+function iam.sshkeys {
+  # Example: $FUNCNAME `__AWS iam get-group --group-name <group> | JQR '.Users[].UserName'`
+  local -u format
+  local status
+
+  : ${format:=ssh}
+  : ${status:=Active}
+
+  while (( $# ));do
+    [ "$1" ] || { shift; continue; }
+
+    for kid in $( __AWS iam list-ssh-public-keys --user-name "$1" |
+        __JQR --arg STATUS "$status" '.SSHPublicKeys[] | select(.Status == $STATUS) | .SSHPublicKeyId //empty'
+      ); do
+#TODO use JQ and drop @sh?
+      __AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
+          __JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
+    done
+    shift
+  done
+}
+
+
+function aws.printenv() { for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
+
+
+function aws.session-load() {
+  local format='text'
+  local input=$1
+  local cache_dir="$HOME"/.aws/cli/cache
+
+  if [ -z "$input" ]; then
+    local -a list=( $( cd "$cache_dir" 2>/dev/null &&
+       find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60)) )
+     )
+
+    [ ${#list[@]} -ge 1 ] || { log.warn "no cached sessions ($cache_dir)"; return; }
+
+    echo
+    with_keys=1 array.print list | column
+    echo
+    read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
+
+    [[ "${REPLY:0:1}" =~ [0-9] ]] && input="$cache_dir/${list[$REPLY]}" || input="$cache_dir/$REPLY"
+  fi
+
+  # read file into variable
+  [ -f "$input" ] && input=$( <"$input" )
+
+  __JQ . <<< "$input" &>/dev/null && format='json'
+
+  case "$format" in
+    text)   # see 'aws.session()' call to 'aws sts'
+            local header rest
+            log.debug "$input"
+#FIXME something very wrong in 'text' mode
+log.error "code is broken ($FUNCNAME, $format)"; return 128
+#            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
+#                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
+            ;;
+
+    json)   local field; local -u envvar
+            __JQ -MS '.Credentials' <<< "$input" | log.debug
+            for field in `keys __aws_session`; do
+              envvar=`array.value __aws_session "$field"`
+              local -n nref=$envvar
+              nref=`__JQR --arg field "$field" '.Credentials[$field]' <<< "$input"`
+            done
+            __JQR '.AssumedRoleUser' <<< "$input" | log.info
+            ;;
+
+    *)      log.error "unsupported format ($format)"; return 2
+  esac
+
+  aws.printenv | log.info
+  export ${!AWS_*}
+}
+
+
+function aws.session-write() {
+    local field
+	local -u envvar
+
+    for field in `keys __aws_session`; do
+      envvar=`value __aws_session "$field"`
+      __AWS configure set "${envvar,,}" "${!envvar}"
+    done
+}
+
+
+function aws.session() {
+  # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
+  #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
+
+  local -ir now=$(date '+%s')
+  local -i duration write=0 force=0
+  # Bash 'integer' doesn't handle leading ZEROs
+  local cache output role profile token mfa
+
+  local OPTIND opt
+  while getopts ':cfp:r:T:t:W' opt; do
+    case "$opt" in
+      c)    for f in "$HOME"/.aws/cli/cache/*; do
+              [ -f "$f" ] || continue
+
+              expires=$(date --date `__JQR '.Credentials.Expiration' "$f"` '+%s')
+              [ ${expires:-0} -ge ${now:-0} ] || { rm -f "$f"; continue; }
+
+              #FIXME first valid != desired AWS_PROFILE, is $profile set?
+              cache=$f
+              break
+            done
+            ;;
+      f)    force=1 ;;
+      p)    profile=$OPTARG ;;
+      R)    role=$OPTARG ;;
+      r)    region=$OPTARG ;;
+      T)    duration=$OPTARG ;;
+      t)    [[ "$OPTARG" =~ [0-9]{6} ]] && token=$OPTARG || {
+                log.error "invalid Token ($OPTARG)"
+                return
+              }
+            ;;
+      # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
+      W)    write=1 ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  #BUG! STS service rejects duration > 3600 despite documentation
+  # or is because the UI default is 1hr? Check against customized roles
+  [ ${duration:-0} -gt 3600 ] && unset duration
+
+  #WARN unsafe backwards compat
+  while [ "${1+x}" ]; do
+    if [[ $1 =~ ${__aws_regex['token']} ]]; then
+      token=$1
+    elif [[ $1 =~ ${__aws_regex['role']} ]]; then
+      role=$1
+    elif [[ ${1,,} =~ ${__aws_regex['region']} ]]; then
+      region=$1
+    elif [[ $1 =~ ${__aws_regex['profile']} ]]; then
+      profile=$1
+    else
+      log.error "unknown format ($1)"
+      return
+    fi
+    shift
+  done
+
+  aws.profile "${profile:-$AWS_PROFILE}" "${region:-$AWS_DEFAULT_REGION}" || return
+  : ${role:=`__AWS configure get role_arn`}
+
+  local cmd=()
+
+  if [ -n "$role" ]; then
+    # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
+    local session_name="${role#*:role/}"
+    local session_suffix="${AWS_PROFILE:?}.$$"
+    session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
+    session_name="${session_name//:/.}"
+    cmd=( assume-role '--role-arn' "$role" '--role-session-name' "$session_name" )
+  else
+    cmd='get-session-token'
+  fi
+
+  if [ -z "$cache" -o ${force:-0} -eq 1 ]; then
+    unset cache
+    output=$(
+#FIXME broken?
+        local -u key
+        for key in `keys __aws_session`; do
+          unset $key
+        done
+
+#FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
+#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
+# if the token is wrong you get:
+#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
+
+        __AWS sts "${cmd[@]}" \
+            ${mfa:+ --serial-number "$mfa" \
+            ${token:+ --token-code $token}} \
+            ${duration:+ --duration-seconds $duration}
+      ) || return
+  fi
+
+  aws.session-load "${cache:-$output}" || return
+  [ ${write:-0} -eq 1 ] && aws.session-write
+
+  log.info `aws.printenv`
+  export ${!AWS_*}
+}
+
+
+#TODO? call recursively
+function aws.addPath() {
+  local -i DELETE LOAD_SSHKEYS
+
+  [ -n "$AWS_CONFIG_FILE" ] &&
+      local -a dirs=( "${AWS_CONFIG_FILE%/*}"/**/bin )
+  # sanitize
+  dirs=( `IFS=$'\n' sort -u <<< "${dirs[*]}"` )
+
+#TODO change to positional. set -- $dirs
+  for v in "${dirkjs[@]}"; do
+    [ -d "$v" ] || continue
+
+    if [ ${DELETE:-0} -eq 1 ]; then
+      ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${v%/bin}"/{id_*,*.pem}.pub &>/dev/null
+      rmPath "$v"
+    else
+# WARN - use 'IdentitiesOnly yes' in ssh_config or else you may
+# experience AuthFailure by virtue of too many attempts
+      [ ${LOAD_SSHKEYS:-0} -eq 1 ] &&
+          ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${v%/bin}"/{id_*,*.pem}
+      prepend=1 addPath "$v"
+    fi
+  done
+}
+
+
+function aws.rmPath() {
+  DELETE=1 aws.addPath "$@"
+}
+
+
 # vim: expandtab:ts=8:sw=4
