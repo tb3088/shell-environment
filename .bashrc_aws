@@ -273,21 +273,20 @@ function aws.addPath() {
   [ -n "$AWS_CONFIG_FILE" ] &&
       local -a dirs=( "${AWS_CONFIG_FILE%/*}"/**/bin )
   # sanitize
-  dirs=( `IFS=$'\n' sort -u <<< "${dirs[*]}"` )
+  set -- `IFS=$'\n' sort -u <<< "${dirs[*]}"`
 
-#TODO change to positional. set -- $dirs
-  for v in "${dirs[@]}"; do
-    [ -d "$v" ] || continue
+  while (( $# )); do
+    [ -n "$d" -a -d "$1" ] || { shift; continue; }
 
     if [ ${DELETE:-0} -eq 1 ]; then
-      ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${v%/bin}"/{id_*,*.pem}.pub &>/dev/null
-      rmPath "$v"
+      ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${1%/bin}"/{id_*,*.pem}.pub &>/dev/null
+      rmPath "$1"
     else
 # WARN - use 'IdentitiesOnly yes' in ssh_config or else you may
 # experience AuthFailure by virtue of too many attempts
       [ ${LOAD_SSHKEYS:-0} -eq 1 ] &&
-          ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${v%/bin}"/{id_*,*.pem}
-      prepend=1 addPath "$v"
+          ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${1%/bin}"/{id_*,*.pem}
+      PREPEND=1 addPath "$v"
     fi
   done
 }
