@@ -3,7 +3,7 @@
 [[ "$BASH_VERSION" =~ 5|4.[2-4] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 #------------------
 
-function is_interactive {
+function is_interactive() {
   [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]
 }
 
@@ -11,14 +11,13 @@ is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
 
 #TODO use 'command -v' instead
-WHICH='which --skip-alias --skip-functions'
-READLINK='readlink --no-newline'
-[ ${NOOP:-0} -eq 1 ] && : ${DEBUG:=1}
+alias __WHICH='which --skip-alias --skip-functions'
+alias __READLINK='${DEBUG:+ runv} readlink ${VERBOSE:+-v} --no-newline'
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
   local indent=`printf '%.0s+' {1..$SHLVL}`
-  >&2 printf "%s %s\n" "$indent" "$*"
+  >&2 printf '%s %s\n' "$indent" "$*"
 
   [ -z "$NOOP" ] || return 0
 
@@ -31,10 +30,10 @@ function runv() {
 #TODO is_what() returns 'type -t' or 'declare -p' mapped back to English
 #function is_what
 
-function __is_type {
+function __is_type() {
 # NOTE short-circuits on first error
-  local compare
-  local -Ar types=(
+  local keyword
+  local -Ar __types=(
       [a]='array'       [array]='a'
       [A]='hash'        [hash]='A'
       [f]='function'    [function]='f'
@@ -46,9 +45,20 @@ function __is_type {
       [u]='upper'       [upper]='u'
     )
 
-  set -- "${@:-$(</dev/stdin)}"
+  local OPTIND opt
+  while getopts ':vd' opt; do
+    case "$opt" in
+      d)    local DEBUG=1 ;;
+      v)    local VERBOSE=1 ;;
+      \?|*) # ignore
+    esac
+  done
+  shift $((OPTIND - 1))
 
-  case "${compare:=${FUNCNAME[1]#is_}}" in
+  # read STDIN (pipe) if no args
+  set -- "${@:- $( </dev/stdin )}"
+
+  case "${keyword:=${FUNCNAME[1]#is_}}" in
     file)
         while (( $# )); do
           # skip NULL args
@@ -69,7 +79,7 @@ function __is_type {
           # skip NULL args
           [ -n "$1" ] || { shift; continue; }
 
-          bin=`$WHICH "$1" 2>/dev/null` || {
+          bin=`__WHICH "$1" 2>/dev/null` || {
               [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "unknown command ($1)"
               return 1
             }
@@ -84,7 +94,7 @@ function __is_type {
           # skip NULL args
           [ -n "$1" ] || { shift; continue; }
 
-          declare -F "$1" >/dev/null || {
+          declare -F "$1" &>/dev/null || {
               [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "undefined function ($1)"
               return
             }
@@ -97,8 +107,8 @@ function __is_type {
         local _readonly=1
         ;;
 
-    *)  [ -n "${types[$compare]}" ] || {
-            log.error "unsupported type ($compare)"
+    *)  [ -n "${__types[$keyword]}" ] || {
+            log.error "unsupported type ($keyword)"
             return 2
           }
   esac
@@ -118,19 +128,17 @@ function __is_type {
       }
 
     whatami=${whatami#-}
-    [[ $whatami =~ ${types[$compare]} ]] || {
-        [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "type mismatch ($1: ${types[$whatami]} != $compare)"
+    [[ $whatami =~ ${__types[$keyword]} ]] || {
+        [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "type mismatch ($1: ${__types[$whatami]} != $compare)"
         return
       }
     shift
   done
 }
-
+# define data-type specific
 for f in array exec hash integer string file function readonly; do
-  declare -F is_$f >/dev/null || {
-      eval function is_$f '{ __is_type "$@"; }'
-      readonly -f is_$f
-    }
+#  eval function is_$f '{ __is_type "$@"; }'
+  alias is_$f="keyword=$f __is_type"
 done
 
 
@@ -141,7 +149,7 @@ is_windows () {
     }
 
   # handle files and directories
-  bin=`$WHICH "$1"`;
+  bin=`__WHICH "$1"`;
   [[ "${bin:=$1}" =~ ^/cygdrive ]] ||
       file "$bin" | grep -q 'for MS Windows'
 }
@@ -151,6 +159,7 @@ is_windows () {
 function _continue() { [ -n "$CONTINUE" ]; }
 
 
+#TODO move to os
 function convert_path() {
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
   # This *magical* behavior does NOT extend to other PATH-like variables!
@@ -167,10 +176,10 @@ function convert_path() {
 
   local flags=() quote
   local -i escape
-  local OPTIND opt
 
+  local OPTIND opt
   while getopts ':eEqt:' opt; do
-    case $opt in
+    case "$opt" in
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
       q)    : ${quote:=\'}; escape=0 ;;
@@ -203,14 +212,16 @@ function convert_path() {
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
     if is_windows; then     # Windows programs can't handle symlinks
-      p=`$READLINK -m "$p"`
+      p=`__READLINK -m "$p"`
       p=`cygpath --path "${flags[@]}" -- "$p"`
     fi
-
+#TODO leverage string.quote?
     [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "${quote}$p${quote}"
     shift
   done
 }
+# backwards compat
+#alias convert_path=os.filepath.print
 
 
 #TODO handle Hash/Array,
@@ -221,25 +232,30 @@ function convert_path() {
 # you can correctly guess something not in the data stream (eg. high-order non-printing char?)
 # otherwise have to feed it to AWK/SED for magic
 
-function contains() {
+function string.contains() {
+#Usage: source pattern, but more intuitive? to do 'pattern' 'source'?
   local delim method
+#FIXME suggest IFS:0:1 but actually define '-x' for exact match (uses delim) or '-z' for fuzzy match?
+# '-i' for case insensitive
   : ${delim=${PATHSEP:-\:}}
-
-  local -r source="${delim}${1:?}${delim}"
-  local -r sub="${delim}${2:?}${delim}"
+#TODO? support STDIN
+  local -r source="${delim}${1:?source}${delim}"
+  local -r sub="${delim}${2:?pattern}${delim}"
 
   # empty string inside empty is valid
   case "$method" in
     grep)   grep -q "$sub" <<< "$source" ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
-#    insensitive)
-#            ;&
     *)      [[ "$source" == *$sub* ]]
+			#alt: [ -z "${sub##*${source}*}" ] && is_matched
   esac
 }
+# backwards compat
+alias contains='string.contains'
 
 
+#TODO move to 'os'
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
   # but does NOT sub-divide arguments!
@@ -247,40 +263,39 @@ function addPath() {
   # catch null-glob case
   (( $# )) || return
 
-#TODO use join_string() to handle arbitrary delimiters and whitespace
-#TODO? rewrite callers as PATH=`delim=$delim join_string $1 $2`
+#TODO use string.join() to handle arbitrary delimiters and whitespace
+#TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <VARNAME> $1 $2`
 
-  local k delim flags=()
+  local delim flags=()
+  [ -n "$DELIM" ] && : ${delim:=$DELIM}
   local -i prepend
-  local -ir _prepend=${prepend:-0}
+  [ -n "$PREPEND" ] && : ${prepend:=$PREPEND}
 
   # short-cut to 'PATH' mode
   [ $# -eq 1 -o "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
-  [ "$k" = 'PATH' ] && { delim=':' flags+=('-E'); }
+#  # check variable name - WHY?
+#  [[ "$k" =~ ^[A-Za-z] ]] || { log.error "invalid variable name ($k)"; return; }
+  [ "$k" = 'PATH' ] && { delim=':'; flags+=( '-E' ); }
 
-  # check variable name
-  [[ "$k" =~ ^[A-Za-z] ]] || { log.error "invalid variable ($k)"; return; }
-
-  : ${delim:=${PATHSEP:-':'}}
+  : ${delim:=${PATHSEP:-\:}}
+  local -ir __prepend=${prepend:-0}
   local -n kval=$k
 
   while (( $# )); do
-    prepend=$_prepend   # reset initial state
+    [ -n "$1" ] || { shift; continue; }
+    prepend=$__prepend   # reset to initial
+
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; } || v=$1
 
     # expand all elements for consistent match
-    v=`$READLINK -e "${v:?path}"` || {
-        log.warn "directory not found ($1)"
-        shift; continue
-      }
+    v=`__READLINK -e "${v:?path}"` || { shift; continue; }
 
     # do *NOT* prefix call to convert_path() with '${DEBUG:+ runv}'
     v=`convert_path "${flags[@]}" "$v"`
-
-    delim=$delim contains "$kval" "$v" || {
-        [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
-      }
+    if ! delim=$delim string.contains "$kval" "$v"; then
+      [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
+    fi
 
     shift
   done
@@ -308,7 +323,7 @@ function rmPath() {
     [ -n "$1" ] || { shift; continue; }
 
     # expand all elements for consistent match
-    v=`$READLINK -m "$1"`
+    v=`__READLINK -m "$1"`
     kval=$(
         IFS=$delim
         read -ra items <<< "$kval"
@@ -329,42 +344,15 @@ function rmPath() {
 
 
 function define() {
-  # Assign a HEREDOC to a variable. To preserve space/tab use '<<-_EOF'.
+  # Assign a HEREDOC to a variable.
+  # To collapse space/tab indentation use dash in indirection like so '<<-_EOF'
   # Contents will be expanded unless marker ('_EOF') is quoted.
   #
   # Usage: define VAR <<_EOF ...
+#TODO? </dev/stdin
 
   IFS=$'\n' read -r -d '' $1 || true
 }
-
-
-function replace_file() {
-  # replace file and optionally take backup
-  local orig="${1:?}"
-  local new="${2:?}"
-  shift 2
-
-  #FIXME use getopt() for '-b'. and break on '--' and set filename(s) from remainder
-  # see --* handling from ec2-validate.sh and packer wrapper.
-  #TODO? use _xxx format so can be overriden from cmdline?
-  local mode uid gid context flags
-
-  # TODO Selinux Context with '%C' and --context=$context. check with 'getenforce' first
-  #FIXME test for symlink and output %N ('link' -> 'real dest'), parse and strip quotes?
-
-  # non-priv can stat restricted files if can walk intervening paths
-  read -r mode uid gid context \
-      < <(stat --format='%a %U %G' "$orig" 2>/dev/null)
-
-  # clear parameters if our own
-  [ "$uid" = "`id -nu`" ] && unset uid
-  [ "$gid" = "`id -ng`" ] && unset gid
-
-  ${DEBUG:+runv} ${uid:+$SUDO} install ${VERBOSE:+ -v} ${mode:+ -m $mode} \
-      ${uid:+ -o $uid} ${gid:+ -g $gid} ${context:+ --context=$context} \
-      ${flags:- -b} "$new" "$orig"
-}
-
 
 #TODO? extend to other types
 function whereis_function() {
@@ -396,23 +384,6 @@ function list_functions() {
 #        source "$file" &>/dev/null
 #        compgen -A function    #alt: declare -F | cut -d' ' -f3
 #_EOF
-}
-
-
-#TODO? rename web.getcert
-function getcert() {
-  local uri=${1:?}; uri=${uri#*://}
-  local host=${uri%:*}
-  local port=${uri#*:}
-
-  [ "$host" != "$port" ] || port=${2:-443}
-
-  output=`openssl s_client -connect ${host}:${port} < /dev/null`
-  [ -n "$output" ] || return
-
-  gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
-  gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" |
-      openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
 }
 
 
@@ -475,10 +446,12 @@ function rename_function() {
 }
 
 
-function join_string() {
-  local quote escape= delim flags=
-  local OPTIND opt
+function string.join() {
+  local quote escape delim flags=
+#TODO inject a SET of chars needing to be escaped, eg. []
+# AWS Tagging needs Key=\"[Group]\",Value=test or 'Key="[Group]",Value=test'
 
+  local OPTIND opt
   while getopts ':d:luz' opt; do
     case "$opt" in
       d)    delim=$OPTARG ;;
@@ -490,7 +463,7 @@ function join_string() {
       \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
-
+  -C        to Capitalize each word     #TODO
   -l        to lower case
   -u        to upper case
   -z        remove blank args
@@ -539,13 +512,24 @@ _EOF
   # strip leading 'delim' and tack on trailing 'quote'
   echo "${str#${quote}${delim}}$quote"
 }
+# backwards compat
+alias join_string=string.join
+alias join_quote="quote=\' string.join"
+#function join_quote() { quote=\' join_string "$@"; }
 
-function join_quote() { quote=\' join_string "$@"; }
 
-
-
-# function __parse_options() {
-    # local option{,2} arg IFS='
+#function __parse_options() {
+#
+# records found options in hash, (declare -p | sed) to pass it back.
+# consumer then eval `me` to load it, and then
+# for k in `keys __array`; do
+# case k in
+# match) do
+# done
+#
+# or in simple case [[ one_flag =~ `keys ${flags[@]}` ]] then do
+#
+#  local option{,2} arg IFS='
 # ,/|'
 #FIXME this looks very odd.
 # enforce --[no-][a-zA-Z]+=<value>, --[no-][a-zA-Z] <value>, --<flag> sets $flag=1,
@@ -573,118 +557,44 @@ function join_quote() { quote=\' join_string "$@"; }
 # }
 
 
-#TODO move to .functions_os
-#function userinfo() {
-#  # analogous to /bin/usermod
-#  #while [ "${1+xxx}" ] && [[ "$1" =~ -* ]]; do
-#  local OPTIND
-##  FIXME use getopts like a sane person!
-#  [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
-#
-##FIXME define a HASH for lookups instead of this crap
-#  case $flag in
-#    l)  field=1 ;;&
-#    u)  field=2 ;;&
-#    g)  field=3 ;;&
-#    d)  field=6 ;;&
-#    L)  field=lock ;&
-#    # TODO needs if/else
-#XX    p)  getent shadow ${1:-`id -u`} | awk -F: -v field=$field '{ print $2 }' ;;
-#XX    '') id -nu $1 ;;
-#XX    *)  getent passwd ${1:-`id -u`}
-#  esac
-#  # login:x:uid:gid:gecos:home:shell
-#  -c, --comment COMMENT         new value of the GECOS field
-#  -d, --home HOME_DIR           new home directory for the user account
-#  -e, --expiredate EXPIRE_DATE  set account expiration date to EXPIRE_DATE
-#  -f, --inactive INACTIVE       set password inactive after expiration
-#  -g, --gid GROUP               force use GROUP as new primary group
-#  -G, --groups GROUPS           new list of supplementary GROUPS
-#  -l, --login NEW_LOGIN         new value of the login name
-#  -L, --lock                    lock the user account
-#  -p, --password PASSWORD       use encrypted password for the new password
-#  -s, --shell SHELL             new login shell for the user account
-#  -u, --uid UID                 new UID for the user account
-#}
-
-
-#[ os.is_command tree -o declare -F tree ] &>/dev/null ||
-function tree() {
-  local OPTIND opt
-  local filter= type= reverse= flags=()
-  local -a cmd=( 'find' )    #alt: 'ls -R'
-
-  while getopts ':hdlL:P:x' opt 2>/dev/null; do
-    case "$opt" in
-      d)    flags+=( '-type' d ) ;;
-      l)    cmd+=( '-L' ) ;;
-      L)    flags+=( '-maxdepth' "$OPTARG" ) ;;
-      P)    flags+=( '-name' "$OPTARG" ) ;;
-      x)    flags+=( '-xdev' ) ;;
-
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 cat <<_EOF
-Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
-
-  -d            list Directories only
-  -l            follow symbolic links
-  -L <level>    maximum traverse depth
-  -P <pattern>  must escape any wildcards
-  -x            stay on current filesystem
-
-ref: http://mama.indstate.edu/users/ice/tree/tree.1.html
-_EOF
-            return 2
-            ;;
-    esac
-  done
-  shift $((OPTIND - 1))
-
-  while read item; do
-    out=$( echo "$item" | sed -e 's/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|- \1/' )
-    #TODO handle filenames with spaces
-    [ -h "$item" ] && out+=" -> "`$READLINK -ve "$item"`
-    echo "$out"
-  done < <( ${DEBUG:+ runv} "${cmd[@]}" -H ${1:-.} ${flags[@]} )
-  echo
-}
-
-
 function min() {
   local flag=()
 
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
-
+#FIXME use getopts
     [[ $1 = -[a-zA-Z] ]] && flag+=($1) || break
     shift
   done
-#  printf "%s\n" ${values[@]} | sort "${flag[@]}" | head -n 1
   local IFS=$'\n'
-  \sort -n "${flag[@]}" "$*" | head -n 1
+  sort -n "${flag[@]}" "$*" | head -n 1
 }
-
 alias max='min -r'
 
+# Array or Hash
 function keys() { local -n nref=${1:?}; echo "${!nref[@]}"; }
-
 function values() { local -n nref=${1:?}; echo "${nref[@]}"; }
-
-function value()  { local -n nref=${1:?}; echo "${nref[${2:?}]}"; }
+function value()  { local -n nref=${1:?}; echo "${nref[${2:?element}]}"; }
 
 function array.print() {
-  local format keys
-  local -n nref=${1:?}
+  local format
+  local -i with_keys
+  local -A __formats=(
+      ['with_keys']='%s: %s\n'
+      ['default']='%s\n'
+    )
 
-  if [ ${keys:-0} -eq 1 ]; then
-    for k in $(keys $1); do
-      printf "${format:-%s: %s\n}" "$k" $(value "$1" "$k")
+  if [ ${with_keys:-0} -eq 1 ]; then
+    : ${format:=${__formats['with_keys']}}
+    for k in `keys $1`; do
+      printf "$format" "$k" `value "$1" "$k"`
     done
   else
-    printf "${format:-%s\n}" $(values "$1")
+    : ${format:=${__formats['default']}}
+    printf "$format" `values "$1"`
   fi
 }
+alias hash.print='with_keys=1 array.print'
 
 #TODO array functions; push, pop, delete, replace, truncate
 #TODO array.append|.add|.insert, prune|delete, length, equal, is_empty, clear, dedup, index_of|key,
@@ -712,7 +622,7 @@ function expand_dvq() {
 
 # rudimentary logging implementation
 declare -F log >/dev/null ||
-function log {
+function log() {
   local -u level
   local fname=
   local -i offset=1
@@ -731,10 +641,10 @@ function log {
 }
 
 declare -F log.none >/dev/null ||
-function log.none { return; }
+function log.none() { return; }
 
 declare -F log.debug >/dev/null ||
-function log.debug {
+function log.debug() {
   local rc=$?
 
   [ -n "$DEBUG" ] && log "$@"
@@ -742,7 +652,7 @@ function log.debug {
 }
 
 declare -F log.info >/dev/null ||
-function log.info {
+function log.info() {
   local rc=$?
 
   [ -n "${VERBOSE}${DEBUG}" ] && log "$@"
@@ -750,7 +660,7 @@ function log.info {
 }
 
 declare -F log.notice >/dev/null ||
-function log.notice {
+function log.notice() {
   local rc=$?
 
   log "$@"
@@ -758,7 +668,7 @@ function log.notice {
 }
 
 declare -F log.error >/dev/null ||
-function log.error {
+function log.error() {
   local rc=$?
 
   log "$@"
