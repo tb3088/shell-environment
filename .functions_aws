@@ -5,30 +5,30 @@
 shopt -s extglob
 
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
-
-is_exec jq curl || { >&2 echo -e "ERROR\tmissing tools (jq, curl)"; exit 2; }
 __aws_bin=`VERBOSE=1; is_exec "aws${AWS_VERSION}"` || exit 2
+__aws_api=`$__aws_bin --version | awk '{ split($1, terms, "/"); print terms[2]; }'`
 
-
-# CLI safety fall-back in case neither AWS_DEFAULT_REGION or configuration defaults
+# safety fall-back when neither AWS_DEFAULT_REGION or configuration defaults
 declare -Ar __aws_defaults=(
-    [region]='us-east-1'
-    [config]="$HOME/.aws/config"
-    [credentials]="$HOME/.aws/credentials"
+    ['region']='us-east-1'
+    ['config']="$HOME/.aws/config"
+    ['credentials']="$HOME/.aws/credentials"
+    ['readTimeout']=7
+    ['connectTimeout']=25
   )
 
 declare -Ar __aws_session=(
-    [AccessKeyId]='aws_access_key_id'
-    [SecretAccessKey]='aws_secret_access_key'
-    [SessionToken]='aws_session_token'
-    [Expiration]='aws_session_expire'
+    ['AccessKeyId']='aws_access_key_id'
+    ['SecretAccessKey']='aws_secret_access_key'
+    ['SessionToken']='aws_session_token'
+    ['Expiration']='aws_session_expire'
   )
 
 declare -Ar __aws_regex=(
-    [token]='^[0-9]{6}'
-    [role]='^arn:aws:iam:'
-    [region]='^[a-z]{2}-[a-z]+-[0-9]'
-    [profile]='^[a-zA-Z]+'
+    ['token']='^[0-9]{6}'
+    ['role']='^arn:aws:iam:'
+    ['region']='^[a-z]{2}-[a-z]+-[0-9]'
+    ['profile']='^[a-zA-Z]+'
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
@@ -56,30 +56,31 @@ declare -ar __aws_regions=(
 
 [ ${#__aws_availability_zones[@]} -ge 16 ] ||
 declare -Ar __aws_availability_zones=(
-    [ap-northeast-1]=$(echo ap-northeast-1{a,c,d})
-    [ap-northeast-2]=$(echo ap-northeast-2{a,c})
-    [ap-south-1]=$(echo ap-south-1{a..b})
-    [ap-southeast-1]=$(echo ap-southeast-1{a..c})
-    [ap-southeast-2]=$(echo ap-southeast-2{a..c})
-    [ca-central-1]=$(echo ca-central-1{a..b})
-    [eu-central-1]=$(echo eu-central-1{a..c})
-    [eu-north-1]=$(echo eu-north-1{a..c})
-    [eu-west-1]=$(echo eu-west-1{a..c})
-    [eu-west-2]=$(echo eu-west-2{a..c})
-    [eu-west-3]=$(echo eu-west-3{a..c})
-    [sa-east-1]=$(echo sa-east-1{a,c})
-    [us-east-1]=$(echo us-east-1{a..f})
-    [us-east-2]=$(echo us-east-2{a..c})
-    [us-west-1]=$(echo us-west-1{a,c})
-    [us-west-2]=$(echo us-west-2{a..c})
+    ['ap-northeast-1']=`echo ap-northeast-1{a,c,d}`
+    ['ap-northeast-2']=`echo ap-northeast-2{a,c}`
+    ['ap-south-1']=`echo ap-south-1{a..b}`
+    ['ap-southeast-1']=`echo ap-southeast-1{a..c}`
+    ['ap-southeast-2']=`echo ap-southeast-2{a..c}`
+    ['ca-central-1']=`echo ca-central-1{a..b}`
+    ['eu-central-1']=`echo eu-central-1{a..c}`
+    ['eu-north-1']=`echo eu-north-1{a..c}`
+    ['eu-west-1']=`echo eu-west-1{a..c}`
+    ['eu-west-2']=`echo eu-west-2{a..c}`
+    ['eu-west-3']=`echo eu-west-3{a..c}`
+    ['sa-east-1']=`echo sa-east-1{a,c}`
+    ['us-east-1']=`echo us-east-1{a..f}`
+    ['us-east-2']=`echo us-east-2{a..c}`
+    ['us-west-1']=`echo us-west-1{a,c}`
+    ['us-west-2']=`echo us-west-2{a..c}`
   )
 
 
 function __AWS() {
   local -a cmd=()
+  local region
 
   # windows binary can't walk symlinks or handle unix'y paths
-  if is_windows "$__aws_bin"; then
+  if is_windows "${__aws_bin:?}"; then
     [ -n "$AWS_CONFIG_FILE" ] &&
         cmd+=( AWS_CONFIG_FILE=`convert_path -w "$AWS_CONFIG_FILE"` )
 
@@ -88,34 +89,43 @@ function __AWS() {
 
     [[ "$cmd" =~ AWS_ ]] && cmd=( env "${cmd[@]}" )
   fi
+  cmd+=( "$__aws_bin"
+      '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
+      '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
+    )
 
-  cmd+=( "${__aws_bin:?}" '--output' json )
-
-  # NOTE - EC2 instances may lack AWS config
-  # interactive use assumes correctness or may blow up
-  if [ -z "${AWS_DEFAULT_REGION}" ]; then
-    local region=`is_ec2 && ec2.metadata region || "${cmd[@]}" configure get region`
-    cmd+=( '--region' "${region:?}" )
+  #WARN interactive use assumes correctness and may error
+  if [ -z "${AWS_DEFAULT_REGION}" -a is_ec2 ]; then
+    region=`ec2.metadata region || "${cmd[@]}" configure get region ${AWS_PROFILE:+ --profile "$AWS_PROFILE"}`
+    [ -n "$region" ] || {
+        log.warn "region unavailable - forcing default (${__aws_defaults['region']})"
+        cmd+=( '--region' "${__aws_defaults['region']}" )
+      }
   fi
+
+  # API v1 frequently ignores VPC endpoints
+  local endpoint
+  case "$1" in
+    # known N/A
+    configure)
+            ;;
+    # known good
+    ec2|sts|dynamodb|sqs)
+            endpoint="$1.${AWS_DEFAULT_REGION:-$region}.amazonaws.com"
+            host -s "$endpoint" &>/dev/null &&
+                cmd+=( '--endpoint-url' "https://$endpoint" ) ||
+                log.debug "name resolution failed ($endpoint)"
+            ;;
+    *)      # unsupported
+  esac
 
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
 
-  # all output is in JSON with rare exception; strip DOS line-endings
+  # all output in JSON
+  cmd+=( '--output' json )
+  # strip DOS line-endings
   ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d $'\r'
 }
-readonly -f __AWS
-
-function __JQ() { ${DEBUG:+ runv} jq --exit-status "$@"; }
-readonly -f __JQ
-
-function __JQR() { __JQ "$@" | jq --raw-output '. // empty'; }
-readonly -f __JQR
-
-#is_function __CURL ||
-#function __CURL { ${DEBUG:+ runv} curl --connect-timeout 5 --fail --silent \
-#       ${VERBOSE:+ --verbose --progress-bar} "$@"; }
-#readonly -f __CURL
-alias __CURL='${DEBUG:+ runv} \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar}'
 
 
 # approximate clone of program from ec2-utils.rpm
@@ -186,117 +196,6 @@ function ec2.metadata() {
 
 function is_ec2() { ec2.metadata self &>/dev/null; }
 
-#TODO move to .bashrc_aws since purely interactive
-function aws.region() {
-  # 'default' supplied by `aws configure` in aws.profile()
-  local default
-  local region=${1-'prompt'}
-  shift
-
-  # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set,
-  # or can fall-back on configuration default
-  [ -z "$region" -a -n "${AWS_DEFAULT_REGION:-$default}" ] && return
-
-  if [ "$region" = 'prompt' ]; then
-    echo
-    with_keys=1 array.print __aws_regions | column
-    echo
-    read -t 15 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
-
-    [[ "{$REPLY:0:1}" =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
-  fi
-
-  # validity check
-  [ -n "${__aws_availability_zones[$region]}" ] || {
-      log.error "invalid region ($region)"; return
-    }
-
-  export AWS_DEFAULT_REGION=$region
-}
-
-#TODO move to .bashrc_aws since purely interactive
-function aws.profile() {
-  [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return; }
-
-  # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
-  local profile
-  : ${profile=${1-'prompt'}}
-  shift
-
-  # but force the issue if called from aws.session()
-  [ "${FUNCNAME[1]}" = 'aws.session' ] && {
-      [ -n "$profile" ] || profile='prompt'
-    }
-
-  local config creds
-  if [ -n "$AWS_CONFIG_FILE" ]; then
-    config=`READLINK -ve "$AWS_CONFIG_FILE"` || return
-    [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] && {
-        creds=`READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
-      }
-  else
-    unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
-    config=`READLINK -ve "${__aws_defaults[config]}"` || return
-    creds=`READLINK -ve "${__aws_defaults[credentials]}"` || return
-  fi
-
-  if [ "${config%/*}" != "${creds%/*}" ]; then
-    AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
-    log.notice "overriding CREDENTIALS_FILE (${creds:-unset} -> $AWS_SHARED_CREDENTIALS_FILE)"
-    creds=`READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
-  fi
-
-  if [ "$profile" = 'prompt' ]; then
-    local pattern='$1 ~ /^\[\w+/ { gsub(/\[|\]/, "", $NF); print $NF; }'
-    local -a list=(
-        $(awk -- "$pattern" "$config")
-        $(awk -- "$pattern" "$creds")
-      )
-    # sanitize
-    list=( $(IFS=$'\n' sort -u <<< "${list[*]}") )
-
-    if [ ${#list[@]} -ge 1 ]; then
-      echo
-      with_keys=1 array.print list | column
-      echo
-      read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
-
-      [[ "${REPLY:0:1}" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
-    else
-      log.error "No profiles found ($config, $creds)"
-      return
-    fi
-  fi
-
-  [ "$profile" = 'default' ] && unset profile
-
-    # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
-    # nor fall-thru to 'default' if --profile is specified.
-    #
-    # aws-cli (boto-core) returns 255 on ProfileNotFound, but will also
-    # stacktrace if value of AWS_PROFILE is not defined in file(s).
-    #
-    # $? == 1 simply means no explicit declaration
-    local _region=$( __AWS --output text configure get region
-        ${profile:+ --profile "$profile"} 2>/dev/null | tr -d $'\r' )
-
-    [[ $? -eq 255 || "${_region:-unset}" =~ ProfileNotFound ]] && {
-        log.error "undefined profile ($profile)"
-        return 255
-      }
-
-  if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
-    # cleanup previous environment
-    aws.rmPath
-    unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
-  fi
-
-  [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
-  default="$_region" aws.region "$@" || return
-
-  aws.addPath
-  export ${!AWS_*}
-}
 
 # function aws-kms-crypt (de/en) are simple 1 liner calls to kms-crypt
 # -e for encrypt, -d for decrypt. -B to pipe results to base64 -d. must NOT decode (ie. consume the already base64-encoded
@@ -488,7 +387,7 @@ function aws.get() {
             ;;
 
     sts.account)
-            __AWS sts get-caller-identity | __JQR '.Account'
+            __AWS sts get-caller-identity ${region:+ --endpoint-url sts.$region.amazonaws.com} | __JQR '.Account'
             ;;
 
     *)      log.error "unsupported keyword ($keyword)"

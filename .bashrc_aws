@@ -8,7 +8,7 @@ declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 __tag=1
 #------------------
 
-is_exec aws${AWS_VERSION} || .bashrc_3rdparty aws
+. ${BASH_SOURCE%_*}_3rdparty aws || return
 
 addPath /usr/local/ec2-ami-tools*/**/bin
 
@@ -44,53 +44,118 @@ alias aws='__AWS'
 alias ec2.connect='__AWS ssm start-session --target'
 
 
-function aws.route53-export() {
-  local -u zone_id=${1:?zone_id}
-  local domain=${1%.}; domain+='.'
-
-  # if doesn't match pattern assume Domain name was specified
-  #FIXME will pick first occurance which is likely not intended, use read() to prompt
-  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
-      __AWS route53 list-hosted-zones |
-          __JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
-          cut -d'/' -f3 | head -n 1
-    )
-
-  for zone in $zone_id; do
-    echo -e "; $zone\n"
-    #TODO use printf() with width
-    __AWS route53 list-resource-record-sets --hosted-zone-id=${zone:?} |
-        __JQR -j '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
-    echo
-  done
-}
-
-
-#TODO rewrite as aws.describe() item
-function iam.sshkeys {
-  # Example: $FUNCNAME `__AWS iam get-group --group-name <group> | JQR '.Users[].UserName'`
-  local -u format
-  local status
-
-  : ${format:=ssh}
-  : ${status:=Active}
-
-  while (( $# ));do
-    [ "$1" ] || { shift; continue; }
-
-    for kid in $( __AWS iam list-ssh-public-keys --user-name "$1" |
-        __JQR --arg STATUS "$status" '.SSHPublicKeys[] | select(.Status == $STATUS) | .SSHPublicKeyId //empty'
-      ); do
-#TODO use JQ and drop @sh?
-      __AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
-          __JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
-    done
-    shift
-  done
-}
-
-
 function aws.printenv() { for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
+
+function aws.region() {
+  # 'DEFAULT' supplied by `aws configure` in aws.profile()
+  local DEFAULT region REGION
+  [ -n "${REGION+X}" ] && : ${region:=$REGION}
+  [ -n "${region+X}" ] || { region=${1-'prompt'}; shift; }
+
+  # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set,
+  # or can fall-back on configuration default
+  [ -z "$region" -a -n "${AWS_DEFAULT_REGION:-$DEFAULT}" ] && return
+
+  if [ "$region" = 'prompt' ]; then
+    echo
+    with_keys=1 array.print __aws_regions | column
+    echo
+    read -t 15 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
+
+    [[ "{$REPLY:0:1}" =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
+  fi
+
+  # validity check
+  [ -n "${__aws_availability_zones[$region]}" ] || {
+      log.error "invalid region ($region)"; return
+    }
+
+  export AWS_DEFAULT_REGION=$region
+}
+
+
+function aws.profile() {
+  [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return; }
+
+  # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
+  local profile
+  [ -n "${PROFILE+X}" ] && : ${profile:=$PROFILE}
+  [ -n "${profile+X}" ] || { profile=${1-'prompt'}; shift; }
+
+  # but force the issue if called from aws.session()
+  [ "${FUNCNAME[1]}" = 'aws.session' ] && {
+      [ -n "$profile" ] || profile='prompt'
+    }
+
+  local config creds
+  if [ -n "$AWS_CONFIG_FILE" ]; then
+    config=`__READLINK -ve "$AWS_CONFIG_FILE"` || return
+    [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] && {
+        creds=`__READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
+      }
+  else
+    unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
+    config=`__READLINK -ve "${__aws_defaults[config]}"` || return
+    creds=`__READLINK -ve "${__aws_defaults[credentials]}"` || return
+  fi
+
+  if [ "${config%/*}" != "${creds%/*}" ]; then
+    AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
+    log.notice "overriding CREDENTIALS_FILE (${creds:-unset} -> $AWS_SHARED_CREDENTIALS_FILE)"
+    creds=`__READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
+  fi
+
+  if [ "$profile" = 'prompt' ]; then
+    local pattern='$1 ~ /^\[\w+/ { gsub(/\[|\]/, "", $NF); print $NF; }'
+    local -a list=(
+        $(awk -- "$pattern" "$config")
+        $(awk -- "$pattern" "$creds")
+      )
+    # sanitize
+    list=( $(IFS=$'\n' sort -u <<< "${list[*]}") )
+
+    if [ ${#list[@]} -ge 1 ]; then
+      echo
+      with_keys=1 array.print list | column
+      echo
+      read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
+
+      [[ "${REPLY:0:1}" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
+    else
+      log.error "No profiles found ($config, $creds)"
+      return
+    fi
+  fi
+
+  [ "$profile" = 'default' ] && unset profile
+
+    # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
+    # nor fall-thru to 'default' if --profile is specified.
+    #
+    # aws-cli (boto-core) returns 255 on ProfileNotFound, but will also
+    # stacktrace if value of AWS_PROFILE is not defined in file(s).
+    #
+    # $? == 1 simply means no explicit declaration
+    local _region=$( __AWS --output text configure get region
+        ${profile:+ --profile "$profile"} 2>/dev/null | tr -d $'\r' )
+
+    [[ $? -eq 255 || "${_region:-unset}" =~ ProfileNotFound ]] && {
+        log.error "undefined profile ($profile)"
+        return 255
+      }
+
+  if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
+    # cleanup previous environment
+    aws.rmPath
+    unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
+  fi
+
+  [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
+  DEFAULT="$_region" aws.region "$@" || return
+
+  aws.addPath
+  export ${!AWS_*}
+}
 
 
 function aws.session-load() {
@@ -148,7 +213,7 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
 
 function aws.session-write() {
     local field
-	local -u envvar
+    local -u envvar
 
     for field in `keys __aws_session`; do
       envvar=`value __aws_session "$field"`
@@ -205,7 +270,9 @@ function aws.session() {
   [ ${duration:-0} -gt 3600 ] && unset duration
 
   #WARN unsafe backwards compat
-  while [ "${1+x}" ]; do
+  while (( $# )); do
+    [ -n "$1" ] || { shift; continue; }
+
     if [[ $1 =~ ${__aws_regex['token']} ]]; then
       token=$1
     elif [[ $1 =~ ${__aws_regex['role']} ]]; then
@@ -215,7 +282,7 @@ function aws.session() {
     elif [[ $1 =~ ${__aws_regex['profile']} ]]; then
       profile=$1
     else
-      log.error "unknown format ($1)"
+      log.error "unknown keyword ($1)"
       return
     fi
     shift
@@ -252,8 +319,8 @@ function aws.session() {
 #An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
 
         __AWS sts "${cmd[@]}" \
-            ${mfa:+ --serial-number "$mfa" \
-            ${token:+ --token-code $token}} \
+            ${mfa:+ --serial-number "$mfa"} \
+            ${token:+ --token-code $token} \
             ${duration:+ --duration-seconds $duration}
       ) || return
   fi
@@ -276,7 +343,7 @@ function aws.addPath() {
   set -- `IFS=$'\n' sort -u <<< "${dirs[*]}"`
 
   while (( $# )); do
-    [ -n "$d" -a -d "$1" ] || { shift; continue; }
+    [ -n "$1" -a -d "$1" ] || { shift; continue; }
 
     if [ ${DELETE:-0} -eq 1 ]; then
       ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${1%/bin}"/{id_*,*.pem}.pub &>/dev/null
@@ -288,12 +355,59 @@ function aws.addPath() {
           ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${1%/bin}"/{id_*,*.pem}
       PREPEND=1 addPath "$v"
     fi
+    shift
   done
 }
 
 
 function aws.rmPath() {
   DELETE=1 aws.addPath "$@"
+}
+
+
+function aws.route53-export() {
+  local -u zone_id=${1:?zone_id}
+  local domain=${1%.}; domain+='.'
+
+  # if doesn't match pattern assume Domain name was specified
+  #FIXME will pick first occurance which is likely not intended, use read() to prompt
+  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
+      __AWS route53 list-hosted-zones |
+          __JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
+          cut -d'/' -f3 | head -n 1
+    )
+
+  for zone in $zone_id; do
+    echo -e "; $zone\n"
+    #TODO use printf() with width
+    __AWS route53 list-resource-record-sets --hosted-zone-id=${zone:?} |
+        __JQR -j '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
+    echo
+  done
+}
+
+
+#TODO rewrite as aws.describe() item
+function iam.sshkeys {
+  # Example: $FUNCNAME `__AWS iam get-group --group-name <group> | JQR '.Users[].UserName'`
+  local -u format
+  local status
+
+  : ${format:=ssh}
+  : ${status:=Active}
+
+  while (( $# ));do
+    [ "$1" ] || { shift; continue; }
+
+    for kid in $( __AWS iam list-ssh-public-keys --user-name "$1" |
+        __JQR --arg STATUS "$status" '.SSHPublicKeys[] | select(.Status == $STATUS) | .SSHPublicKeyId //empty'
+      ); do
+#TODO use JQ and drop @sh?
+      __AWS iam get-ssh-public-key --user-name "$1" --ssh-public-key-id "$kid" --encoding $format |
+          __JQR '.SSHPublicKey | .UserName, .SSHPublicKeyBody | @sh'
+    done
+    shift
+  done
 }
 
 

@@ -10,9 +10,28 @@ function is_interactive() {
 is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
 
+declare -ar __required_executables=( readlink jq curl tee )
 #TODO use 'command -v' instead
-alias __WHICH='which --skip-alias --skip-functions'
-alias __READLINK='${DEBUG:+ runv} readlink ${VERBOSE:+-v} --no-newline'
+function __WHICH() { \which --skip-alias --skip-functions "$@"; }
+function __READLINK() { ${DEBUG:+ runv} \readlink ${VERBOSE:+ -v} --no-newline "$@"; }
+
+function __JQ() { ${DEBUG:+ runv} \jq --exit-status "$@"; }
+function __JQR() { __JQ "$@" | \jq --raw-output '. // empty'; }
+function __CURL() { ${DEBUG:+ runv} \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar} "$@"; }
+
+# override 'exit on error' program flow
+function _continue() { [ -n "$CONTINUE" ]; }
+
+function pause() {
+  [ $# -eq 0 ] && read -p 'Press [ENTER] to continue ...' || read -p "$*"
+}
+
+function confirm() {
+  read -n 1 -t 15 -p 'Are you sure (y/N)? '
+  echo
+  [ "${REPLY^^}" = "Y" ]
+}
+
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
@@ -30,19 +49,17 @@ function runv() {
 #TODO is_what() returns 'type -t' or 'declare -p' mapped back to English
 #function is_what
 
-function __is_type() {
-# NOTE short-circuits on first error
-  local keyword
+function __is_type() {  #NOTE! short-circuits on first error
   local -Ar __types=(
-      [a]='array'       [array]='a'
-      [A]='hash'        [hash]='A'
-      [f]='function'    [function]='f'
-      [i]='integer'     [integer]='i'
-      [l]='lower'       [lower]='l'
-      [n]='nref'        [nref]='n'
-      [-]='string'      [string]='-'
-      [r]='readonly'    [readonly]='r'
-      [u]='upper'       [upper]='u'
+      ['a']='array'       ['array']='a'
+      ['A']='hash'        ['hash']='A'
+      ['f']='function'    ['function']='f'
+      ['i']='integer'     ['integer']='i'
+      ['l']='lower'       ['lower']='l'
+      ['n']='nref'        ['nref']='n'
+      ['-']='string'      ['string']='-'
+      ['r']='readonly'    ['readonly']='r'
+      ['u']='upper'       ['upper']='u'
     )
 
   local OPTIND opt
@@ -58,64 +75,53 @@ function __is_type() {
   # read STDIN (pipe) if no args
   set -- "${@:- $( </dev/stdin )}"
 
+  local keyword=$KEYWORD bin
   case "${keyword:=${FUNCNAME[1]#is_}}" in
-    file)
-        while (( $# )); do
-          # skip NULL args
-          [ -n "$1" ] || { shift; continue; }
+    file)   while (( $# )); do
+              [ -n "$1" ] || { shift; continue; }
 
-          #alt: readlink -qe "$1"
-          [ -f "$1" ] || {
-              [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "file not found ($1)"
-              return 1
-            }
-          shift
-        done
-        return
-        ;;
+              #alt: \readlink -qe "$1"
+              [ -f "$1" ] || {
+                  [ -n "$VERBOSE" ] && log.error "file not found ($1)"
+                  return 1
+                }
+              shift
+            done
+            return
+            ;;
+    exec*)  while (( $# )); do
+              [ -n "$1" ] || { shift; continue; }
 
-    exec*)
-        while (( $# )); do
-          # skip NULL args
-          [ -n "$1" ] || { shift; continue; }
+              bin=`__WHICH "$1" 2>/dev/null` || {
+                  [ -n "$VERBOSE" ] && log.error "command not found ($1)"
+                  return 1
+                }
+              [ -n "$VERBOSE" ] && echo "$bin"
+              shift
+            done
+            return
+            ;;
+    func*)  while (( $# )); do
+              [ -n "$1" ] || { shift; continue; }
 
-          bin=`__WHICH "$1" 2>/dev/null` || {
-              [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "unknown command ($1)"
-              return 1
-            }
-          [ -n "$VERBOSE" ] && echo "$bin"
-          shift
-        done
-        return
-        ;;
-
-    func*)
-        while (( $# )); do
-          # skip NULL args
-          [ -n "$1" ] || { shift; continue; }
-
-          declare -F "$1" &>/dev/null || {
-              [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "undefined function ($1)"
-              return
-            }
-          shift
-        done
-        return
-        ;;
-
-    read*)
-        local _readonly=1
-        ;;
-
-    *)  [ -n "${__types[$keyword]}" ] || {
-            log.error "unsupported type ($keyword)"
-            return 2
-          }
+              declare -F "$1" &>/dev/null || {
+                  [ -n "$VERBOSE" ] && log.error "undefined function ($1)"
+                  return 1
+                }
+              [ -n "$VERBOSE" ] && whereis_function "$1"
+              shift
+            done
+            return
+            ;;
+    read*)  local -i _readonly=1 ;;
+    *)      [ -n "${__types[$keyword]}" ] || {
+                log.error "unsupported type ($keyword)"
+                return 2
+              }
   esac
 
-  local whatami flag
+  local whatami flag _type
   while (( $# )); do
-    # skip NULL args
     [ -n "$1" ] || { shift; continue; }
 
     # suss out functions during 'readonly'
@@ -123,40 +129,128 @@ function __is_type() {
     [ ${_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag=F || flag=
 
     whatami=`declare -p${flag} "$1" 2>/dev/null | awk '{ print $2; }'` || {
-        [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "item not found ($1)"
-        return
+        [ -n "$VERBOSE" ] && log.error "${keyword:-item} not found ($1)"
+        return 1
       }
 
     whatami=${whatami#-}
-    [[ $whatami =~ ${__types[$keyword]} ]] || {
-        [ -n "$VERBOSE" ] && log.${LOG_LEVEL:-error} "type mismatch ($1: ${__types[$whatami]} != $compare)"
-        return
+    [[ "$whatami" =~ ${__types[$keyword]} ]] || {
+        [ -n "$VERBOSE" ] && log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"
+        return 1
       }
     shift
   done
 }
-# define data-type specific
+# data-type wrappers
 for f in array exec hash integer string file function readonly; do
-#  eval function is_$f '{ __is_type "$@"; }'
-  alias is_$f="keyword=$f __is_type"
+  eval function is_$f '{ __is_type "$@"; }'
 done
 
 
-is_windows () {
-  [ -n "$1" ] || {
-      [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
-      return
-    }
+is_windows() {      #NOTE multi-arg not recommended
+  [ $# -eq 0 ] && { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; }
 
-  # handle files and directories
-  bin=`__WHICH "$1"`;
-  [[ "${bin:=$1}" =~ ^/cygdrive ]] ||
-      file "$bin" | grep -q 'for MS Windows'
+  local bin
+  while (( $# )); do
+    [ -n "$1" ] || { shift; continue; }
+
+    # check file or path
+    bin=`__WHICH "$1" || __READLINK "$1"` || return
+    [[ "$bin" =~ ^/cygdrive ]] || file "$bin" | grep -q 'for MS Windows' || return
+    shift
+  done
 }
 
 
-# used for override 'exit' program flow
-function _continue() { [ -n "$CONTINUE" ]; }
+function define() {
+  # Assign a HEREDOC to a variable.
+  # To collapse space/tab indentation use dash in indirection like so '<<-_EOF'
+  # Contents will be expanded unless marker ('_EOF') is quoted.
+  #
+  # Usage: define VAR <<_EOF ...
+#TODO? </dev/stdin
+
+  IFS=$'\n' read -r -d '' $1 || true
+}
+
+#TODO? extend to other types
+function whereis_function() {
+  ( shopt -s extdebug
+    declare -F ${1:?} | awk '{ printf("%-50s#%d\n", $3, $2); }'
+  )
+}
+
+
+function list_functions() {
+#  local FILE
+  while (( $# )); do
+    [ -f "$1" ] || { shift; continue; }
+
+    # use sub-shell to not contaminate current, recurse
+    ( source "$1"; $FUNCNAME )
+    shift
+  done
+
+  ( shopt -s extdebug
+#    declare -F `compgen -A function` | awk -v fn="$FILE" '$3 ~ fn { printf("%-25s%s #%d\n", $1, $3, $2); }'
+     declare -F `compgen -A function` | awk '{ printf("%-25s%s #%d\n", $1, $3, $2); }'
+  )
+
+#NOTE
+# if "$file" sources other files, the answer is polluted.
+#
+#  env -i /bin/bash --noprofile --norc <<_EOF
+#        source "$file" &>/dev/null
+#        compgen -A function    #alt: declare -F | cut -d' ' -f3
+#_EOF
+}
+
+
+function copy_function() {
+  # arg1: source name or fully declared format
+  # argN: destination
+  #
+  # Does NOT support recursion since fails easily or in unintended ways.
+  # Using SED with BOL, EOL or whitespace detection isn't reliable either.
+
+  local fname=${1:?source} body
+  local -i overwrite
+
+  shift
+
+  if echo $fname | grep -q '() {'; then
+    body=$fname
+    fname=`awk '{print $1; exit}' <<< "$body"`
+  else
+    # allow side-channel injection
+    : ${body:=`declare -f "$fname"`}
+  fi
+
+  [ -n "$fname" -a -n "$body" ] || return
+
+  for target in "$@"; do
+    # ignore badly-formed arguments
+    [ -n "$target" ] || continue
+
+    is_function "$target" && {
+        if [ ${overwrite:-0} -eq 1 ]; then
+          is_readonly "$target" && { log.debug "ERROR\tread-only function ($target)"; return 1; }
+          log.debug "NOTICE\toverwriting function ($target)"
+        else
+          log.debug "WARN\tfunction exits ($target)"
+          continue
+        fi
+      }
+
+    #alt: "function $target ${body#*\(\)}"
+    eval "${body/$fname/$target}"
+  done
+}
+
+
+function rename_function() {
+  copy_function "${1:?source}" "${2:?dest}" && unset -f "$1"
+}
 
 
 #TODO move to os
@@ -221,7 +315,7 @@ function convert_path() {
   done
 }
 # backwards compat
-#alias convert_path=os.filepath.print
+#function convert_path=os.filepath.print
 
 
 #TODO handle Hash/Array,
@@ -248,14 +342,14 @@ function string.contains() {
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
     *)      [[ "$source" == *$sub* ]]
-			#alt: [ -z "${sub##*${source}*}" ] && is_matched
+            #alt: [ -z "${sub##*${source}*}" ] && is_matched
   esac
 }
 # backwards compat
-alias contains='string.contains'
+copy_function string.contains contains
 
 
-#TODO move to 'os'
+#can't move to 'os'
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
   # but does NOT sub-divide arguments!
@@ -343,115 +437,10 @@ function rmPath() {
 }
 
 
-function define() {
-  # Assign a HEREDOC to a variable.
-  # To collapse space/tab indentation use dash in indirection like so '<<-_EOF'
-  # Contents will be expanded unless marker ('_EOF') is quoted.
-  #
-  # Usage: define VAR <<_EOF ...
-#TODO? </dev/stdin
-
-  IFS=$'\n' read -r -d '' $1 || true
-}
-
-#TODO? extend to other types
-function whereis_function() {
-  shopt -s extdebug
-  declare -F ${1:?} | awk '{ print $3; }'
-  shopt -u extdebug
-}
-
-
-function list_functions() {
-  local file
-
-  while [ -n "$1" ]; do
-    [ -f "$1" ] || { shift; continue; }
-
-    # use sub-shell to not contaminate current, recurse
-    ( source "$1" &>/dev/null; file="$1" $FUNCNAME )
-    shift
-  done
-
-  shopt -s extdebug
-  declare -F `compgen -A function` | awk -v fn="$file" '$3 ~ fn { printf("%-15s\t%s\n", $1, $3) }'
-  shopt -u extdebug
-
-#NOTE
-# This doesn't work if "$file" sources other files - answer is polluted.
-#
-#  env -i /bin/bash --noprofile --norc <<_EOF
-#        source "$file" &>/dev/null
-#        compgen -A function    #alt: declare -F | cut -d' ' -f3
-#_EOF
-}
-
-
-function pause() {
-  [ $# -eq 0 ] && read -p 'Press [ENTER] to continue ...' || read -p "$*"
-}
-
-
-function confirm() {
-  read -n 1 -t 15 -p 'Are you sure (y/N)? '
-  echo
-  [ "${REPLY^^}" = "Y" ]
-}
-
-
-function copy_function() {
-  # arg1: source name or fully declared format
-  # argN: destination
-  #
-  # Does NOT support recursion since fails easily or in unintended ways.
-  # Using SED with BOL, EOL or whitespace detection isn't reliable either.
-
-  local fname=${1:?source} body
-  local -i overwrite
-
-  shift
-
-  if echo $fname | grep -q '() {'; then
-    body=$fname
-    fname=`awk '{print $1; exit}' <<< "$body"`
-  else
-    # allow side-channel injection
-    : ${body:=`declare -f "$fname"`}
-  fi
-
-  [ -n "$fname" -a -n "$body" ] || return
-
-  for target in "$@"; do
-    # ignore badly-formed arguments
-    [ -n "$target" ] || continue
-
-    is_function "$target" && {
-        if [ ${overwrite:-0} -eq 1 ]; then
-          is_readonly "$target" && { log.debug "ERROR\tread-only function ($target)"; return 1; }
-          log.debug "NOTICE\toverwriting function ($target)"
-        else
-          log.debug "WARN\tfunction exits ($target)"
-          continue
-        fi
-      }
-
-    #alt: "function $target ${body#*\(\)}"
-    eval "${body/$fname/$target}"
-  done
-}
-
-
-function rename_function() {
-  copy_function "${1:?source}" "${2:?dest}" && unset -f "$1"
-}
-
-
 function string.join() {
-  local quote escape delim flags=
-#TODO inject a SET of chars needing to be escaped, eg. []
-# AWS Tagging needs Key=\"[Group]\",Value=test or 'Key="[Group]",Value=test'
+  local flags= delim quote escape=
+  local OPTIND= opt=
 
-  local OPTIND opt
   while getopts ':d:luz' opt; do
     case "$opt" in
       d)    delim=$OPTARG ;;
@@ -459,29 +448,24 @@ function string.join() {
       u)    flags+=u ;;     # to_upper
       z)    flags+=z ;;     # remove blanks
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   log.error "unsupported (-$OPTARG)" ;&
+      :)    log.error "missing argument to '-$OPTARG'"; return 2
+            ;;
+      \?)   log.error "unknown option '-$OPTARG'" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
-  -C        to Capitalize each word     #TODO
+
   -l        to lower case
   -u        to upper case
   -z        remove blank args
 _EOF
             return 2
-            ;;
     esac
   done
   shift $((OPTIND - 1))
 
-  if [ -n "${delim+X}" ]; then
-    :
-#  elif [ -n "${DELIM+X}" ]; then
-#    delim=$DELIM
-  else
-    [ $# -gt 2 ] || { log.error "insufficient args ($#)"; return 2; }
-    delim=$1; shift
-  fi
+  [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
+  [ -n "${delim+X}" ] || { delim=$1; shift; }
+#  [ $# -ge 2 ] || log.debug "short args ($#)"
 
   if [[ $flags =~ z ]]; then
     declare -a _args=( "$@" )
@@ -492,6 +476,7 @@ _EOF
   fi
 
   # escape whitespace, or even delimiter (rare)
+  : ${quote:=$QUOTE}
   [ -n "$quote" ] || escape=${IFS:0:1}
   [ "$quote" = "$delim" ] && escape=$delim
 
@@ -502,33 +487,20 @@ _EOF
 
   [ -z "$quote" -a ${#delim} -le 1 ] && { local IFS=$delim; echo "$*"; return; }
 
-  local IFS=
   # prepend each word during expansion
+  local IFS=
   local str=${*/#/${quote}${delim}${quote}}
-
-  # DONOT collapse repeated delim - empty arguments are legal
-#  str=${str//${delim}${delim}/$delim}
 
   # strip leading 'delim' and tack on trailing 'quote'
   echo "${str#${quote}${delim}}$quote"
 }
 # backwards compat
-alias join_string=string.join
-alias join_quote="quote=\' string.join"
-#function join_quote() { quote=\' join_string "$@"; }
+copy_function string.join join_string
+
+function join_quote() { QUOTE=\' string.join "$@"; }
 
 
 #function __parse_options() {
-#
-# records found options in hash, (declare -p | sed) to pass it back.
-# consumer then eval `me` to load it, and then
-# for k in `keys __array`; do
-# case k in
-# match) do
-# done
-#
-# or in simple case [[ one_flag =~ `keys ${flags[@]}` ]] then do
-#
 #  local option{,2} arg IFS='
 # ,/|'
 #FIXME this looks very odd.
@@ -569,7 +541,8 @@ function min() {
   local IFS=$'\n'
   sort -n "${flag[@]}" "$*" | head -n 1
 }
-alias max='min -r'
+
+function max() { min -r "$@"; }
 
 # Array or Hash
 function keys() { local -n nref=${1:?}; echo "${!nref[@]}"; }
@@ -583,7 +556,7 @@ function array.print() {
       ['with_keys']='%s: %s\n'
       ['default']='%s\n'
     )
-
+#TODO getopts -k for with_keys
   if [ ${with_keys:-0} -eq 1 ]; then
     : ${format:=${__formats['with_keys']}}
     for k in `keys $1`; do
@@ -594,7 +567,8 @@ function array.print() {
     printf "$format" `values "$1"`
   fi
 }
-alias hash.print='with_keys=1 array.print'
+
+function hash.print() { with_keys=1 array.print "$@"; }
 
 #TODO array functions; push, pop, delete, replace, truncate
 #TODO array.append|.add|.insert, prune|delete, length, equal, is_empty, clear, dedup, index_of|key,
@@ -620,8 +594,7 @@ function expand_dvq() {
 }
 
 
-# rudimentary logging implementation
-declare -F log >/dev/null ||
+# simple logging implementation
 function log() {
   local -u level
   local fname=
@@ -640,10 +613,8 @@ function log() {
   done
 }
 
-declare -F log.none >/dev/null ||
 function log.none() { return; }
 
-declare -F log.debug >/dev/null ||
 function log.debug() {
   local rc=$?
 
@@ -651,7 +622,6 @@ function log.debug() {
   return ${RC:-$rc}
 }
 
-declare -F log.info >/dev/null ||
 function log.info() {
   local rc=$?
 
@@ -659,7 +629,6 @@ function log.info() {
   return ${RC:-$rc}
 }
 
-declare -F log.notice >/dev/null ||
 function log.notice() {
   local rc=$?
 
@@ -667,7 +636,6 @@ function log.notice() {
   return ${RC:-$rc}
 }
 
-declare -F log.error >/dev/null ||
 function log.error() {
   local rc=$?
 
@@ -679,16 +647,13 @@ function log.error() {
   exit ${RC:-$rc}
 }
 
-declare -F log.trace >/dev/null ||
 copy_function log.debug log.trace
 
-declare -F log.warn >/dev/null ||
 copy_function log.notice log.warn
 
 
-for f in "${BASH_SOURCE}"_logging; do
-  [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
+for bin in "${__required_executables[@]}"; do
+  is_exec "$bin" || { log.error "missing tool ($bin)"; exit; }
 done
 
 
