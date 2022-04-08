@@ -18,7 +18,6 @@ __tag=1
 # reference https://code.woboq.org/gcc/include/sys/syslog.h.html
 # syslog.h has DEBUG=7 ... EMERG=0 while Java/Python/Ruby(?) define as DEBUG=0 ... EMERG=7
 
-[ -n "${__log_levels[*]}" ] ||
 declare -Arx __log_levels=(
     [EMERG]=0   [PANIC]=0
     [0]='EMERG'
@@ -43,13 +42,12 @@ declare -Arx __log_levels=(
 #    [FINEST]=9
 )
 
-[ -n "${LOG_FACILITIES[*]}" ] ||
 declare -arx LOG_FACILITIES=(
     auth authpriv cron daemon kern lpr mail news syslog user uucp local{0..7}
   )
 
-#declare -F log.mask >/dev/null ||
-function log.mask {
+
+function log.mask() {
   [ -n "$1" ] || { echo "${LOG_MASK:-unset}"; return; }
 
   [ -n "${__log_levels[${1:-x}]}" ] && LOG_MASK="$1" || log_ERROR "invalid level ($1)"
@@ -120,7 +118,7 @@ unset k  __log_template
 unset -f __log_exit
 
 
-function __log_lookup {
+function __log_lookup() {
   # lookup level by either type of key
   # returns numeric value only !!
 
@@ -134,7 +132,7 @@ function __log_lookup {
 readonly -f __log_lookup
 
 
-function log {
+function log() {
   local -i level mask offset=1
   local format=${LOG_FORMAT:-'%-5s\t%s'}
 
@@ -197,7 +195,7 @@ function log {
 readonly -f log
 
 
-function __log_print {
+function __log_print() {
   local line
 
   while [ -n "${1:x}" ]; do

@@ -14,8 +14,21 @@ alias grep='\grep --color=auto'
 alias ffs='eval sudo !!'    #alt: 'sudo $(fc -ln -1)'
 alias free='\free -m'
 
-# when WT_SESSION make sure $EDITOR is on Windows PATH or use 'cygwin -m ${EDITOR}'
-alias edit='eval $( if [[ ${TERM:-X} =~ ^screen ]]; then echo screen; elif [ -n "$WT_SESSION" ]; then echo wt new-tab --title "$EDITOR"  --startingDirectory ./ --; fi; echo ${EDITOR##*/} )'
+function edit() {
+  local -a cmd
+  local title=${1:-$EDITOR}
+  : ${title:=$FUNCNAME}
+
+  if [ -n "$WT_SESSION" ]; then
+    cmd=( wt new-tab '--title' "${title##*/}" '--startingDirectory' ./ '--' )
+    # make sure $EDITOR is on Windows PATH or use 'cygpath -m ${EDITOR}'
+    local editor=`convert_path -m "$EDITOR"`
+  #TODO  PowerShell
+  elif [[ ${TERM:-X} =~ ^screen ]]; then
+    cmd=( screen '-t' "${title##*/}" )
+  fi
+  ${DEBUG:+ runv} "${cmd[@]}" "${editor:-$EDITOR}" "$@"
+}
 
 # caution: only Unix(tm)
 alias ps &>/dev/null || alias ps='\ps ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
@@ -29,9 +42,9 @@ alias lS='ls -S'
 
 alias cdu='cd ..'
 alias cdl='cd ${1:-.}; shift; ls $@'
+alias curl='${DEBUG:+ runv} \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar}'
 
 alias sftp='\sftp -R 256 -B 262144'
-alias screen='\screen ${HOSTNAME:+-t ${HOSTNAME%%.*}}'
 alias ntpdate='sudo /usr/sbin/ntpd -gq'
 
 # --filter=':- .gitignore'      mind the space

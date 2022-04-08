@@ -13,18 +13,18 @@ shopt -u sourcepath
 #---------------
 shopt -s nullglob
 
-for f in "$HOME"/.functions{,.local}; do
+for f in "$HOME"/.functions{,.local,_logging}; do
   [ -f "$f" ] || continue
   source "$f" || echo >&2 "RC=$? during $f"
 done
-
-addPath PATH -"$HOME"/{,.local/}bin
 
 for f in "$HOME"/.{bashrc{.local,_os,_*},aliases{,.local},dircolors}; do
   \egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
   source "$f" || >&2 echo "RC=$? during $f"
 done
+
+addPath PATH -"$HOME"/{,.local/}bin
 
 # programmable completion enhancements
 # Any completions you add in ~/.bash_completion are sourced last.

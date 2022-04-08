@@ -14,16 +14,16 @@ readonly PATHSEP
 
 is_exec sudo ||
 function sudo() {
-  local opt who cmd line env shell flags preserve=''
+  local who cmd line env shell flags preserve=
   #FIXME local -A env
-  #FIXME local -a flags
+  #FIXME local -a flags and cmd?
   local OPTIND opt      # important!!
 
   while getopts ':ieEu:X' opt 2>/dev/null; do
     case "$opt" in
       i)    initial=1; unset preserve
 	    ;;
-      e)    cmd=`is_exec ${EDITOR:-vi}` || {
+      e)    cmd=`VERBOSE=1; is_exec ${EDITOR:-vi}` || {
                 log.error "invalid EDITOR (${EDITOR:-vi})"
                 return
               }
@@ -31,7 +31,7 @@ function sudo() {
       E)    preserve='' ;;
       u)    who=$OPTARG ;;
       X)    exec=1 ;;
-      :)    RC=2 log.error "missing argument to '-$OPTARG'"; return ;;
+      :)    log.error "missing argument to '-$OPTARG'"; return 2 ;;
       \?)   flags+=" -$OPTARG"
     esac
   done

@@ -45,7 +45,7 @@ function add_program() {
 }
 
 
-s=`$READLINK -e "$BASH_SOURCE"`
+s=`__READLINK -e "$BASH_SOURCE"`
 k="${BASH_SOURCE#*.bashrc_}"
 [ "${s#*/.bashrc_}" = "$k" ] || { add_program "$k"; return; }
 

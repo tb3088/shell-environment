@@ -25,7 +25,7 @@ is_exec docker && {
 is_exec jq && {
   # assumes delimited input with HEADER line and multi-row DATA
   # ref: https://stackoverflow.com/questions/38860529/create-json-using-jq-from-pipe-separated-keys-and-values-in-bash
-  function csv2json {
+  function csv2json() {
     local output=`
     jq --exit-status --raw-input --null-input --arg delim "${DELIM:-,}" '
         ( input  | split($delim) ) as $keys |

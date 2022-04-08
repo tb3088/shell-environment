@@ -8,7 +8,7 @@
 # symlink to this wrapper will automatically set PROFILE
 
 source "$HOME"/.functions || exit 1
-declare -F log runv >/dev/null || { >&2 echo "required functions (log, ruv) not found"; exit 1; }
+is_function log runv || { >&2 echo -e "ERROR\tmissing functions (log, runv)"; exit 1; }
 
 shopt -s nullglob extglob
 
@@ -253,9 +253,9 @@ init_logs
 for p in SSH SCP SFTP SCREEN; do
     declare -n pp=$p
     # skip variables set to anything, even '' so as to not clobber aliases
-    [ -n "${pp:+X}" ] && continue
+    [ -n "${pp+X}" ] && continue
 
-    pp=`type -p ${p,,}`
+    pp=`VERBOSE=1; is_exec ${p,,}`
     # screen not found is benign
     [ -n "$pp" -o "$p" = 'SCREEN' ] && log.info "$p=$pp" || log.error "missing binary ($p)"
 done
