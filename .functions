@@ -349,7 +349,7 @@ function string.contains() {
 copy_function string.contains contains
 
 
-#can't move to 'os'
+#do NOT move to 'os'
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
   # but does NOT sub-divide arguments!
@@ -360,10 +360,9 @@ function addPath() {
 #TODO use string.join() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <VARNAME> $1 $2`
 
-  local delim flags=()
-  [ -n "$DELIM" ] && : ${delim:=$DELIM}
-  local -i prepend
-  [ "${PREPEND:-X}" = 1 ] && : ${prepend:=1}
+  local DELIM PREPEND delim= flags=(); local -i prepend=0
+  [ -n "$DELIM" ] && delim=$DELIM
+  [ "${PREPEND:-X}" = 1 ] && prepend=1
 
   # short-cut to 'PATH' mode
   [ $# -eq 1 -o "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
@@ -377,7 +376,7 @@ function addPath() {
 
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
-    prepend=$__prepend   # reset to initial
+    prepend=$__prepend   # reset to saved state
 
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; } || v=$1
@@ -407,9 +406,6 @@ function rmPath() {
   [ $# -eq 1 -o "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
   [ "$k" = 'PATH' ] && { delim=':' flags+=('-E'); }
 
-  # check variable name
-  [[ "$k" =~ ^[A-Za-z] ]] || { log.error "invalid variable ($k)"; return; }
-
   : ${delim:=${PATHSEP:-\:}}
   local -n kval=$k
 
@@ -438,13 +434,18 @@ function rmPath() {
 
 
 function string.join() {
-  local flags= delim quote escape=
-  local OPTIND= opt=
+  local flags= DELIM delim QUOTE quote ESCAPE escape
+  [ -n "$DELIM" ] && delim=$DELIM
+  [ -n "$QUOTE" ] && quote=$QUOTE
+  [ -n "$ESCAPE" ] && quote=$ESCAPE     # rare
 
-  while getopts ':d:luz' opt; do
+  local OPTIND= opt=
+  while getopts ':d:e:lq:uz' opt; do
     case "$opt" in
-      d)    delim=$OPTARG ;;
+      d)    : ${delim=$OPTARG} ;;
+      e)    : ${escape=$OPTARG} ;;
       l)    flags+=l ;;     # to_lower
+      q)    : ${quote=$OPTARG} ;;
       u)    flags+=u ;;     # to_upper
       z)    flags+=z ;;     # remove blanks
 
@@ -463,27 +464,28 @@ _EOF
   done
   shift $((OPTIND - 1))
 
-  [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
+  # legacy invocation
   [ -n "${delim+X}" ] || { delim=$1; shift; }
-#  [ $# -ge 2 ] || log.debug "short args ($#)"
-
-  if [[ $flags =~ z ]]; then
-    declare -a _args=( "$@" )
-    for (( i=0; i < $#; i++ )) do
-      [ -n "${_args[$i]}" ] || unset _args[$i]
-    done
-    set -- "${_args[@]}"
-  fi
 
   # escape whitespace, or even delimiter (rare)
-  : ${quote:=$QUOTE}
-  [ -n "$quote" ] || escape=${IFS:0:1}
-  [ "$quote" = "$delim" ] && escape=$delim
+  [ -n "$quote" ] && { [ "$quote" = "$delim" ] && escape=$delim; } || : ${escape=${IFS:0:1}}
+
+  # unset empty args and remove holes
+  if [[ $flags =~ z ]]; then
+    local -a args=( "$@" )
+
+    for i in "${!args[@]}"; do
+      [ -n "${args[$i]}" ] || unset args[$i]
+    done
+    set -- "${args[@]}"
+  fi
 
   [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
-
-  [[ $flags =~ l ]] && set -- "${@,,}"
-  [[ $flags =~ u ]] && set -- "${@^^}"
+  #WARN unintended side-effects
+  [[ "${escape}${delim}${quote}" =~ [a-zA-Z]  && "$flags" =~ l|u ]] &&
+      log.warn "case change poses severe risk (${escape} ${delim} ${quote})"
+  [[ "$flags" =~ l ]] && set -- "${@,,}"
+  [[ "$flags" =~ u ]] && set -- "${@^^}"
 
   [ -z "$quote" -a ${#delim} -le 1 ] && { local IFS=$delim; echo "$*"; return; }
 
@@ -501,6 +503,7 @@ function join_quote() { QUOTE=\' string.join "$@"; }
 
 
 #function __parse_options() {
+# http://mywiki.wooledge.org/BashFAQ/035
 #  local option{,2} arg IFS='
 # ,/|'
 #FIXME this looks very odd.

@@ -16,7 +16,7 @@ addPath /usr/local/ec2-ami-tools*/**/bin
 # ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
 is_exec session-manager-plugin || {
     [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] &&
-        addPath "$PROGRAMFILES/Amazon/SessionManagerPlugin/bin" 2>/dev/null
+        addPath "$PROGRAMFILES"/Amazon/SessionManagerPlugin/bin
     # Linux installs to /usr/local/bin
   }
 
@@ -106,12 +106,9 @@ function aws.profile() {
 
   if [ "$profile" = 'prompt' ]; then
     local pattern='$1 ~ /^\[\w+/ { gsub(/\[|\]/, "", $NF); print $NF; }'
-    local -a list=(
-        $(awk -- "$pattern" "$config")
-        $(awk -- "$pattern" "$creds")
-      )
+    local -a list=( `awk -- "$pattern" "$config" "$creds"` )
     # sanitize
-    list=( $(IFS=$'\n' sort -u <<< "${list[*]}") )
+    list=( `IFS=$'\n' \sort -u <<< "${list[*]}"` )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo
@@ -337,9 +334,7 @@ function aws.addPath() {
   local -i DELETE LOAD_SSHKEYS
 
   [ -n "$AWS_CONFIG_FILE" ] &&
-      local -a dirs=( "${AWS_CONFIG_FILE%/*}"/**/bin )
-  # sanitize
-  set -- `IFS=$'\n' sort -u <<< "${dirs[*]}"`
+      set -- "${AWS_CONFIG_FILE%/*}"/**/bin
 
   while (( $# )); do
     [ -n "$1" -a -d "$1" ] || { shift; continue; }
@@ -348,8 +343,8 @@ function aws.addPath() {
       ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${1%/bin}"/{id_*,*.pem}.pub &>/dev/null
       rmPath "$1"
     else
-# WARN - use 'IdentitiesOnly yes' in ssh_config or else you may
-# experience AuthFailure by virtue of too many attempts
+      # WARN - use 'IdentitiesOnly yes' in ssh_config or else you may
+      # experience AuthFailure by virtue of too many attempts
       [ ${LOAD_SSHKEYS:-0} -eq 1 ] &&
           ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${1%/bin}"/{id_*,*.pem}
       PREPEND=1 addPath "$v"

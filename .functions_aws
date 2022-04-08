@@ -13,8 +13,8 @@ declare -Ar __aws_defaults=(
     ['region']='us-east-1'
     ['config']="$HOME/.aws/config"
     ['credentials']="$HOME/.aws/credentials"
-    ['readTimeout']=7
-    ['connectTimeout']=25
+    ['readTimeout']=25
+    ['connectTimeout']=7
   )
 
 declare -Ar __aws_session=(
@@ -76,8 +76,7 @@ declare -Ar __aws_availability_zones=(
 
 
 function __AWS() {
-  local -a cmd=()
-  local region
+  local cmd=() region=
 
   # windows binary can't walk symlinks or handle unix'y paths
   if is_windows "${__aws_bin:?}"; then
@@ -95,7 +94,7 @@ function __AWS() {
     )
 
   #WARN interactive use assumes correctness and may error
-  if [ -z "${AWS_DEFAULT_REGION}" -a is_ec2 ]; then
+  if [ -z "${AWS_DEFAULT_REGION}" ] && is_ec2; then
     region=`ec2.metadata region || "${cmd[@]}" configure get region ${AWS_PROFILE:+ --profile "$AWS_PROFILE"}`
     [ -n "$region" ] || {
         log.warn "region unavailable - forcing default (${__aws_defaults['region']})"
