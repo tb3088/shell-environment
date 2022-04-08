@@ -177,5 +177,112 @@ os.detect
 #    ;;
 #esac
 
+#[ os.is_command tree -o declare -F tree ] &>/dev/null ||
+function os.tree() {
+  local filter= type= reverse= flags=()
+  local -a cmd=( 'find' )    #alt: 'ls -R'
+
+  local OPTIND opt
+  while getopts ':hdlL:P:x' opt 2>/dev/null; do
+    case "$opt" in
+      d)    flags+=( '-type' d ) ;;
+      l)    cmd+=( '-L' ) ;;
+      L)    flags+=( '-maxdepth' "$OPTARG" ) ;;
+      P)    flags+=( '-name' "$OPTARG" ) ;;
+      x)    flags+=( '-xdev' ) ;;
+
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 cat <<_EOF
+Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
+
+  -d            list Directories only
+  -l            follow symbolic links
+  -L <level>    maximum traverse depth
+  -P <pattern>  must escape any wildcards
+  -x            stay on current filesystem
+
+ref: http://mama.indstate.edu/users/ice/tree/tree.1.html
+_EOF
+            return 2
+            ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  while read item; do
+    out=$( echo "$item" | sed -e 's/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|- \1/' )
+    #TODO handle filenames with spaces
+    [ -h "$item" ] && out+=" -> "`$READLINK -ve "$item"`
+    echo "$out"
+  done < <( ${DEBUG:+ runv} "${cmd[@]}" -H ${1:-.} ${flags[@]} )
+  echo
+}
+alias tree=os.tree
+
+
+function os.file.replace() {
+  # replace file and optionally take backup
+  local orig="${1:?}"
+  local new="${2:?}"
+  shift 2
+
+  #FIXME use getopt() for '-b'. and break on '--' and set filename(s) from remainder
+  # see --* handling from ec2-validate.sh and packer wrapper.
+  #TODO? use _xxx format so can be overriden from cmdline?
+  local mode uid gid context flags
+
+  # TODO Selinux Context with '%C' and --context=$context. check with 'getenforce' first
+  #FIXME test for symlink and output %N ('link' -> 'real dest'), parse and strip quotes?
+
+  # non-priv can stat restricted files if can walk intervening paths
+  read -r mode uid gid context \
+      < <(stat --format='%a %U %G' "$orig" 2>/dev/null)
+
+  # clear parameters if our own
+  [ "$uid" = "`id -nu`" ] && unset uid
+  [ "$gid" = "`id -ng`" ] && unset gid
+
+  ${DEBUG:+runv} ${uid:+$SUDO} install ${VERBOSE:+ -v} ${mode:+ -m $mode} \
+      ${uid:+ -o $uid} ${gid:+ -g $gid} ${context:+ --context=$context} \
+      ${flags:- -b} "$new" "$orig"
+}
+alias replace_file='os.file.replace'
+
+
+#TODO move to .functions_os
+#function userinfo() {
+#  # analogous to /bin/usermod
+#  #while [ "${1+xxx}" ] && [[ "$1" =~ -* ]]; do
+#  local OPTIND
+##  FIXME use getopts like a sane person!
+#  [[ "$1" =~ -* ]] && { flag=${1:1:1}; shift; }
+#
+##FIXME define a HASH for lookups instead of this crap
+#  case $flag in
+#    l)  field=1 ;;&
+#    u)  field=2 ;;&
+#    g)  field=3 ;;&
+#    d)  field=6 ;;&
+#    L)  field=lock ;&
+#    # TODO needs if/else
+#XX    p)  getent shadow ${1:-`id -u`} | awk -F: -v field=$field '{ print $2 }' ;;
+#XX    '') id -nu $1 ;;
+#XX    *)  getent passwd ${1:-`id -u`}
+#  esac
+#  # login:x:uid:gid:gecos:home:shell
+#  -c, --comment COMMENT         new value of the GECOS field
+#  -d, --home HOME_DIR           new home directory for the user account
+#  -e, --expiredate EXPIRE_DATE  set account expiration date to EXPIRE_DATE
+#  -f, --inactive INACTIVE       set password inactive after expiration
+#  -g, --gid GROUP               force use GROUP as new primary group
+#  -G, --groups GROUPS           new list of supplementary GROUPS
+#  -l, --login NEW_LOGIN         new value of the login name
+#  -L, --lock                    lock the user account
+#  -p, --password PASSWORD       use encrypted password for the new password
+#  -s, --shell SHELL             new login shell for the user account
+#  -u, --uid UID                 new UID for the user account
+#}
+
 
 # vim: expandtab:ts=4:sw=4

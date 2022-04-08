@@ -1,6 +1,6 @@
 is_exec git && {
 #--- BEGIN git ---
-alias gsb='\git --status --short --branch'
+alias gsb='\git status --short --branch'
 alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 
 function __GIT() {
@@ -13,11 +13,12 @@ function git.bulk_add() {
   [ $# -gt 0 ] || set -- M A D R
   while (( $# )); do
     __GIT add `git status --short | awk -v code=$1 '$1 ~ code { print $2 }'`
+   shift
   done
 }
 
 function git.mirror() {
-  local BRANCH interactive=0
+  local BRANCH interactive
 
   local OPTIND opt
   while getopts 'i' opt; do
@@ -50,14 +51,14 @@ function git.mirror() {
     else
       echo -e "\n<< $br >>\n"
     fi
-    __GIT push --prune "$dst" "${br}:refs/heads/${br#*/}"
+    __GIT push --prune "$dest" "${br}:refs/heads/${br#*/}"
     echo
   done
 
   echo '----------'
   echo "process TAGS ..."
   echo
-  __GIT push "$dst" --tags
+  __GIT push "$dest" --tags
   #alt: ... 'refs/tags/*:refs/tags/*'
 }
 #--- END git ---
