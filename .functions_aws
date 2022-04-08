@@ -6,7 +6,7 @@ shopt -s extglob
 
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 __aws_bin=`VERBOSE=1; is_exec "aws${AWS_VERSION}"` || exit 2
-__aws_api=`$__aws_bin --version | awk '{ split($1, terms, "/"); print terms[2]; }'`
+__aws_api=`"$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }'`
 
 # safety fall-back when neither AWS_DEFAULT_REGION or configuration defaults
 declare -Ar __aws_defaults=(

@@ -43,7 +43,6 @@ alias aws.clearenv='aws.profile RESET'
 alias aws='__AWS'
 alias ec2.connect='__AWS ssm start-session --target'
 
-
 function aws.printenv() { for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
 
 function aws.region() {
