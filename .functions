@@ -647,10 +647,9 @@ function log.error() {
   exit ${RC:-$rc}
 }
 
+
 copy_function log.debug log.trace
-
 copy_function log.notice log.warn
-
 
 for bin in "${__required_executables[@]}"; do
   is_exec "$bin" || { log.error "missing tool ($bin)"; exit; }
