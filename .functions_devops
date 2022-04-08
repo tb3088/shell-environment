@@ -9,76 +9,27 @@ __tag=1
 #------------------
 
 
-is_exec git && {
-#----- git -----
 
-GIT='eval ${DEBUG:+ GIT_TRACE=2} \git ${NOOP:+ --dry-run} ${VERBOSE:+ --verbose} ${QUIET:+ --quiet}'
+is_exec openssl && {
+#----- openssl -----
 
-function git.current() {
-  $GIT branch | awk '$1 == "*" { print $2; exit; }'
+function cert.print() {
+  local uri=${1:?}; uri=${uri#*://}
+  local host=${uri%:*}
+  local port=${uri#*:}
+
+  [ "$host" != "$port" ] || port=${2:-443}
+
+#TODO 
+  output=`openssl s_client -connect ${host}:${port} < /dev/null`
+  [ -n "$output" ] || return
+
+  gawk 'BEGIN { RS="\n---\n"; } NR==2 { print; exit; }' <<< "$output"
+  gawk 'BEGIN { RS="\n---\n"; } NR==3 { print; exit; }' <<< "$output" |
+      openssl x509 -noout -issuer -dates -subject -serial 2>/dev/null
 }
 
-function git.add() {
-  for f in `git status -s | awk -v type=${1:-M} '$1 ~ type { print $2 }'`; do
-    ${DEBUG:+runv} $GIT add "$f"
-  done
-}
-
-function git.mirror() {
-  local src dst branch interactive
-
-  local OPTIND opt
-  while getopts 'i' opt; do
-    case "$opt" in
-      i)    interactive=1 ;;
-      :)    RC=2 log.error "missing argument (-$OPTARG)"; return ;;
-      \?)   RC=2 log.error "invalid option (-$OPTARG)" ; return ;;
-    esac
-  done
-  shift $((OPTIND-1))
-
-#TODO spit out 'git remotes' and prompt for src and dst with read()
-  : ${src:=$1}
-  : ${dst:=$2}
-  shift 2
-
-  ${DEBUG:+runv} $GIT fetch --multiple --prune ${src:?} ${dst:?} || return
-  echo
-
-  # alt: uses local as intermediary and will DESTROY any updates present in $dst
-  # git clone --mirror $src_url
-  # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
-
-  echo '----------'
-  echo "process BRANCHES ..."
-  echo
-  for br in ${@:-`\git branch --list --remote "$src/${branch:-*}"`}; do
-    if [ ${interactive:-0} -eq 1 ]; then
-      read -t 8 -n 1 -p "Copy '$br' [y/N]:  " || return
-      [ -z "${REPLY}" ] || echo
-      [ "${REPLY^^}" = 'Y' ] || continue
-    else
-      echo "> $br"
-    fi
-    ${DEBUG:+runv} $GIT push ${PRUNE:+ --prune} "$dst" "${br}:refs/heads/${br#*/}"
-    echo
-  done
-
-  echo '----------'
-  echo "process TAGS ..."
-  echo
-  ${DEBUG:+ runv} $GIT push "$dst" --tags
-  #alt: ... 'refs/tags/*:refs/tags/*'
-}
-
-#----- /git -----
-}
-
-
-is_exec docker && {
-#----- docker -----
-:
-#----- /docker -----
+#----- /openssl -----
 }
 
 return 0

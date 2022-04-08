@@ -5,12 +5,11 @@
   # add by patch & prompt
   ap = add --patch
   au = add --update
-  bls = ! "git show-branch --all --list 2>/dev/null"
+  ba = ! git.bulk_add
+  bla = ! "git show-branch --all --list 2>/dev/null"
   bv = branch --verbose
 
-  sb = status --short --branch
   co = checkout
-  cb = checkout --branch
   ci = commit --interactive
   cm = commit --message
   dfc = diff --cached
@@ -19,6 +18,7 @@
   hist = log --pretty='format:%Cred%h%Creset %C(yellow)%d%Creset - %s %C(green)%ar%Creset %C(blue)%an%Creset' --graph --all --decorate
   ll = log --graph --oneline
   lp = log --patch
+  new = checkout -b
 
   # review merge of B2 into B1: ${2:?source} ${1:?target}
   review = ! "f() { git merge-tree $(git merge-base $@ 2>/dev/null) $@; }; f"
@@ -34,8 +34,12 @@
 
   pf = ! "git prune-all; git pull --ff-only"
   prune-all = fetch --prune --prune-tags --force
-	# alt: !git tag -d $(git tag) && git fetch --tags
+  # alt: !git tag -d $(git tag) && git fetch --tags
+
   publish = ! "git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)"
+
+  render = ! git.render
+  sb = status --short --branch
 
   undo = reset --soft HEAD~
   unstage = restore --staged

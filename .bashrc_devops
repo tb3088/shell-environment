@@ -1,43 +1,113 @@
 is_exec git && {
-  alias gsb='git status --short --branch'
-  alias git.render="git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
+#--- BEGIN git ---
+alias gsb='\git --status --short --branch'
+alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
+
+function __GIT() {
+  ${DEBUG:+ runv GIT_TRACE=2} \git ${NOOP:+ --no-commit --no-ff} "$@"
 }
+
+function git.current() { __GIT branch | awk '$1 == "*" { print $2; exit; }'; }
+
+function git.bulk_add() {
+  [ $# -gt 0 ] || set -- M A D R
+  while (( $# )); do
+    __GIT add `git status --short | awk -v code=$1 '$1 ~ code { print $2 }'`
+  done
+}
+
+function git.mirror() {
+  local BRANCH interactive=0
+
+  local OPTIND opt
+  while getopts 'i' opt; do
+    case "$opt" in
+      i)    interactive=1 ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "invalid option (-$OPTARG)" ; return 2 ;;
+    esac
+  done
+  shift $((OPTIND-1))
+
+  #TODO spit out 'git remotes' and prompt for src and dst with read()
+  local src=${1:?source} dest=${2:?dest}; shift 2
+
+  __GIT prune-all --multiple "$src" "$dest" || return
+  echo
+
+  # alt: uses local as intermediary and will DESTROY any updates present in $dst
+  # git clone --mirror $src_url
+  # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
+
+  echo '----------'
+  echo "process BRANCHES ..."
+  echo
+  for br in ${@:-`__GIT branch --list --remote "$src/${BRANCH:-\*}"`}; do
+    if [ ${interactive:-0} -eq 1 ]; then
+      read -t 8 -n 1 -p "Copy '$br' [y/N]: " || return
+      [ -z "${REPLY}" ] || echo
+      [ "${REPLY^^}" = 'Y' ] || continue
+    else
+      echo -e "\n<< $br >>\n"
+    fi
+    __GIT push --prune "$dst" "${br}:refs/heads/${br#*/}"
+    echo
+  done
+
+  echo '----------'
+  echo "process TAGS ..."
+  echo
+  __GIT push "$dst" --tags
+  #alt: ... 'refs/tags/*:refs/tags/*'
+}
+#--- END git ---
+}
+
 # patterns to strip whitespace from code
 #sed -i 's/[ \t]\+$//'  dangling EOL
 #sed -i 's| {8}|\t|g'   spaces to tab
 #sed -i 's| \{1,7\}\t|\t|g'  remove prepended spaces before tabs
 
+
 is_exec python && {
 #TODO convert to function that can process args and fallback to STDIN
-  alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)'"
-  alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(json.load(sys.stdin), sys.stdout, indent=2)'"
+alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)'"
+alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(json.load(sys.stdin), sys.stdout, indent=2)'"
 }
+
 
 is_exec yq && {     #ref: https://github.com/mikefarah/yq
-  alias yaml2json='yq eval -j'
-  alias json2yaml='yq eval -P'
+alias yaml2json='yq eval -j'
+alias json2yaml='yq eval -P'
 }
 
+
 is_exec docker && {
-  alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
+alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
 }
 
 is_exec jq && {
-  # assumes delimited input with HEADER line and multi-row DATA
-  # ref: https://stackoverflow.com/questions/38860529/create-json-using-jq-from-pipe-separated-keys-and-values-in-bash
-  function csv2json() {
-    local output=`
-    jq --exit-status --raw-input --null-input --arg delim "${DELIM:-,}" '
+#--- BEGIN jq ---
+
+# assumes delimited input with HEADER line and multi-row DATA
+# ref: https://stackoverflow.com/questions/38860529/create-json-using-jq-from-pipe-separated-keys-and-values-in-bash
+function csv2json() {
+  local DELIM
+  local output=$(
+      __JQ --raw-input --null-input --arg delim "${DELIM:-,}" '
         ( input  | split($delim) ) as $keys |
         ( inputs | split($delim) ) as $vals |
-        [[ $keys, $vals ] | transpose[] | { (.[0]): .[1] }] | add // empty'` || return
+        [ [$keys, $vals] | transpose[] | {(.[0]): .[1]} ] | add // empty
+      '
+    ) || return
     # alt:
-    #   [ [$keys, $vals] | transpose[] | { key: .[0], value: .[1] } ] | from_entries'
+    # [ [$keys, $vals] | transpose[] | {key: .[0], value: .[1]} ] | from_entries'
 
-    [ -n "$output" ] && jq --slurp 'map(.)' <<< "$output"
-  }
+  __JQ --slurp 'map(.)' <<< "$output"
+}
 
-  alias tsv2json="DELIM=$'\t' csv2json"
+alias tsv2json="DELIM=$'\t' csv2json"
+#--- END jq ---
 }
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
