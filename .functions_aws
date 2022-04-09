@@ -88,18 +88,19 @@ function __AWS() {
 
     [[ "$cmd" =~ AWS_ ]] && cmd=( env "${cmd[@]}" )
   fi
+
   cmd+=( "$__aws_bin"
       '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
       '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
+      ${NOOP:+ '--dry-run'}
     )
 
-  #WARN interactive use assumes correctness and may error
+  # bail out EC2. WARN interactive use assumes correctness and may still error
   if [ -z "${AWS_DEFAULT_REGION}" ] && is_ec2; then
     region=`ec2.metadata region || "${cmd[@]}" configure get region ${AWS_PROFILE:+ --profile "$AWS_PROFILE"}`
-    [ -n "$region" ] || {
-        log.warn "region unavailable - forcing default (${__aws_defaults['region']})"
-        cmd+=( '--region' "${__aws_defaults['region']}" )
-      }
+    [ -n "$region" ] && export AWS_DEFAULT_REGION=$region ||
+        log.warn "region unavailable. forcing default (${__aws_defaults['region']})"
+    cmd+=( '--region' "${region:-${__aws_defaults['region']}}" )
   fi
 
   # API v1 frequently ignores VPC endpoints
@@ -112,7 +113,7 @@ function __AWS() {
     ec2|sts|dynamodb|sqs)
             endpoint="$1.${AWS_DEFAULT_REGION:-$region}.amazonaws.com"
             host -s "$endpoint" &>/dev/null &&
-                cmd+=( '--endpoint-url' "https://$endpoint" ) ||
+                cmd+=( '--endpoint-url' "https://${endpoint}/" ) ||
                 log.debug "name resolution failed ($endpoint)"
             ;;
     *)      # unsupported
@@ -225,8 +226,6 @@ function aws.describe() {
 #    !(*s)  singular=1
     #expand short-cuts
     vpc*)   keyword=ec2.$keyword ;;&
-
-
     ec2.*)  cmd=( ec2 ) ;;&
     iam.*)  cmd=( iam ) ;;&
 
@@ -257,7 +256,7 @@ function aws.describe() {
     # https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-tags.html
     ec2.tag?(s))
             type='instance'
-            cmd=( describe-tags )
+            cmd+=( describe-tags )
             ;;&
     eip.tag?(s)) type='elastic-ip'
             ;;&
@@ -368,16 +367,16 @@ function aws.get() {
 #            ;;
 
     ssm.parameter?(s))
-            local -a cmd=(  )
+            # mute ParameterNotFound
             if [ $# -eq 1 ]; then
-              __AWS ssm get-parameter --with-decryption --name "${1:?parameter}" |
+              __AWS ssm get-parameter --with-decryption --name "${1:?parameter}" 2>/dev/null |
                   __JQR '.Parameter.Value'
             else
             # key and value emitted on successive lines to simplify whitespace handling.
             # consume via loop since direct eval() of ^/.+ which is not legal in SHELL:
             #   while read -r key; do read -r value; ... done
             # or IFS=$'\n' array=( `func` )
-              __AWS ssm get-parameters --names "${@:?parameter-key(s)}" --with-decryption |
+              __AWS ssm get-parameters --names "${@:?parameter-key(s)}" --with-decryption 2>/dev/null |
                   __JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
 
 #TODO return associative array so no caller parsing, use format from above
@@ -386,7 +385,7 @@ function aws.get() {
             ;;
 
     sts.account)
-            __AWS sts get-caller-identity ${region:+ --endpoint-url sts.$region.amazonaws.com} | __JQR '.Account'
+            __AWS sts get-caller-identity | __JQR '.Account'
             ;;
 
     *)      log.error "unsupported keyword ($keyword)"
