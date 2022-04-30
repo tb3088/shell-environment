@@ -30,11 +30,11 @@ fi
 
 for f in ${BASH_SOURCE}.local "$HOME"/.bashrc; do
   [ -f "$f" ] || continue
-  source "$f" || >&2 echo "RC=$? during $f"
+  source "$f"
 done
 
 : ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
-: ${PAGER:='less -RF'}
+: ${PAGER:='\less -RF'}
 export EDITOR PAGER
 
 
