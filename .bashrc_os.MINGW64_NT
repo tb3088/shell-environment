@@ -23,9 +23,8 @@ GIT_PROMPT=1
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
+  source "$f" || log.error "RC=$? during $f"
 done
 
 
 # vim: expandtab:ts=4:sw=4
-

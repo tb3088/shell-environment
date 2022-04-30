@@ -14,16 +14,14 @@ _flavor=${BASH_SOURCE##*/}
 _flavor=${_flavor#?*.}
 [ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
 
-#is_exec log || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
 [ `id -u` -eq 0 ] || : ${SUDO:=sudo}
 [ `ps -p 1 -o comm= 2>/dev/null` != 'systemd' ]
 SYSTEMD=$?
 
 function proc.cache-hit () {
-  [ $EUID -eq 0 ] || { echo "insufficent privileges (root)"; return 2; }
-
-  read rchar wchar rbytes wbytes <<< $( cat /proc/${1:?}/io | awk '
+#  [ $EUID -eq 0 ] || { echo "insufficent privileges (root)"; return 2; }
+  read rchar wchar rbytes wbytes <<< $( $SUDO cat /proc/${1:?pid}/io | awk '
       $1 == "rchar:" { print $2 }
       $1 == "wchar:" { print $2 }
       $1 == "read_bytes:" { print $2 }

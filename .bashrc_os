@@ -22,7 +22,7 @@ for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%
   #NOTE - Mingw/MSYS don't support symlinks! The resulting file has just
   # a sigle line in it with the link target, which when sourced'd tries to
   # execute the file, which is an error.
-  source "$f" || echo >&2 "RC=$? during $f"
+  source "$f" || log.error "RC=$? during $f"
 done
 
 
