@@ -38,8 +38,8 @@ function add_program() {
       # process embedded glob patterns
       for v in `eval echo "$m"`; do
         # WARN '/**/' can be VERY slow
-        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}/"$v"*/{bin/,}"$1"; do
-          [ -x "$p" ] && { dirname "$p"; break 2; }
+        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}/"$v"*{/bin,}; do
+          [ -x "$p/$1" ] && { echo "$p"; break 2; }
         done
       done
     )
@@ -51,18 +51,21 @@ s=`__READLINK -e "$BASH_SOURCE"`
 k="${BASH_SOURCE##*/.bashrc_}"
 if [ "${s##*/.bashrc_}" != "$k" ]; then
   add_program "$k" &&
-      log.info "program added to PATH ($k)" || log.warn "program not found ($k)"
+      log.info "added to PATH ($k)" || log.warn "software not found ($k)"
+  # automatic-mode (via symlink) is forgiving
   return 0
 fi
 
+#TODO fail on error?
+declare -i RC=
 while (( $# )); do
   [ -n "$1" ] || { shift; continue; }
   add_program "$1" &&
-      log.info "program added to PATH ($1)" || log.warn "program not found ($1)"
+      log.info "added to PATH ($1)" || { RC=1; log.warn "software not found ($1)"; }
   shift
 done
 
-return 0
+return $RC
 
 
 # vim: expandtab:ts=4:sw=4
