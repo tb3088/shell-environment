@@ -2,6 +2,7 @@ is_exec git && {
 #--- BEGIN git ---
 alias gsb='\git status --short --branch'
 alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
+alias git.diff_history='\git log -p --'
 
 function __GIT() {
   ${DEBUG:+ runv GIT_TRACE=2} \git ${NOOP:+ --no-commit --no-ff} "$@"
@@ -33,33 +34,35 @@ function git.mirror() {
   #TODO spit out 'git remotes' and prompt for src and dst with read()
   local src=${1:?source} dest=${2:?dest}; shift 2
 
-  __GIT prune-all --multiple "$src" "$dest" || return
+  __GIT fetch --prune --prune-tags --force --multiple "$src" "$dest" || return
   echo
 
   # alt: uses local as intermediary and will DESTROY any updates present in $dst
   # git clone --mirror $src_url
   # (cd $src; git remote add $dst $dst_url; git push $dst --mirror; )
 
+  local -a flags=( ${VERBOSE:+ '--progresss'} )
+  [ -n "${VERBOSE+X}" ] || flags+=( '--quiet' )
   echo '----------'
   echo "process BRANCHES ..."
   echo
-  for br in ${@:-`__GIT branch --list --remote "$src/${BRANCH:-\*}"`}; do
+  for br in ${@:-`__GIT branch --list --remote "$src/${BRANCH:-*}"`}; do
     if [ ${interactive:-0} -eq 1 ]; then
       read -t 8 -n 1 -p "Copy '$br' [y/N]: " || return
       [ -z "${REPLY}" ] || echo
       [ "${REPLY^^}" = 'Y' ] || continue
     else
-      echo -e "\n<< $br >>\n"
+      echo "<< $br >>"
     fi
-    __GIT push --prune "$dest" "${br}:refs/heads/${br#*/}"
+    __GIT push "${flags[@]}" "$dest" "${br}:refs/heads/${br#*/}"
     echo
   done
 
   echo '----------'
   echo "process TAGS ..."
   echo
+  __GIT fetch "${flags[@]}" "$src" --tags
   __GIT push "$dest" --tags
-  #alt: ... 'refs/tags/*:refs/tags/*'
 }
 #--- END git ---
 }
@@ -113,7 +116,8 @@ alias tsv2json="DELIM=$'\t' csv2json"
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
+  source "$f" || { log.error "RC=$? during $f"; return; }
 done
+
 
 # vim: expandtab:ts=4:sw=4
