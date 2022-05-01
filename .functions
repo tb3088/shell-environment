@@ -12,7 +12,11 @@ set -o pipefail
 
 declare -ar __required_executables=( readlink jq curl tee )
 #TODO use 'command -v' instead
-function __WHICH() { \which --skip-alias --skip-functions "$@"; }
+function __WHICH() {
+  local args=()
+  is_cygwin && args+=( '--skip-alias' '--skip-functions' )
+  \which "${args[@]}" "$@"
+}
 function __READLINK() { ${DEBUG:+ runv} \readlink ${VERBOSE:+ -v} --no-newline "$@"; }
 
 function __JQ() { ${DEBUG:+ runv} \jq --exit-status "$@"; }
@@ -166,7 +170,9 @@ is_windows() {
     shift
   done
 }
+alias is_cygwin='is_windows'
 
+alias is_wsl='uname -r | grep -q WSL'
 
 function define() {
   # Assign a HEREDOC to a variable.
