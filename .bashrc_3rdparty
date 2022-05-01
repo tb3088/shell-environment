@@ -18,16 +18,16 @@ declare -A __3rdparty_map=(
   )
 
 function add_program() {
-  is_exec "${1:?}" &>/dev/null && return
+  is_exec "${1:?}" && return
 
   local m=${__3rdparty_map[$1]}
   [ -n "$m" ] || { log.error "unknown software ($1)"; return; }
 
   if [ "${m:0:1}" = '/' ]; then
-    for p in "$m"/{bin/,}"$1"; do
-      [ -x "$p" ] && { addPath `dirname "$p"`; return; }
+    for p in "$m"{/bin,}; do
+      [ -x "$p/$1" ] && { addPath "$p"; break; }
     done
-    return 1
+    return
   fi 
 
   #TODO https://unix.stackexchange.com/questions/406216/check-for-bash-options
@@ -49,12 +49,20 @@ function add_program() {
 
 s=`__READLINK -e "$BASH_SOURCE"`
 k="${BASH_SOURCE##*/.bashrc_}"
-[ "${s##*/.bashrc_}" = "$k" ] || { add_program "$k"; return; }
+if [ "${s##*/.bashrc_}" != "$k" ]; then
+  add_program "$k" &&
+      log.info "program added to PATH ($k)" || log.warn "program not found ($k)"
+  return 0
+fi
 
 while (( $# )); do
-  [ -n "$1" ] && add_program "$1"
+  [ -n "$1" ] || { shift; continue; }
+  add_program "$1" &&
+      log.info "program added to PATH ($1)" || log.warn "program not found ($1)"
   shift
 done
+
+return 0
 
 
 # vim: expandtab:ts=4:sw=4
