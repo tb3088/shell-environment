@@ -77,23 +77,25 @@ function __is_type() {  #NOTE! short-circuits on first error
 
   local keyword=$KEYWORD bin
   case "${keyword:=${FUNCNAME[1]#is_}}" in
-    file)   while (( $# )); do
+    dir*|file)
+            while (( $# )); do
               [ -n "$1" ] || { shift; continue; }
 
-              #alt: \readlink -qe "$1"
-              [ -f "$1" ] || {
-                  [ -n "$VERBOSE" ] && log.error "file not found ($1)"
+              [ -d "$1" -o -f "$1" ] || {
+                  [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
                   return 1
                 }
               shift
             done
             return
             ;;
-    exec*)  while (( $# )); do
+
+    command|exec*)
+            while (( $# )); do
               [ -n "$1" ] || { shift; continue; }
 
               bin=`__WHICH "$1" 2>/dev/null` || {
-                  [ -n "$VERBOSE" ] && log.error "command not found ($1)"
+                  [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
                   return 1
                 }
               [ -n "$VERBOSE" ] && echo "$bin"
@@ -101,11 +103,12 @@ function __is_type() {  #NOTE! short-circuits on first error
             done
             return
             ;;
+
     func*)  while (( $# )); do
               [ -n "$1" ] || { shift; continue; }
 
               declare -F "$1" &>/dev/null || {
-                  [ -n "$VERBOSE" ] && log.error "undefined function ($1)"
+                  [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
                   return 1
                 }
               [ -n "$VERBOSE" ] && whereis_function "$1"
@@ -113,7 +116,9 @@ function __is_type() {  #NOTE! short-circuits on first error
             done
             return
             ;;
-    read*)  local -i _readonly=1 ;;
+
+    read*)  local -i _readonly=1
+            ;;
     *)      [ -n "${__types[$keyword]}" ] || {
                 log.error "unsupported type ($keyword)"
                 return 2
@@ -128,7 +133,7 @@ function __is_type() {  #NOTE! short-circuits on first error
     _type=`type -t "$1"`
     [ ${_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag=F || flag=
 
-    whatami=`declare -p${flag} "$1" 2>/dev/null | awk '{ print $2; }'` || {
+    whatami=`declare -p${flag} "$1" | awk '{ print $2; }' 2>/dev/null` || {
         [ -n "$VERBOSE" ] && log.error "${keyword:-item} not found ($1)"
         return 1
       }
@@ -142,20 +147,21 @@ function __is_type() {  #NOTE! short-circuits on first error
   done
 }
 # data-type wrappers
-for f in array exec hash integer string file function readonly; do
+for f in array command dir{,ectory} exec{,utable} file hash integer string function readonly; do
   eval function is_$f '{ __is_type "$@"; }'
 done
 
 
-is_windows() {      #NOTE multi-arg not recommended
+is_windows() {
   [ $# -eq 0 ] && { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; }
 
   local bin
+  # multi-arg supported, but not recommended
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
     # check file or path
-    bin=`__WHICH "$1" || __READLINK "$1"` || return
+    bin=`is_exec -v "$1" || __READLINK -m "$1"` || return
     [[ "$bin" =~ ^/cygdrive ]] || file "$bin" | grep -q 'for MS Windows' || return
     shift
   done
@@ -253,8 +259,11 @@ function rename_function() {
 }
 
 
-#TODO move to os
+#TODO move to os.cygwin
 function convert_path() {
+  # Usage: caller use 'while read()' one entry per line for whitespace
+  # management if providing multiple arguments, assign to array, or set --
+  #
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
   # This *magical* behavior does NOT extend to other PATH-like variables!
   #     eg. GOPATH, RUBYPATH, RUBYLIB, PUPPET_MODULE_PATH, JAVA_HOME
@@ -268,25 +277,23 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local flags=() quote
-  local -i escape
+  local flags=() QUOTE quote opt=
+  local -i abs= escape= OPTIND
 
-  local OPTIND opt
-  while getopts ':eEqt:' opt; do
+  # do NOT default a quote character
+  [ -n "${QUOTE+X}" ] && quote=$QUOTE
+#TODO intercept long options
+  while getopts ':eEq:t:admw' opt; do
     case "$opt" in
+      a)    abs=1 ;;
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
-      q)    : ${quote:=\'}; escape=0 ;;
-      t)    #is_windows || { continue; shift; }
-            #FIXME do we really care?
-#            if egrep -q '(dos|mixed|unix|windows)' <<< "$OPTARG"; then
-              flags+=( '--type' "$OPTARG" )
-#           else
-#              log.error "unknown format ($OPTARG)"
-#              return 2
-#            fi
+      q)    quote=$OPTARG; escape=0 ;;
+      t)    \egrep -q 'unix' <<< "$OPTARG" || abs=1
+            flags+=( '--type' "$OPTARG" )
             ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      d|m|w) abs=1 ;&
       # pass-thru unhandled args
       \?)   flags+=( "-$OPTARG" )
       #h)
@@ -294,22 +301,17 @@ function convert_path() {
   done
   shift $((OPTIND - 1))
 
-  #TODO detect bad input, word-split on PATHSEP?
-
-  # read from stdin if no args
-  set -- "${@:-$(</dev/stdin)}"
-
   while (( $# )); do
     # silently ignore empty param
-    [ -n "$1" ] || { echo; shift; continue; }
+    [ -n "$1" ] || { shift; continue; }
 
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
-    if is_windows; then     # Windows programs can't handle symlinks
-      p=`__READLINK -m "$p"`
-      p=`cygpath --path "${flags[@]}" -- "$p"`
-    fi
-#TODO leverage string.quote?
+
+    [ ${abs:-0} -eq 1 ] && p=`__READLINK -m "$p"`
+    is_windows && p=`cygpath "${flags[@]}" -- "$p"`
+
+#TODO? leverage string.quote
     [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "${quote}$p${quote}"
     shift
   done
@@ -328,7 +330,8 @@ function convert_path() {
 
 function string.contains() {
 #Usage: source pattern, but more intuitive? to do 'pattern' 'source'?
-  local delim method
+  local DELIM delim METHOD
+  [ -n "${DELIM+X}" ] && delim=$DELIM
 #FIXME suggest IFS:0:1 but actually define '-x' for exact match (uses delim) or '-z' for fuzzy match?
 # '-i' for case insensitive
   : ${delim=${PATHSEP:-\:}}
@@ -337,7 +340,7 @@ function string.contains() {
   local -r sub="${delim}${2:?pattern}${delim}"
 
   # empty string inside empty is valid
-  case "$method" in
+  case "$METHOD" in
     grep)   grep -q "$sub" <<< "$source" ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
@@ -354,25 +357,40 @@ function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
   # but does NOT sub-divide arguments!
 
-  # catch null-glob case
-  (( $# )) || return
-
 #TODO use string.join() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <VARNAME> $1 $2`
 
-  local DELIM PREPEND delim= flags=(); local -i prepend=0
-  [ -n "$DELIM" ] && delim=$DELIM
-  [ "${PREPEND:-X}" = 1 ] && prepend=1
+  local PREPEND delim= opt= k= flags=()
+  local -i prepend= OPTIND
+  [ "${PREPEND:-0}" = 1 ] && prepend=1
+
+#  while getopts ':fk:' opt; do
+#    case "$opt" in
+#      f)    
+#      k)    k=$OPTARG ;;
+#      v)    local VERBOSE=1 ;;
+#      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+#      \?)   log.warn "unsupported option (-$OPTARG)"
+#    esac
+#  done
+#  shift $((OPTIND - 1))
+
+  # treat nullglob as benign
+  [ $# -ge 1 ] || return 0
 
   # short-cut to 'PATH' mode
-  [ $# -eq 1 -o "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
-#  # check variable name - WHY?
-#  [[ "$k" =~ ^[A-Za-z] ]] || { log.error "invalid variable name ($k)"; return; }
-  [ "$k" = 'PATH' ] && { delim=':'; flags+=( '-E' ); }
+  if [ -z "$k" ]; then
+    [ $# -eq 1 -o "${1:0:1}" = '/' -o "${1:0:1}" = '-' ] && k='PATH' || { k=$1; shift; }
+  fi
 
+  case "$k" in
+    PATH)   delim=':'; flags+=( '-aE' ) ;;
+  esac
   : ${delim:=${PATHSEP:-\:}}
-  local -ir __prepend=${prepend:-0}
+
+  local -ir __prepend=$prepend
   local -n kval=$k
+  local v
 
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
@@ -381,15 +399,13 @@ function addPath() {
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; } || v=$1
 
-    # expand all elements for consistent match
-    v=`__READLINK -e "${v:?path}"` || { shift; continue; }
-
-    # do *NOT* prefix call to convert_path() with '${DEBUG:+ runv}'
     v=`convert_path "${flags[@]}" "$v"`
-    if ! delim=$delim string.contains "$kval" "$v"; then
-      [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
-    fi
+    is_dir "$v" || return
 
+    if ! DELIM=$delim string.contains "$kval" "$v"; then
+      [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
+      log.debug "add element ($k, $v)"
+    fi
     shift
   done
 
@@ -400,32 +416,28 @@ function addPath() {
 
 #TODO simply treat as DELETE=1 addPath
 function rmPath() {
-  local k flag delim
+  local k flags=() delim=
 
   # short-cut to 'PATH' mode
   [ $# -eq 1 -o "${1:0:1}" = '/' ] && k='PATH' || { k=$1; shift; }
-  [ "$k" = 'PATH' ] && { delim=':' flags+=('-E'); }
+  [ "$k" = 'PATH' ] && { delim=':'; flags+=( '-aE' ); }
 
   : ${delim:=${PATHSEP:-\:}}
+
+  # expand for consistent match
+  set -- `__READLINK -m "$@"`
+
   local -n kval=$k
-
-  while (( $# )); do
-    [ -n "$1" ] || { shift; continue; }
-
-    # expand all elements for consistent match
-    v=`__READLINK -m "$1"`
-    kval=$(
-        IFS=$delim
-        read -ra items <<< "$kval"
-        # nifty way around `seq 0 ${#}-1`
+  kval=$( IFS=$delim
+      read -ra items <<< "$kval"
+      while (( $# )); do
         for i in "${!items[@]}"; do
-          [ "${items[i]}" = "$v" ] && unset items[$i]
+          [ "${items[i]}" = "$1" ] && { unset items[$1]; log.debug "remove element ($k, $1)"; }
         done
-        echo "${items[*]}"
-      )
-      #alt: sed -E "s|$v||" <<< "$kval"
-    shift
-  done
+        shift
+      done
+      echo "${items[*]}"
+    )
 
   # remove leading, trailing and any leftover repeated delimiter
   kval=${kval##$delim}; kval=${kval%%$delim}
@@ -655,7 +667,7 @@ copy_function log.debug log.trace
 copy_function log.notice log.warn
 
 for bin in "${__required_executables[@]}"; do
-  is_exec "$bin" || { log.error "missing tool ($bin)"; exit; }
+  is_exec "$bin" || log.warn "missing tool ($bin)"
 done
 
 
