@@ -83,7 +83,7 @@ readonly -f log.mask
 # recycleable function template
 read -rd '' __log_template <<'EOF'
 {
-  local -i rc=$? _exit
+  local -i rc=$? _exit RC
 
   log "$@"
   [ ${_exit:-0} -eq 1 ] || return ${RC:-$rc}
