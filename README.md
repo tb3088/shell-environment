@@ -23,16 +23,19 @@ C:/Users /home none binary 0 0
 ln -s /mnt/c/Users/$USER .USERPROFILE
 ln -s .USERPROFILE/Dropbox
 ```
-### Problematic Symlinks
-In Git-Bash (MINGW) `MSYS=winsymlinks:nativestrict` needs `SeCreateSymbolicLink` rights. Launch `gpedit.msc` and navigate to
+### HOMEDIR Symlinks
+In Git-Bash (MINGW) `MSYS=winsymlinks:native[strict]` needs `SeCreateSymbolicLink` rights. Launch `gpedit.msc` and navigate to
   `Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
 
+Add the following to `.bashrc`
 ```bash
-# prepend 'CYGWIN=winsymlinks' or 'MSYS=winsymlinks' for Native access
+# 'CYGWIN=winsymlinks' or 'MSYS=winsymlinks' for best Native integration
+```
+```
 ln -s Dropbox/Work_Projects/XXX .WPHOME
-ln -s .WPHOME/.gitconfig
-mkdir "$LOCALAPPDATA/workspace"
-ln -s "$LOCALAPPDATA/workspace"
+ln -s .WPHOME/.gitidentity
+mkdir "$LOCALAPPDATA/workspace"	    # Cygwin
+ln -s "$LOCALAPPDATA/workspace"	    # WSL: .USERPROFILE/AppData/Local/workspace
 
 # prepend is optional
 ln -s .WPHOME/.*.local .
@@ -41,7 +44,7 @@ ln -s .WPHOME/.ssh
 ```
 
 ## Environment Variables
-`GIT_PROMPT=1` adds current repo state. `AWS_*` are displayed if set.
+`GIT_PROMPT=1` adds current repo state. `AWS_*` are automatically displayed.
 
 # Suggested Packages and Dependencies
 * Bash Autocomplete
@@ -55,13 +58,14 @@ ln -s .WPHOME/.ssh
 /etc/wsl.conf
 ```
 [automount]
-enabled = true
-options = "metadata,umask=22,fmask=11"
+enabled=true
+options="metadata,umask=22,fmask=11"
 
 [interop]
-enabled = false
-appendWindowsPath = false
+enabled=false
+appendWindowsPath=false
 
 [boot]
-command=chmod a+w,o+t /run;/etc/rc.init;/etc/init.d/<service>;...
+command=chmod a+w,o+t /run;/etc/rc.local;/etc/init.d/<service>; ...
 ```
+may need `wsl --shutdown` to activate changes
