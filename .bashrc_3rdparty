@@ -48,24 +48,24 @@ function add_program() {
 
 
 s=`__READLINK -e "$BASH_SOURCE"`
-k="${BASH_SOURCE##*/.bashrc_}"
-if [ "${s##*/.bashrc_}" != "$k" ]; then
+k="${BASH_SOURCE#*.bashrc_}"
+if [ "${s#*.bashrc_}" != "$k" ]; then
   add_program "$k" &&
       log.info "added to PATH ($k)" || log.warn "software not found ($k)"
   # automatic-mode (via symlink) is forgiving
   return 0
 fi
 
-#TODO fail on error?
-declare -i RC=
 while (( $# )); do
   [ -n "$1" ] || { shift; continue; }
   add_program "$1" &&
-      log.info "added to PATH ($1)" || { RC=1; log.warn "software not found ($1)"; }
+      log.info "added to PATH ($1)" || {
+      log.warn "software not found ($1)" "skipped: ${@:1}"; break
+    }
   shift
 done
 
-return $RC
+return
 
 
 # vim: expandtab:ts=4:sw=4
