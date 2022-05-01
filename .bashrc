@@ -15,23 +15,23 @@ shopt -s nullglob
 
 for f in "$HOME"/.functions{,.local,_logging}; do
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
+  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f\n"; return; }
 done
 
-for f in "$HOME"/.{bashrc{.local,_os,_*},aliases{,.local},dircolors}; do
+for f in "$HOME"/{.bashrc{.local,_{prompt,os,*}},.aliases{,.local},.dircolors}; do
   \egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
-  source "$f" || >&2 echo "RC=$? during $f"
+  source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
-addPath PATH -"$HOME"/{,.local/}bin
+addPath -"$HOME"/{,.local/}bin
 
 # programmable completion enhancements
 # Any completions you add in ~/.bash_completion are sourced last.
 case $- in
   *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{,.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
           [ -f "$f" ] || continue
-          source "$f" || >&2 echo "RC=$? during $f"
+          source "$f" || log.error "RC=$? during $f"
         done
         ;;
   *c*)  SSH_AGENT=
