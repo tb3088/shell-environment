@@ -41,14 +41,13 @@ ln -s .WPHOME/.gitidentity
 mkdir "$LOCALAPPDATA/workspace"	    # Cygwin
 ln -s "$LOCALAPPDATA/workspace"	    # WSL: .USERPROFILE/AppData/Local/workspace
 
-# prepend is optional
 ln -s .WPHOME/.*.local .
 ln -s .WPHOME/.aws
 ln -s .WPHOME/.ssh
 ```
 
 ## Environment Variables
-`GIT_PROMPT=1` adds current repo state. `AWS_*` are automatically displayed.
+`GIT_PROMPT=1` shows current repo state. `AWS_*` are automatically displayed.
 
 # Suggested Packages and Dependencies
 * Bash Autocomplete
@@ -59,6 +58,10 @@ ln -s .WPHOME/.ssh
 * [Elastic Beanstalk CLI](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb-cli3-install.html)
 
 # Windows Subsystem for Linux
+Integration with Windows OS can be trickly and can have unfortunate side-effects like 
+preferring DOS/WIN commands over Linux. The `mask` directives rationalize how directory
+listings appear as WSL interprets NTFS security markings.
+
 /etc/wsl.conf
 ```
 [automount]
