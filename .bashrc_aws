@@ -8,40 +8,41 @@ declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 __tag=1
 #------------------
 
-. ${BASH_SOURCE%_*}_3rdparty aws || return
+is_windows && AWSCLI=Amazon/AWSCLIV2
+
+source ${BASH_SOURCE%_*}_3rdparty aws || return
 
 addPath /usr/local/ec2-ami-tools*/**/bin
 
 # SSM Session-Manager
 # ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
 is_exec session-manager-plugin || {
-    [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin ]] &&
-        addPath "$PROGRAMFILES"/Amazon/SessionManagerPlugin/bin
+    is_windows && addPath "$PROGRAMFILES"/Amazon/SessionManagerPlugin/bin
     # Linux installs to /usr/local/bin
   }
 
-link=`type -p aws_{,bash_}completer | head -n 1` &&
-    for bc in {/etc/,"$HOME"/.}bash_completion.d; do
-      [ -e "$bc/${link##*/}" ] && break
+link=`is_exec -v aws_{bash_,}completer | head -n 1` && {
+    bc="${HOME}/.bash_completion.d"
+    mkdir -p "$bc"
+    [ -e "$bc/${link##*/}" ] || ln -s "$link" "$bc"/
+  }
 
-      # skip since not 'root'
-      [[ "$bc" =~ ^/etc  && `id -u` -eq 0 ]] || continue
-
-      mkdir -p "$bc"
-      ln -s "$link" "$bc"/
-    done
+for f in "${BASH_SOURCE/bashrc/functions}"; do
+  [ -f "$f" ] || continue
+  source "$f" || { log.error "RC=$? during $f"; return; }
+done
 
 # session credentials expire in 1h (default)
 export AWS_SESSION_DURATION=$((3600 * 8))
 
-for f in "${BASH_SOURCE/bashrc/functions}"; do
-  [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
-done
-
 alias aws.clearenv='aws.profile RESET'
 alias aws='__AWS'
 alias ec2.connect='__AWS ssm start-session --target'
+alias ec2.disconnect='__AWS ssm terminate-session --session'
+
+function ec2.sessions() {
+  __AWS ssm describe-sessions --state Active | __JQR '.Sessions[] | "\(.Target): \(.SessionId)"'
+}
 
 function aws.printenv() { for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
 
@@ -160,9 +161,7 @@ function aws.session-load() {
   local cache_dir="$HOME"/.aws/cli/cache
 
   if [ -z "$input" ]; then
-    local -a list=( $( cd "$cache_dir" 2>/dev/null &&
-       find . -type f -mmin -$((${AWS_SESSION_DURATION:-3600} / 60)) )
-     )
+    local -a list=( `cd "$cache_dir" && find . -type f -mmin -$(( ${AWS_SESSION_DURATION:-3600} / 60))` )
 
     [ ${#list[@]} -ge 1 ] || { log.warn "no cached sessions ($cache_dir)"; return; }
 
@@ -175,7 +174,7 @@ function aws.session-load() {
   fi
 
   # read file into variable
-  [ -f "$input" ] && input=$( <"$input" )
+  [ -f "$input" ] && input=$( < "$input" )
 
   __JQ . <<< "$input" &>/dev/null && format='json'
 
@@ -404,5 +403,11 @@ function iam.sshkeys {
   done
 }
 
+
+
+# IP ranges - https://ip-ranges.amazonaws.com/ip-ranges.json
+# 'EC2' ranges are for instances, not services but subset of 'AMAZON'
+#
+#   jq -r '.prefixes[] | select(.region == "us-east-1") | [select(.service=="AMAZON").ip_prefix] - [select(.service=="EC2").ip_prefix] | add // empty' ip-ranges.json
 
 # vim: expandtab:ts=8:sw=4

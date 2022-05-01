@@ -5,7 +5,7 @@
 shopt -s extglob
 
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
-__aws_bin=`VERBOSE=1; is_exec "aws${AWS_VERSION}"` || exit 2
+__aws_bin=`is_exec -v "aws${AWS_VERSION}"` || return 2
 __aws_api=`"$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }'`
 
 # safety fall-back when neither AWS_DEFAULT_REGION or configuration defaults
@@ -81,10 +81,10 @@ function __AWS() {
   # windows binary can't walk symlinks or handle unix'y paths
   if is_windows "${__aws_bin:?}"; then
     [ -n "$AWS_CONFIG_FILE" ] &&
-        cmd+=( AWS_CONFIG_FILE=`convert_path -w "$AWS_CONFIG_FILE"` )
+        cmd+=( AWS_CONFIG_FILE=`convert_path -am "$AWS_CONFIG_FILE"` )
 
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
-        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -w "$AWS_SHARED_CREDENTIALS_FILE"` )
+        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -am "$AWS_SHARED_CREDENTIALS_FILE"` )
 
     [[ "$cmd" =~ AWS_ ]] && cmd=( env "${cmd[@]}" )
   fi
@@ -98,8 +98,11 @@ function __AWS() {
   # bail out EC2. WARN interactive use assumes correctness and may still error
   if [ -z "${AWS_DEFAULT_REGION}" ] && is_ec2; then
     region=`ec2.metadata region || "${cmd[@]}" configure get region ${AWS_PROFILE:+ --profile "$AWS_PROFILE"}`
-    [ -n "$region" ] && export AWS_DEFAULT_REGION=$region ||
+
+    [ -n "$region" ] &&
+        export AWS_DEFAULT_REGION=$region ||
         log.warn "region unavailable. forcing default (${__aws_defaults['region']})"
+
     cmd+=( '--region' "${region:-${__aws_defaults['region']}}" )
   fi
 
