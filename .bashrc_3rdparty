@@ -1,12 +1,14 @@
-# simple auto-detect of supported 3rd-party software
-
+#----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+
+# must allow multiple invocation
+#------------------
 
 # Usage:
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty mvn java
 
-declare -A map=(
+declare -A __3rdparty_map=(
     ['aws']=${AWSCLI:-'aws{cli,}{v,}'$AWS_VERSION}
     ['mvn']=apache-maven
     ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'$JAVA_VERSION}
@@ -16,9 +18,9 @@ declare -A map=(
   )
 
 function add_program() {
-  is_exec "${1:?}" && return
+  is_exec "${1:?}" &>/dev/null && return
 
-  local m=${map[$1]}
+  local m=${__3rdparty_map[$1]}
   [ -n "$m" ] || { log.error "unknown software ($1)"; return; }
 
   if [ "${m:0:1}" = '/' ]; then
@@ -36,7 +38,7 @@ function add_program() {
       # process embedded glob patterns
       for v in `eval echo "$m"`; do
         # WARN '/**/' can be VERY slow
-        for p in {/opt,/usr/local,"$PROGRAMFILES"/**/,"$LOCALAPPDATA"}/"$v"*/{bin/,}"$1"; do
+        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}/"$v"*/{bin/,}"$1"; do
           [ -x "$p" ] && { dirname "$p"; break 2; }
         done
       done
@@ -46,8 +48,8 @@ function add_program() {
 
 
 s=`__READLINK -e "$BASH_SOURCE"`
-k="${BASH_SOURCE#*.bashrc_}"
-[ "${s#*/.bashrc_}" = "$k" ] || { add_program "$k"; return; }
+k="${BASH_SOURCE##*/.bashrc_}"
+[ "${s##*/.bashrc_}" = "$k" ] || { add_program "$k"; return; }
 
 while (( $# )); do
   [ -n "$1" ] && add_program "$1"

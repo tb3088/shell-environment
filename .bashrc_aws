@@ -336,7 +336,7 @@ function aws.addPath() {
       set -- "${AWS_CONFIG_FILE%/*}"/**/bin
 
   while (( $# )); do
-    [ -n "$1" -a -d "$1" ] || { shift; continue; }
+    [ -d "$1" ] || { shift; continue; }
 
     if [ ${DELETE:-0} -eq 1 ]; then
       ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${1%/bin}"/{id_*,*.pem}.pub &>/dev/null

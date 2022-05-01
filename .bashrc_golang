@@ -1,18 +1,7 @@
 return 0    # disabled
 
-is_exec go || {
-  # look for program in common places
-  declare -n v
-
-  for v in GOROOT SYSTEMDRIVE PROGRAMFILES LOCALAPPDATA; do
-    [ -n "$v" ] || continue
-#FIXME shouldn't need convert_path()
-    for p in `convert_path "$v"`/go{,lang}{,{,-,_}$GO_VERSION}; do
-      [ -x "$p/bin/go" ] && { addPath "$p/bin"; break; }
-    done
-  done
-  unset -n v
-}
+# ${GOROOT:-'go{,lang}{-,}'$GO_VERSION
+source ${BASH_SOURCE%_*}/_3rdparty go
 
 #FIXME detect if Windows binary. if so, we can't mangle paths into UNIX-style
 #https://golang.org/cmd/go/#hdr-GOPATH_environment_variable
@@ -32,7 +21,7 @@ done
 # cygpath -p $GOPATH
 #IFS="${PATHSEP:?}"
 #for v in GOPATH; do
-#    [ -d "$v/bin" ] && addPath "$v/bin"
+#    addPath "$v/bin"
 #done
 #unset IFS
 

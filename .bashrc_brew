@@ -1,6 +1,6 @@
 is_exec brew || {
     : ${HOMEBREW_PREFIX:=/home/linuxbrew/.linuxbrew}
-    [ -d "$HOMEBREW_PREFIX/bin" ] && { addPath $HOMEBREW_PREFIX/bin; export ${!HOMEBREW_*}; }
+    addPath $HOMEBREW_PREFIX/bin && export ${!HOMEBREW_*}
   }
 
 return 0
