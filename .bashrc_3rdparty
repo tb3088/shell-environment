@@ -6,7 +6,9 @@
 
 # Usage:
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
-#   2) args: .bashrc_3rdparty mvn java
+#   2) args: .bashrc_3rdparty mvn java ...
+#
+# NOTE return code will always be '0'
 
 declare -A __3rdparty_map=(
     ['aws']=${AWSCLI:-'aws{cli,}{v,}'$AWS_VERSION}
@@ -51,21 +53,20 @@ s=`__READLINK -e "$BASH_SOURCE"`
 k="${BASH_SOURCE#*.bashrc_}"
 if [ "${s#*.bashrc_}" != "$k" ]; then
   add_program "$k" &&
-      log.info "added to PATH ($k)" || log.warn "software not found ($k)"
-  # automatic-mode (via symlink) is forgiving
-  return 0
+      log.info "added to PATH ($k)" ||
+      log.warn "software not found ($k)"
 fi
 
+# multiple arguments supported, but not recommend
 while (( $# )); do
   [ -n "$1" ] || { shift; continue; }
   add_program "$1" &&
-      log.info "added to PATH ($1)" || {
-      log.warn "software not found ($1)" "skipped: ${@:1}"; break
-    }
+      log.info "added to PATH ($1)" ||
+      log.warn "software not found ($1)"    # ${2:+"skipped: ${@:2}"}
   shift
 done
 
-return
+return 0
 
 
 # vim: expandtab:ts=4:sw=4

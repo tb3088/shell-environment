@@ -10,7 +10,8 @@ __tag=1
 
 is_windows && AWSCLI=Amazon/AWSCLIV2
 
-source ${BASH_SOURCE%_*}_3rdparty aws || return 0
+source ${BASH_SOURCE%_*}_3rdparty aws
+is_exec aws || return 0
 
 addPath /usr/local/ec2-ami-tools*/**/bin
 
