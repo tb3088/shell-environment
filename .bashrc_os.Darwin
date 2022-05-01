@@ -24,7 +24,7 @@ alias ls='\ls -hAF -G'
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   [ -f "$f" ] || continue
-  source "$f" || echo >&2 "RC=$? during $f"
+  source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
 

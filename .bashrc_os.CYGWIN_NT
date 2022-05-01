@@ -57,7 +57,7 @@ shopt -s nocaseglob
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   [ -f "$f" ] || continue
-  source "$f" || log.error "RC=$? during $f"
+  source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
 
