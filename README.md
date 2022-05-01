@@ -23,14 +23,18 @@ C:/Users /home none binary 0 0
 ln -s /mnt/c/Users/$USER .USERPROFILE
 ln -s .USERPROFILE/Dropbox
 ```
-### HOMEDIR Symlinks
-In Git-Bash (MINGW) `MSYS=winsymlinks:native[strict]` needs `SeCreateSymbolicLink` rights. Launch `gpedit.msc` and navigate to
-  `Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
+### HOMEDIR sym-links
+Git-Bash (MINGW) and Cygwin need `SeCreateSymbolicLink` rights to create NTFS-native links
+(`winsymlinks:native[strict]`). Launch `gpedit.msc` and navigate to
+`Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
+However it is better to use the simple directive, or not set anything and leverage the new
+WSL-compatible reparse-points.  [reference](https://cygwin.com/faq/faq.html#faq.api.symlinks)
 
-Add the following to `.bashrc`
 ```bash
-# 'CYGWIN=winsymlinks' or 'MSYS=winsymlinks' for best Native integration
+# .bashrc_os.XXX
+CYGWIN|MSYS='winsymlinks[:lnk]'
 ```
+
 ```
 ln -s Dropbox/Work_Projects/XXX .WPHOME
 ln -s .WPHOME/.gitidentity
