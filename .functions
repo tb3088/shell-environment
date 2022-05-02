@@ -193,8 +193,8 @@ function whereis_function() {
 }
 
 
+# NOTE if "$file" sources other files, the answer is polluted.
 function list_functions() {
-#  local FILE
   while (( $# )); do
     [ -f "$1" ] || { shift; continue; }
 
@@ -204,18 +204,14 @@ function list_functions() {
   done
 
   ( shopt -s extdebug
-#    declare -F `compgen -A function` | awk -v fn="$FILE" '$3 ~ fn { printf("%-25s%s #%d\n", $1, $3, $2); }'
-     declare -F `compgen -A function` | awk '{ printf("%-25s%s #%d\n", $1, $3, $2); }'
+    declare -F `compgen -A function` | awk '{ printf("%-25s%s  #%d\n", $1, $3, $2); }'
   )
-
-#NOTE
-# if "$file" sources other files, the answer is polluted.
-#
-#  env -i /bin/bash --noprofile --norc <<_EOF
-#        source "$file" &>/dev/null
-#        compgen -A function    #alt: declare -F | cut -d' ' -f3
-#_EOF
 }
+# alt:
+# env -i /bin/bash --noprofile --norc <<_EOF
+#  source "$file" &>/dev/null
+#  compgen -A function    #alt: declare -F | cut -d' ' -f3
+#_EOF
 
 
 function copy_function() {

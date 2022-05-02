@@ -343,11 +343,12 @@ function aws.addPath() {
       ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} -d "${1%/bin}"/{id_*,*.pem}.pub &>/dev/null
       rmPath "$1"
     else
+      PREPEND=1 addPath "$1"
+
       # WARN - use 'IdentitiesOnly yes' in ssh_config or else you may
       # experience AuthFailure by virtue of too many attempts
       [ ${LOAD_SSHKEYS:-0} -eq 1 ] &&
           ${DEBUG:+ runv} ssh-add ${VERBOSE:+ -v} "${1%/bin}"/{id_*,*.pem}
-      PREPEND=1 addPath "$v"
     fi
     shift
   done
