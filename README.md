@@ -66,7 +66,7 @@ listings appear as WSL interprets NTFS security markings.
 ```
 [automount]
 enabled=true
-options="metadata,umask=22,fmask=11"
+options="metadata,umask=027"
 
 [interop]
 enabled=false
@@ -75,4 +75,4 @@ appendWindowsPath=false
 [boot]
 command=chmod a+w,o+t /run;/etc/rc.local;/etc/init.d/<service>; ...
 ```
-may need `wsl --shutdown` to activate changes
+It takes >8 seconds after exiting all WSL instances for the daemon to reload. Use `wsl --shutdown` to force the issue.
