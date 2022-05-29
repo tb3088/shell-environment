@@ -22,11 +22,7 @@ is_exec session-manager-plugin || {
     # Linux installs to /usr/local/bin
   }
 
-link=`is_exec -v aws_{bash_,}completer | head -n 1` && {
-    bc="${HOME}/.bash_completion.d"
-    mkdir -p "$bc"
-    [ -e "$bc/${link##*/}" ] || ln -s "$link" "$bc"/
-  }
+link=`is_exec -v aws_completer` && complete -C "$link" aws
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   [ -f "$f" ] || continue

@@ -1,8 +1,8 @@
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
 
 #FIXME work-in-progress
 return 0
 
-[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
 #is_exec rpm apt || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
 function detect_os() {

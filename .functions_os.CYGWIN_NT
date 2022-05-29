@@ -1,6 +1,7 @@
-
 PATHSEP=';'
 readonly PATHSEP
+
+function __WHICH() { \which --skip-alias --skip-functions "$@"; }
 
 is_exec sudo ||
 function sudo() {

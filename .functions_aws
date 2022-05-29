@@ -92,8 +92,8 @@ function __AWS() {
   cmd+=( "$__aws_bin"
       '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
       '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
-      ${NOOP:+ '--dry-run'}
     )
+  # inconsistent support for '--dry-run'
 
   # bail out EC2. WARN interactive use assumes correctness and may still error
   if [ -z "${AWS_DEFAULT_REGION}" ] && is_ec2; then
@@ -422,7 +422,7 @@ function aws.format_tag() {
       ['KkVv']='Key=%s,Value=%s'
       ['jKkVv']=
     )
-  local delim format keyword
+  local delim= format= keyword=
 
   local OPTIND opt
   while getopts ':f:h' opt; do
@@ -457,20 +457,24 @@ function aws.format_tag() {
   esac
 
   # read STDIN (pipe) if no args
-  set -- "${@:- $( </dev/stdin )}"
+  (( $# )) || set -- $( < /dev/stdin )
 
-  local -a kv
+  local -a kv=()
   local -i json
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
-    #TODO is_file "$1"
+    #TODO is_file "$1" detect JSON, or parse k=v
+#    if [ -f "$1" ]; then
+#       __JQ '.' "$1" &>/dev/null && : ${json:=1} ||
+#       set -- $( < "$f" )
+#    fi
 
     if __JQ '.' <<< "$1" &>/dev/null; then
       [ ${json:=1} -eq 1 ] || { log.error "intermixing of (non-)JSON" "$1"; return; }
-
+      [ $# -gt 1 ] || log.warn "discarding extra args" "${@:2}"
       tags=( '--cli-input-json' "$1" )  #XXX need re-encoding with to_json or @sh?
-      [ $# -gt 1 ] || log.warn "discarding extra args" "${@:1}"
+      #TODO 
       IFS=$'\n' echo "${tags[*]}"
       return
     fi
@@ -489,13 +493,14 @@ function aws.format_tag() {
 
   #TODO escape special chars like '[],' nee Key=\"[Group]\",Value=test or 'Key="[Group]",Value=test'
 
-  echo "${cmd[@]}" "${args[@]}"
-  #alt: declare -p args | sed -E 's/^declare \-. \+=//'; and consume with eval
+  echo "${tags[@]}"     # use IFS?
+  #alt: declare -p tags | sed -E 's/^declare \-. \+=//'; and consume with eval
+  # or read() from multi-line or assign to array
 }
 
 # Invoked as single-ton - use external loop, though some items allow cheating via comma-delimited
 function aws.set() {
-  local keyword resource
+  local keyword= resource=
   local -a cmd
 
   keyword=${1:?keyword}; shift
@@ -527,7 +532,7 @@ function aws.set() {
                 cmd=( delete-parameter ) ||
                 cmd=( put-parameter '--type' ${_type:-String} '--overwrite' '--value' "$2" )
 
-            __AWS ssm "${cmd[@]}" --name "${1:?key}"
+            __AWS ssm "${cmd[@]}" --name "${1:?key}" >/dev/null
             ;;
 
     *)      log.error "unsupported keyword ($keyword)"

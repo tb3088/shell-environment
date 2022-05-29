@@ -1,8 +1,11 @@
 is_exec git && {
 #--- BEGIN git ---
+
 alias gsb='\git status --short --branch'
 alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
 alias git.diff_history='\git log -p --'
+# undo unhelpful whitespace changes
+#'\git diff --ignore-space-change --numstat | awk '$1 == 0 && $2 == 0 { print $NF }' | xargs git checkout HEAD --'
 
 function __GIT() {
   ${DEBUG:+ runv GIT_TRACE=2} \git ${NOOP:+ --no-commit --no-ff} "$@"

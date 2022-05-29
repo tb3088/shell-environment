@@ -12,16 +12,12 @@ set -o pipefail
 
 declare -ar __required_executables=( readlink jq curl tee )
 #TODO use 'command -v' instead
-function __WHICH() {
-  local args=()
-  is_cygwin && args+=( '--skip-alias' '--skip-functions' )
-  \which "${args[@]}" "$@"
-}
-function __READLINK() { ${DEBUG:+ runv} \readlink ${VERBOSE:+ -v} --no-newline "$@"; }
+function __WHICH() { \which "$@"; }
+function __READLINK() { \readlink ${VERBOSE:+ -v} --no-newline "$@"; }
 
-function __JQ() { ${DEBUG:+ runv} \jq --exit-status "$@"; }
+function __JQ() { \jq --exit-status "$@"; }
 function __JQR() { __JQ "$@" | \jq --raw-output '. // empty'; }
-function __CURL() { ${DEBUG:+ runv} \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar} "$@"; }
+function __CURL() { \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar} "$@"; }
 
 # override 'exit on error' program flow
 function _continue() { [ -n "$CONTINUE" ]; }
@@ -53,7 +49,7 @@ function runv() {
 #TODO is_what() returns 'type -t' or 'declare -p' mapped back to English
 #function is_what
 
-function __is_type() {  #NOTE! short-circuits on first error
+function __is_type() {  # WARN! selective short-circuit on first error
   local -Ar __types=(
       ['a']='array'       ['array']='a'
       ['A']='hash'        ['hash']='A'
@@ -77,48 +73,42 @@ function __is_type() {  #NOTE! short-circuits on first error
   shift $((OPTIND - 1))
 
   # read STDIN (pipe) if no args
-  set -- "${@:- $( </dev/stdin )}"
+  (( $# )) || set -- $( < /dev/stdin )
 
-  local keyword=$KEYWORD bin
+  local keyword=$KEYWORD
   case "${keyword:=${FUNCNAME[1]#is_}}" in
     dir*|file)
+            local -i rc=
             while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-
-              [ -d "$1" -o -f "$1" ] || {
+              [ -d "${1:?parameter}" -o -f "$1" ] || { rc=1
                   [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
-                  return 1
                 }
               shift
             done
-            return
+            return $rc
             ;;
 
     command|exec*)
+            local -i rc=; local bin
             while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-
-              bin=`__WHICH "$1" 2>/dev/null` || {
-                  [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
-                  return 1
-                }
-              [ -n "$VERBOSE" ] && echo "$bin"
+              bin=`__WHICH "${1:?parameter}" 2>/dev/null` || rc=1
+              if [ -n "$VERBOSE" ]; then
+                [ -n "$bin" ] && echo "$bin" || log.error "command not found ($1)"
+              fi
               shift
             done
-            return
+            return $rc
             ;;
 
-    func*)  while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-
-              declare -F "$1" &>/dev/null || {
-                  [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
-                  return 1
-                }
-              [ -n "$VERBOSE" ] && whereis_function "$1"
+    func*)  local -i rc=; local fn
+            while (( $# )); do
+              fn=`declare -F "${1:?parameter}"` || rc=1
+              if [ -n "$VERBOSE" ]; then
+                [ -n "$fn" ] && { whereis_function "$1"; } || log.error "function not found ($1)"
+              fi
               shift
             done
-            return
+            return $rc
             ;;
 
     read*)  local -i _readonly=1
@@ -156,7 +146,7 @@ for f in array command dir{,ectory} exec{,utable} file hash integer string funct
 done
 
 
-is_windows() {
+function is_windows() {
   [ $# -eq 0 ] && { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; }
 
   local bin
@@ -170,9 +160,9 @@ is_windows() {
     shift
   done
 }
-alias is_cygwin='is_windows'
 
-alias is_wsl='uname -r | grep -q WSL'
+function is_wsl() { uname -r | grep -q WSL; }
+
 
 function define() {
   # Assign a HEREDOC to a variable.
@@ -182,8 +172,9 @@ function define() {
   # Usage: define VAR <<_EOF ...
 #TODO? </dev/stdin
 
-  IFS=$'\n' read -r -d '' $1 || true
+  IFS=$'\n' read -r -d '' "$1" || true
 }
+
 
 #TODO? extend to other types
 function whereis_function() {
@@ -261,7 +252,6 @@ function rename_function() {
 }
 
 
-#TODO move to os.cygwin
 function convert_path() {
   # Usage: caller use 'while read()' one entry per line for whitespace
   # management if providing multiple arguments, assign to array, or set --
@@ -291,13 +281,13 @@ function convert_path() {
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
       q)    quote=$OPTARG; escape=0 ;;
-      t)    \egrep -q 'unix' <<< "$OPTARG" || abs=1
-            flags+=( '--type' "$OPTARG" )
+      t)    flags+=( '--type' "$OPTARG" )
+            [ "$OPTARG" = 'unix' ] || abs=1
             ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       d|m|w) abs=1 ;&
       # pass-thru unhandled args
-      \?)   flags+=( "-$OPTARG" )
+      \?)   flags+=( "-${OPTARG:-$opt}" ) ;;
       #h)
     esac
   done
@@ -434,7 +424,7 @@ function rmPath() {
       read -ra items <<< "$kval"
       while (( $# )); do
         for i in "${!items[@]}"; do
-          [ "${items[i]}" = "$1" ] && { unset items[$1]; log.debug "remove element ($k, $1)"; }
+          [ "${items[i]}" = "$1" ] && { unset items[$i]; log.debug "remove element ($k, $1)"; }
         done
         shift
       done
@@ -664,12 +654,11 @@ function log.error() {
   exit ${RC:-$rc}
 }
 
-
 copy_function log.debug log.trace
 copy_function log.notice log.warn
 
 for bin in "${__required_executables[@]}"; do
-  is_exec "$bin" || log.warn "missing tool ($bin)"
+  is_exec "$bin" || { log.error "missing required tool ($bin)"; return; }
 done
 
 
