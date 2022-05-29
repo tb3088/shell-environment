@@ -6,7 +6,7 @@
 [alias]
 
 [core]
-        autocrlf = input
+	autocrlf = false
 	symlinks = true
 [pull]
 	rebase = false
