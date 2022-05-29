@@ -7,7 +7,7 @@
 #
 # symlink to this wrapper will automatically set PROFILE
 
-source "$HOME"/.functions || exit 1
+source "$HOME"/.functions || exit
 is_function log runv || { >&2 echo -e "ERROR\tmissing functions (log, runv)"; exit 1; }
 
 shopt -s nullglob extglob
@@ -157,8 +157,10 @@ function _ssh() {
     _env+=( "$v=${!v}" )
   done
 
+#  is_windows "${!_cmd}" && __READLINK -am $SSH_CONFIG $SSH_IDENTITY $SSH_KNOWN_HOSTS
+
   # Add keys to agent
-  ssh-add "${SSH_CONFIG%/*}"/*.pem
+  ssh-add "${SSH_CONFIG%/*}"/*.pem 2>/dev/null
 
   ${DEBUG:+ runv} "${_screen[@]}" \
       /bin/env "${_env[@]}" \
@@ -170,7 +172,7 @@ function _ssh() {
       "$@"
 
   # Remove keys (requires .pub files)
-  ssh-add -d "${SSH_CONFIG%/*}"/*.pem
+  ssh-add -d "${SSH_CONFIG%/*}"/*.pem 2>/dev/null
 }
 
 
