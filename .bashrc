@@ -36,6 +36,7 @@ case $- in
         ;;
   *c*)  SSH_AGENT=
 esac
+unset f
 
 #---------------
 

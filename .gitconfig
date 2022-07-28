@@ -22,3 +22,5 @@
         autoSquash = true
 [fetch]
 	pruneTags = true
+[format]
+	pretty = format:%C(auto)%h %d%C(reset) %s%n%C(green)%ar%C(reset) by %C(blue)%an%Creset

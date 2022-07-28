@@ -2,44 +2,69 @@
 # do NOT use single-quotes around shell invocation, /bin/sh must be Bash
 
 [alias]
+  amend = commit --amend --message
   # add by patch & prompt
   ap = add --patch
   au = add --update
-  ba = ! git.bulk_add
-  bla = ! "git show-branch --all --list 2>/dev/null"
+  ab = ! git.bulk_add
+  bl = ! "git show-branch --list ${@:- --all} 2>/dev/null"
   bv = branch --verbose
 
   co = checkout
+  new = checkout -b
   ci = commit --interactive
   cm = commit --message
-  dfc = diff --cached
 
-  amend = commit --amend --message
-  hist = log --pretty='format:%Cred%h%Creset %C(yellow)%d%Creset - %s %C(green)%ar%Creset %C(blue)%an%Creset' --graph --all --decorate
-  ll = log --graph --oneline
-  lp = log --patch
-  new = checkout -b
+  fa = fetch-all
+  fetch-all = fetch --prune --prune-tags --force
+  # alt: !git tag -d $(git tag) && git fetch --tags
+
+  h = hist
+  hat = hist --all --tags
+  htopo = hist --topo-order
+  hist = log --graph --simplify-by-decoration
+  # alt: git config --global format.pretty
+  l = lo
+  lo = log --oneline
+  lfile = lo --name-only
+  # tip: 'hash..[branch] --reverse' gives nice series of diffs in chronological order
+  lpatch = lo --patch
 
   # review merge of B2 into B1: ${2:?source} ${1:?target}
   review = ! "f() { git merge-tree $(git merge-base $@ 2>/dev/null) $@; }; f"
   whitespace = ! "git diff-tree --check $(git hash-object -t tree /dev/null) HEAD"
   findsha = ! "f() { git branch -r --contains ${1:?commit}; }; f"
   # see .bashrc_devops for alias to 'git.render' which strips diff markers for easy cut/paste
+  render = ! git.render
+#  publish = ! "git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)"
 
   d = diff
-  dws = diff -w
+  dc = diff --cached
+  dws = diff --ignore-all-space
   check = diff --check
   # review of <commitA> <commitB> of <file> in split-screen Vim
   dvim = difftool -t vimdiff -y
 
-  pf = ! "git prune-all; git pull --ff-only"
-  prune-all = fetch --prune --prune-tags --force
-  # alt: !git tag -d $(git tag) && git fetch --tags
+  pff = ! "git fetch-all; git pull --ff-only"
+  push1 = ! "f() { git push ${1:?remote} ${2:?hash}:${3:?branch}; }; f"
 
-  publish = ! "git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)"
-
-  render = ! git.render
   sb = status --short --branch
+  tl = tag --sort=-taggerdate
+  # alt: git config --global --add tag.sort -taggerdate
 
   undo = reset --soft HEAD~1
+#  redo = 
   unstage = restore --staged
+# alt: reset [HEAD|hash] -- <file ...>
+
+
+# Nifty way to truncate remote, re-order local, and re-push
+#   git reset --soft <hash>	    where to start over
+#   git stash
+#   git push -f <remote> [branch]   truncate remote to match local
+#   git stash pop; git reset HEAD   restore starting state
+#   git rebase -i HEAD~N	    where N is commits to re-order, (can we use hash.. instead?)
+#   git push <remote> [<hash>:<branch>] for full, or partial but contiguous
+
+
+#git revert --no-commit <begin>..<end>

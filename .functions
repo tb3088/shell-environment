@@ -534,6 +534,41 @@ function join_quote() { QUOTE=\' string.join "$@"; }
   # option="${option%%[<{().[]*}"
   # printf '%s\n' "${option/=*/=}"
 # }
+#
+# another long-option solution
+# ARGS=$(getopt --options +ade:f:hn:lp:s:w: \
+       # --long auto-servernum,error-file:auth-file:,help,server-num:,listen-tcp,xauth-protocol:,server-args:,wait: \
+       # --name "$PROGNAME" -- "$@")
+# GETOPT_STATUS=$?
+
+# if [ $GETOPT_STATUS -ne 0 ]; then
+    # error "internal error; getopt exited with status $GETOPT_STATUS"
+    # exit 6
+# fi
+
+# eval set -- "$ARGS"
+
+# while :; do
+    # case "$1" in
+        # -a|--auto-servernum) SERVERNUM=$(find_free_servernum) ;;
+        # -d|--auto-display) AUTO_DISPLAY=1 ;;
+        # -e|--error-file) ERRORFILE="$2"; shift ;;
+        # -f|--auth-file) AUTHFILE="$2"; shift ;;
+        # -h|--help) SHOWHELP="yes" ;;
+        # -n|--server-num) SERVERNUM="$2"; shift ;;
+        # -l|--listen-tcp) LISTENTCP="" ;;
+        # -p|--xauth-protocol) XAUTHPROTO="$2"; shift ;;
+        # -s|--server-args) XVFBARGS="$2"; shift ;;
+        # -w|--wait) STARTWAIT="$2"; shift ;;
+        # --) shift; break ;;
+        # *) error "internal error; getopt permitted \"$1\" unexpectedly"
+           # exit 6
+           # ;;
+    # esac
+    # shift
+# done
+
+
 
 
 function min() {

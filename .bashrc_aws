@@ -187,6 +187,8 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
 
     json)   local field; local -u envvar
             __JQ -MS '.Credentials' <<< "$input" | log.debug
+            # alt: source result of
+            #   jq -r 'to_entries|map("\(.key|ascii_upcase)=\(.value|tostring)")|.[]'
             for field in `keys __aws_session`; do
               envvar=`array.value __aws_session "$field"`
               local -n nref=$envvar

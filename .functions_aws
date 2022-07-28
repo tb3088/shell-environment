@@ -87,13 +87,19 @@ function __AWS() {
         cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -am "$AWS_SHARED_CREDENTIALS_FILE"` )
 
     [[ "$cmd" =~ AWS_ ]] && cmd=( env "${cmd[@]}" )
+
+    # crude search for file arguments since symlinks not supported
+    local -a args=( "$@" )
+    for ((i=0; i < $#; i++)); do
+      [[ "${args[$i]}" =~ file:// ]] && args[$i]=file://`convert_path -am "${args[$i]#file://}"`
+    done
+    set -- "${args[@]}"
   fi
 
   cmd+=( "$__aws_bin"
       '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
       '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
     )
-  # inconsistent support for '--dry-run'
 
   # bail out EC2. WARN interactive use assumes correctness and may still error
   if [ -z "${AWS_DEFAULT_REGION}" ] && is_ec2; then
@@ -122,10 +128,10 @@ function __AWS() {
     *)      # unsupported
   esac
 
+  # WARN modules have inconsistent support for '--dry-run'
+  cmd+=( '--output' json ${NOOP:+'--dry-run'} )
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
 
-  # all output in JSON
-  cmd+=( '--output' json )
   # strip DOS line-endings
   ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d $'\r'
 }
@@ -415,7 +421,7 @@ function aws.get() {
 
 
 # Abstract out incompatible syntax for setting Tags. CURSE you AWS API team, you SUCK!!
-function aws.format_tag() {
+function aws.format_tags() {
   local -Ar __printf=(
       ['kv']=     # $key=$value
       ['jKV']=    # compose JSON via eg. jq --null-input --arg K "$k" --arg V "$v" '{ "Key": $k, "Value": $v}'
@@ -441,12 +447,11 @@ function aws.format_tag() {
 
   local -a tags=()
   case "{keyword:-ec2}" in
-    sqs)    format=${__printf[XXX]}; delim=X
-            cmd=( 'XXX' )
+    sqs)    format=${__printf['kv']}; delim=','
+        # __JQR '[ to_entries[] | "\(.key)=\(.value)" ] | join(",")'
             ;;
     ddb|dynamodb)
             format=${__printf[XXX]}; delim=X
-            cmd=( 'XXX' )
             ;;
     #ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/ec2/create-tags.html
     ec2)    format=${__printf[KkVv]}
@@ -473,6 +478,7 @@ function aws.format_tag() {
     if __JQ '.' <<< "$1" &>/dev/null; then
       [ ${json:=1} -eq 1 ] || { log.error "intermixing of (non-)JSON" "$1"; return; }
       [ $# -gt 1 ] || log.warn "discarding extra args" "${@:2}"
+
       tags=( '--cli-input-json' "$1" )  #XXX need re-encoding with to_json or @sh?
       #TODO 
       IFS=$'\n' echo "${tags[*]}"
