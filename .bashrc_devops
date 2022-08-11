@@ -93,15 +93,13 @@ is_exec docker && {
 alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
 }
 
-is_exec jq && {
-#--- BEGIN jq ---
 
 # assumes delimited input with HEADER line and multi-row DATA
 # ref: https://stackoverflow.com/questions/38860529/create-json-using-jq-from-pipe-separated-keys-and-values-in-bash
 function csv2json() {
   local DELIM
   local output=$(
-      __JQ --raw-input --null-input --arg delim "${DELIM:-,}" '
+      __JQR --null-input --arg delim "${DELIM:-,}" '
         ( input  | split($delim) ) as $keys |
         ( inputs | split($delim) ) as $vals |
         [ [$keys, $vals] | transpose[] | {(.[0]): .[1]} ] | add // empty
@@ -114,8 +112,7 @@ function csv2json() {
 }
 
 alias tsv2json="DELIM=$'\t' csv2json"
-#--- END jq ---
-}
+
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   [ -f "$f" ] || continue

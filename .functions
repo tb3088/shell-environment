@@ -10,7 +10,6 @@ function is_interactive() {
 is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
 
-declare -ar __required_executables=( readlink jq curl tee )
 #TODO use 'command -v' instead
 function __WHICH() { \which "$@"; }
 function __READLINK() { \readlink ${VERBOSE:+ -v} --no-newline "$@"; }
@@ -691,10 +690,6 @@ function log.error() {
 
 copy_function log.debug log.trace
 copy_function log.notice log.warn
-
-for bin in "${__required_executables[@]}"; do
-  is_exec "$bin" || { log.error "missing required tool ($bin)"; return; }
-done
 
 
 # vim: expandtab:ts=8:sw=4
