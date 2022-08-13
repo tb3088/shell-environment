@@ -3,11 +3,14 @@
 	path = .gitaliases
 [init]
         defaultBranch = master
-[alias]
-
+[checkout]
+        defaultRemote=origin
 [core]
 	autocrlf = false
+	eol = lf
+	safecrlf = warn
 	symlinks = true
+	filemode = true
 [pull]
 	rebase = false
 	pruneTags = true
@@ -22,5 +25,8 @@
         autoSquash = true
 [fetch]
 	pruneTags = true
+	prune = true
 [format]
 	pretty = format:%C(auto)%h %d%C(reset) %s%n%C(green)%ar%C(reset) by %C(blue)%an%Creset
+[tag]
+	sort = -creatordate
