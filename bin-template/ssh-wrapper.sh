@@ -184,13 +184,12 @@ function init_logs() {
     -*) ;;  # ignore like '-v -d'
 
     [4-9])  VERBOSE=3 ;&
-    [1-3])
-        if [ -z "$SSH_VERBOSE" ]; then
-          # tone down SSH verbosity 1 level unless DEBUG set
-          [ -z "$DEBUG" ] && : $((_level--))
-          [ $_level -ge 1 ] && SSH_VERBOSE="-`printf -- '%.0sv' {1..$_level}`"
-        fi
-        ;;&
+    [1-3])  if [ -z "$SSH_VERBOSE" ]; then
+              # tone down SSH verbosity 1 level unless DEBUG set
+              [ -n "$DEBUG" ] || : $((_level--))
+              [ $_level -ge 1 ] && SSH_VERBOSE="-`printf -- '%.0sv' {1..$_level}`"
+            fi
+            ;;&
 
     # IFF advanced logging (implemented separately)
     3)      LOG_MASK='DEBUG' ;;
