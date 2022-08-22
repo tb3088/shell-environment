@@ -72,6 +72,12 @@
 # force-rewrite to remove embedded CRLF (may not always be safe)
 #   git add --renormalize .
 
+# purge merged branches
+#   for k in `git branch --format='%(refname:short)' --remote --merged develop | grep -ivE 'master|develop|release/.*'`; do
+#     [ -n "`git log -1 --since='1 years ago' -s $k`" ] || git push --delete origin ${k/origin\//}
+#   done
+# alt: git branch --remote --sort=committerdate
+
 # Nifty way to truncate remote, re-order local, and re-push
 #   git reset --soft <hash>	    where to start over
 #   git stash
