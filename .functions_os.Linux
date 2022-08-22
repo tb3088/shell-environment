@@ -1,0 +1,20 @@
+function is_lvm() {
+  ${SUDO} lvscan
+  lsblk --noheadings --output 'TYPE' "${1:?device}" | grep -q lvm ||
+      ${SUDO} lvs "${origin['lvm']}" &>/dev/null
+}
+
+function proc.cache-hit() {
+  read rchar wchar rbytes wbytes <<< $( $SUDO cat /proc/${1:?pid}/io |
+      awk '$1 == "rchar:" { print $2 }
+           $1 == "wchar:" { print $2 }
+           $1 == "read_bytes:" { print $2 }
+           $1 == "write_bytes:" { print $2 }'
+    )
+
+  echo -n "READ "; bc <<< "scale=3; (1 - $rbytes / $rchar)"
+  echo -n "WRITE "; bc <<< "scale=3; (1 - $wbytes / $wchar)"
+}
+
+
+# vim: expandtab:ts=4:sw=4

@@ -11,7 +11,7 @@ is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
 
 #TODO use 'command -v' instead
-function __WHICH() { \which "$@"; }
+function __WHICH() { \which --skip-alias --skip-functions "$@"; }
 function __READLINK() { \readlink ${VERBOSE:+ -v} --no-newline "$@"; }
 
 function __JQ() { \jq --exit-status "$@"; }
@@ -37,7 +37,8 @@ function runv() {
   local indent=`printf '%.0s+' {1..$SHLVL}`
   >&2 printf '%s %s\n' "$indent" "$*"
 
-  [ -z "$NOOP" ] || return 0
+  # set <blank> is insufficient
+  ${NOOP:+return 0}
 
   local command=${1/eval/${2//\`/}}
   local outf=`mktemp -t "${command##*/}-XXXXX"`
@@ -145,6 +146,8 @@ for f in array command dir{,ectory} exec{,utable} file hash integer string funct
 done
 
 
+# DO NOT MOVE - though properly belongs in .functions_os.cygwin,
+# required primarily for .functions_aws
 function is_windows() {
   [ $# -eq 0 ] && { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; }
 
@@ -159,8 +162,6 @@ function is_windows() {
     shift
   done
 }
-
-function is_wsl() { uname -r | grep -q WSL; }
 
 
 function define() {

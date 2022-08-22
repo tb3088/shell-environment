@@ -1,5 +1,11 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced"; exit 2; }
 
+
+function is_wsl() { uname -r | grep -q WSL; }
+
+#TODO is_linux, or is_os that can emit solaris, windows, cygwin, etc
+
+
 #FIXME work-in-progress
 return 0
 
