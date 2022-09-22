@@ -12,7 +12,7 @@ set -o pipefail
 
 #TODO use 'command -v' instead
 function __WHICH() { \which --skip-alias --skip-functions "$@"; }
-function __READLINK() { \readlink ${VERBOSE:+ -v} --no-newline "$@"; }
+function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
 
 function __JQ() { \jq --exit-status "$@"; }
 function __JQR() { __JQ "$@" | \jq --raw-output '. // empty'; }

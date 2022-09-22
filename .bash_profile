@@ -3,8 +3,8 @@ umask 022
 export PATH MANPATH
 export LANG='en_US.utf8'
 
-# kill WINDOWS environment PATH inheritance, but MUST be set in ControlPanel
-#CYGWIN_NOWINPATH=1
+# kill WINDOWS' PATH inheritance, but MUST set in ControlPanel->System->Environment
+# see logic in /etc/profile via CYGWIN_NOWINPATH
 
 if [ -z "$SSH_AUTH_SOCK" -a `type -p ssh-agent` ]; then
   eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
