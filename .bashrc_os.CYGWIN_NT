@@ -24,7 +24,7 @@ _flavor=${_flavor#?*.}
 #  since 2020 cygwin defaults to WSL reparse points w/ POSIX path
 #
 # for absolute best/seamless integration use 'lnk'
-DELIM= string.contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:lnk'
+#DELIM= string.contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
 
 # prevent fork-bomb if cmd.exe unavailable
 [ -z "${CYGWIN_NOWINPATH+X}" ] && is_exec cmd.exe &&

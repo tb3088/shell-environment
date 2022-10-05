@@ -41,6 +41,7 @@
 
   pff = ! "git fetch-all; git pull --ff-only"
   push1 = ! "f() { git push ${1:?remote} ${2:?hash}:${3:?branch}; }; f"
+  push-all = ! "for rem in `git remote`; do echo -e $rem\t...; git push $rem; echo; done"
 
   sb = status --short --branch
 
