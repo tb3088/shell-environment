@@ -11,7 +11,7 @@ is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
 
 #TODO use 'command -v' instead
-function __WHICH() { \which --skip-alias --skip-functions "$@"; }
+function __WHICH() { \command -v "$@"; }
 function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
 
 function __JQ() { \jq --exit-status "$@"; }
