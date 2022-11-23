@@ -40,8 +40,8 @@ function add_program() {
       # process embedded glob patterns
       for v in `eval echo "$m"`; do
         # WARN '/**/' can be VERY slow
-        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}/"$v"*{/bin,}; do
-          [ -x "$p/$1" ] && { echo "$p"; break 2; }
+        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}{/"$v"*,{/bin,}}; do
+          [ -x "$p/$v" ] && { echo "$p"; break 2; }
         done
       done
     )
@@ -55,11 +55,14 @@ if [ "${s#*.bashrc_}" != "$k" ]; then
   add_program "$k" &&
       log.info "added to PATH ($k)" ||
       log.warn "software not found ($k)"
+
+  return
 fi
 
 # multiple arguments supported, but not recommend
 while (( $# )); do
   [ -n "$1" ] || { shift; continue; }
+
   add_program "$1" &&
       log.info "added to PATH ($1)" ||
       log.warn "software not found ($1)"    # ${2:+"skipped: ${@:2}"}
