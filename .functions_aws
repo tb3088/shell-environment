@@ -7,6 +7,8 @@ shopt -s extglob
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 __aws_bin=`is_exec -v "aws${AWS_VERSION}"` || return
 __aws_api=`"$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }'`
+[[ ${__aws_api} > 2.3.7 ]] || { >&2 echo -e "ERROR\t CLI version too old"; return 128; }
+
 
 # safety fall-back when neither AWS_DEFAULT_REGION or configuration defaults
 declare -Ar __aws_defaults=(
@@ -26,7 +28,7 @@ declare -Ar __aws_session=(
 
 declare -Ar __aws_regex=(
     ['token']='^[0-9]{6}'
-    ['role']='^arn:aws:iam:'
+    ['role']='^arn:aws:iam::[0-9]{12}:role/'
     ['region']='^[a-z]{2}-[a-z]+-[0-9]'
     ['profile']='^[a-zA-Z]+'
   )
@@ -217,28 +219,46 @@ function is_ec2() { ec2.metadata self &>/dev/null; }
 # }
 
 function aws.describe() {
-  # returns an ARRAY of objects even if using singular keyword
-  #TODO? '-s' to force unwrap of array via post=( __JQ '.[]' )
-  #FIXME post should be JQ terms that join_string -d '|' glues together
+  # returns a series of JSON objects, optionally wrapped in array (-a)
+  local type= field= keyword sort_keys=
+  local -i force_array force_single
+  local -a filter=() query=() cmd=() post=()
 
+  local OPTIND opt
+  while getopts ':1at:w:q:h' opt; do
+    case "$opt" in
+      1)    force_single=1 ;;
+      a)    force_array=1 ;;
+      t)    filter+=( "$OPTARG" ) ;;
+      w)    keyword="$OPTARG" ;;
+#      s)    sort_keys=$OPTARG ;;
+      q)    query+=( "$OPTARG" ) ;;
 
-  #WARN !! plural supported but beware side-effects !!
-  local type= field= keyword
-  local -a filter=() cmd=() post=()
+      :)    log.error "missing argument (-$OPTARG)"
+            return 2 ;;
+      \?|*) log.error "unknown option (-$OPTARG)" ;&
+      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
 
+  # can also be injected
   [ -n "$keyword" ] || { keyword=${1:?keyword}; shift; }
 
-#TODO getopts() and support output as json, array or Hash
 #FIXME rewrite all to use --filter syntax and generic ending below
+#FIXME post should be JQ terms that join_string -d '|' glues together
 
+  #!! WARN plural supported but beware side-effects !!
   case "$keyword" in
-#    !(*s)  singular=1
-    #expand short-cuts
-    vpc*)   keyword=ec2.$keyword ;;&
+    vpc*)   ;&
     ec2.*)  cmd=( ec2 ) ;;&
     iam.*)  cmd=( iam ) ;;&
 
-#    asg|autoscaling-group)
+    asg|auto?(-)scaling-group?(s))
+            cmd=( autoscaling describe-auto-scaling-groups --auto-scaling-group-name "$@" )
+            field='AutoScalingGroups'
+            ;;
 
 #    iam.user)
 #    iam.group?)
@@ -250,10 +270,12 @@ function aws.describe() {
     s3|*bucket)
             #TODO filter
             __AWS s3api list-buckets | __JQ --arg bucket "${1:?bucket}" '.Buckets[] | select(.Name == $bucket)'
+            return
             ;;
     *bucket-policy)
             # last JQ used to un-escape embedded stanza (was: | __JQ .)
             __AWS s3api get-bucket-policy --bucket "${1:?bucket}" | __JQ '.Policy | from_json'
+            return
             ;;
 
 #    ec2|*instance)
@@ -270,6 +292,8 @@ function aws.describe() {
     eip.tag?(s)) type='elastic-ip'
             ;;&
     *tag?(s))
+            field='Tags'
+
             #TODO non-EC2 items, but do we really need?
             # sqs: list-queue-tags
             # dynamodb: list-tags-of-resource
@@ -283,16 +307,15 @@ function aws.describe() {
 
             : ${type:=${keyword%.tag*}}
             #TODO do all 'type's support filter?
-            filter=(
+            filter+=(
                 "Name=resource-type,Values=${type:?}"
                 "Name=resource-id,Values=${1:?resource-id}"
               )
             shift
 
             # select specified tags, TODO escape special chars like '[],' also use aws.format_tags()
-            [ $# -ge 1 ] && filter+=( "Name=key,Values=`join_string -zd ',' "$@"`" )
+            [ $# -ge 1 ] && filter+=( Name=key,Values=`join_string -zd ',' "$@"` )
 
-            field='Tags'
             post=( __JQ '--slurp' from_entries )
             ;;
 
@@ -302,39 +325,38 @@ function aws.describe() {
         #FIXME use filter to pick items
             __AWS elbv2 describe-target-groups |
                 __JQ --arg tg ${1:?target_group_name} '.TargetGroups[] | select(.TargetGroupName == $tg)'
+            return
             ;;
 
 #   ebs|volume) describe-volume
     *volume-attachment)
-            __AWS ec2 describe-volumes --volume-ids ${1:?volume_id} |
+            __AWS ec2 describe-volumes --volume-ids ${1:?volume_id} | \
                 __JQ '.Volumes[].Attachments[0]'
+            return
             ;;
 
     *volume-status)
-            # ok, creating, ?
-            __AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} |
+            #TODO? plural
+            __AWS ec2 describe-volume-status --volume-ids ${1:?volume_id} | \
                 __JQR '.VolumeStatuses[].VolumeStatus.Status'
+            return
             ;;
 
-    ec2.vpc) list=$1; post=( __JQ '.[]' ) ;&
-    ec2.vpcs)
-            cmd=( describe-vpcs '--vpc-ids' "${list:-$@}" )
-            #list=`join_string -zd ',' "$@"`
-            #[ -n "$list" ] && filter=( "Name=vpc-id,Values=$list" )
-            field=Vpcs
+    vpc?(s))
+            cmd+=( describe-vpcs '--vpc-ids' "$@" )
+            field='Vpcs'
             ;;
 
     ec2.vpc-endpoint-service?(s))
-            __AWS ec2 describe-vpc-endpoint-services \
-                --service-name "com.amazonaws.${AWS_DEFAULT_REGION:-${__aws_defaults[region]}}.${1:?service}" |
-                __JQ '.ServiceDetails[]'
+            cmd+=( describe-vpc-endpoint-services '--service-name'
+                "com.amazonaws.${AWS_DEFAULT_REGION:-${__aws_defaults[region]}}.${1:?service}"
+              )
+            field='ServiceDetails'
             ;;
 
     ec2.vpc-endpoint?(s))
-            cmd=( describe-vpc-endpoints '--vpc-endpoint-ids' "$@" )
-                __JQ '.VpcEndpoints[]'
-            field=VpcEndpoints
-            post=( __JQ '.[]' )
+            cmd+=( describe-vpc-endpoints '--vpc-endpoint-ids' "$@" )
+            field='VpcEndpoints'
             ;;
 
 #    target-group)
@@ -348,13 +370,32 @@ function aws.describe() {
 
   [ -n "$filter" ] && cmd+=( '--filters' "${filter[@]}" )
 
-  if [ -n "$post" ]; then
-    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field][]' | "${post[@]}"
-  elif [ -n "$field" ]; then
-    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field][]'
-  else
-    log.notice "FIXME legacy entry ($keyword)"; return 0
+  # 'query' strips default context indicated by 'field'
+  if [ -n "$query" ]; then
+    cmd+=( '--query' "${query[@]}" )
+    unset field
+  elif grep -q -- '--query' <<< "$*"; then
+    unset field
   fi
+
+# may need {} or () or ':' for ELSE case
+#TODO? handle multiple fields
+
+  #save state
+  local pf_state=`set +o | grep pipefail`
+  set +o pipefail
+  __AWS "${cmd[@]}" |
+      if [ -n "$field" ]; then __JQ --arg field "$field" '.[$field]'; else tee; fi |
+      if [ ${force_single:-0} -eq 1 ]; then __JQ '.[0]'; else __JQ '.[]'; fi |
+      if [ -n "$post" -gt 0 ]; then "${post[@]}"; else tee; fi |
+      if [ ${force_array:-0} -eq 1 ]; then __JQ '[ . ]'; else tee; fi
+  eval "$pf_state"
+
+#  if [ -n "$post" ]; then
+#    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field]' | "${post[@]}"
+#  elif [ -n "$field" ]; then
+#    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field]'
+#  fi
 }
 
 
@@ -382,10 +423,12 @@ function aws.get() {
                   __JQR '.Parameter.Value'
             else
             # key and value emitted on successive lines to simplify whitespace handling.
-            # consume via loop since direct eval() of ^/.+ which is not legal in SHELL:
+            # consume via loop since direct eval() of ^/.+ which is not legal in SHELL.
+            # Example:
             #   while read -r key; do read -r value; ... done
-            # or IFS=$'\n' array=( `func` )
-              __AWS ssm get-parameters --names "${@:?parameter-key(s)}" --with-decryption 2>/dev/null |
+            # or
+            #   IFS=$'\n' array=( `func` )
+              __AWS ssm get-parameters --names "${@:?parameter(s)}" --with-decryption 2>/dev/null |
                   __JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
 
 #TODO return associative array so no caller parsing, use format from above
@@ -558,16 +601,14 @@ function asg.suspend() {
 
 
 function asg.resume() {
-  local asg=${1:?ASG name}; shift
-
   __AWS autoscaling exit-standby \
-      --auto-scaling-group-name "$asg" \
-      ${1:+ --instance-ids "$@"}
+      --auto-scaling-group-name "${1:?ASG name}" \
+      ${2:+ --instance-ids "${@:1}"}
 }
 
 
 function asg.scale-zero() {
-  min=0 desired=0 asg.set-capacity "$@"
+  env min=0 desired=0 asg.set-capacity "$@"
 }
 
 
@@ -587,19 +628,19 @@ function asg.set-capacity() {
 
 # wrapper around aws.describe emits 2 columns: <resource id>   ["Tag:Name"] for
 # human-friendly display of items and dynamic array assembly
-# TODO? '-A' for assoc array format, '-a' for normal array and omits 2nd column
 # consume with readarray -t VAR < <(aws.list ...) or IFS=$'\n' ary=( `emit words` ), or
 # eval hsh=( `emit [x]=y words )
 
-#TODO really should be aws.get or aws.describe | aws.format -a/-A
+#TODO really should be aws.get or aws.describe | aws.printf -a/-A <field> [<2nd_field>]
 function aws.list() {
   local -i sort name
-  local OPTIND opt format
+  local OPTIND opt format= keyword field=
 
-  while getopts 'aA' opt; do
+  while getopts ':aAf:h' opt; do    # no ^':' so pass args to aws.describe()
     case "$opt" in
-      a)    format='array' ;;
-      A)    format='hash' ;;
+      a)    format='array'  ;;
+      A)    format='hash'   ;;    #TODO? use H or something else
+      f)    format=$OPTARG  ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
@@ -609,9 +650,12 @@ function aws.list() {
   done
   shift $((OPTIND - 1))
 
-  keyword=${1:?keyword}; shift
-
+  : ${keyword:=${1:?keyword}}
+#FIXME describe() returns ARRAY without '-S' flag
   case "$keyword" in
+    autoscaling-group?(s))
+            field='AutoScalingGroupName'
+            ;;
     vpc?(s)) field='VpcId' ;;
 
     *)      log.error "unsupported keyword ($keyword)"; return 2
@@ -622,18 +666,16 @@ function aws.list() {
 
   # shell-friendly output
   case "${format:-json}" in
-    a|array) aws.describe "$keyword" "$@" |
-                __JQR --arg field "$field" '.[$field], (.Tags | from_entries | .Name // "")'
+    a?(rray)|t?(ext))
+            __JQR --arg field "$field" '.[$field]'
             ;;
 
     # format? if TAB, 'while IFS=$'\t' read -t key val
     # otherwise, read key && read val
-    A|hash) aws.describe "$keyword" "$@" |
-                __JQR --arg field "$field" '"[\(.[$field])]=\(.Tags | from_entries | .Name // "" | @sh)"'
+    A|hash) __JQR --arg field "$field" '"[\(.[$field] | @sh)]=\(.Tags | from_entries | .Name | @sh)"'
             ;;
 
-    json)   aws.describe "$keyword" "$@" |
-                __JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
+    json)   __JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
                 __JQ --slurp 'add'
             ;;
     # not reached
