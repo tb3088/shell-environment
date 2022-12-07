@@ -6,7 +6,7 @@
 [checkout]
         defaultRemote=origin
 [core]
-	autocrlf = false
+	autocrlf = input
 	eol = lf
 	safecrlf = warn
 	symlinks = true

@@ -1,12 +1,12 @@
 # copy over to $APPDATA/mintty/config per https://github.com/mintty/mintty/wiki/Tips
-BoldAsFont=-1
+BoldAsFont=yes
 Columns=132
 Rows=44
 ScrollbackLines=3000
 Term=xterm-256color
 Locale=en_US
 Charset=UTF-8
-FontHeight=10
+FontHeight=12
 CopyAsRTF=no
 RightClickAction=paste
 MiddleClickAction=extend
