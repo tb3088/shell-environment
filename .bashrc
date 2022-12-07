@@ -19,7 +19,7 @@ for f in "$HOME"/.functions{,.local,_logging}; do
 done
 
 for f in "$HOME"/{.bashrc{.local,_{prompt,os,*}},.aliases{,.local},.dircolors}; do
-  \egrep -q '.swp$|.bak$|~$' <<< "$f" && continue
+  grep -E -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
