@@ -216,6 +216,7 @@ function aws.session-write() {
 }
 
 
+# alt: iam.assume-role
 function aws.session() {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
@@ -327,6 +328,19 @@ function aws.session() {
 }
 
 
+function iam.assume-role() {
+  : ${ROLE_ARN:=$1}
+  local session_name=`printf '%.35s-%d' "${ROLE_ARN#*:role/}" $$`
+
+  set -a
+  read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
+      __AWS sts assume-role --output text --role-arn "${ROLE_ARN:?}" \
+          --role-session-name "${session_name}" \
+          --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]'
+    )
+  set +a
+}
+
 #TODO? call recursively
 function aws.addPath() {
   local -i DELETE LOAD_SSHKEYS
@@ -382,7 +396,7 @@ function aws.route53-export() {
 
 #TODO rewrite as aws.describe() item
 function iam.sshkeys {
-  # Example: $FUNCNAME `__AWS iam get-group --group-name <group> | JQR '.Users[].UserName'`
+  # Example: $FUNCNAME __AWS iam get-group --group-name <group> pipe JQR '.Users[].UserName'
   local -u format
   local status
 

@@ -11,11 +11,17 @@ Cygwin 'git' may complain about some of the submodules so add `ignore = all` to 
 
 ## Integration
 Dropbox and environment-specific hooks (eg. Windows/Cygwin) can be helpful.
+Use `mklink` on certain shared paths to exure maximum compatability.
 
 ### Tie in Windows to Cygwin
 ```
 #/etc/fstab
 C:/Users /home none binary 0 0
+```
+let Windows tools understand /cygpath/ via CMD.exe
+```
+mkdir C:\cygdrive; cd C:\cygpath
+mklink /J c C:\
 ```
 
 ### Tie in Window to WSL
@@ -30,20 +36,21 @@ Git-Bash (MINGW) and Cygwin need `SeCreateSymbolicLink` rights to create NTFS-na
 However it is better to use the simple directive, or not set anything and leverage the new
 WSL-compatible reparse-points.  [reference](https://cygwin.com/faq/faq.html#faq.api.symlinks)
 
+
 ```bash
-# .bashrc_os.XXX
-CYGWIN|MSYS='winsymlinks[:lnk]'
+# .bashrc_os.cygwin|msys
+#CYGWIN|MSYS='winsymlinks[:lnk]'    NOT recommended
 ```
 
 ```
-ln -s Dropbox/Work_Projects/XXX .WPHOME
-ln -s .WPHOME/.gitidentity
-mkdir "$LOCALAPPDATA/workspace"	    # Cygwin
-ln -s "$LOCALAPPDATA/workspace"	    # WSL: .USERPROFILE/AppData/Local/workspace
+mklink /D .WPHOME Dropbox/Work_Projects/XXX
+mklink .gitidentity .WPHOME/.gitidentity
+mklink /D .aws .WPHOME/.aws
+mklink /D .ssh .WPHOME/.ssh
+mkdir "$LOCALAPPDATA/workspace"
+mklink /D workspace AppData/Local/workspace"	# WSL: .USERPROFILE/...
 
 ln -s .WPHOME/.*.local .
-ln -s .WPHOME/.aws
-ln -s .WPHOME/.ssh
 ```
 
 ## Environment Variables
