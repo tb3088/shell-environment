@@ -15,13 +15,13 @@ shopt -s nullglob
 
 for f in "$HOME"/.functions{,.local,_logging}; do
   [ -f "$f" ] || continue
-  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f\n"; return; }
+  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, execution halted.\n"; return; }
 done
 
 for f in "$HOME"/{.bashrc{.local,_{prompt,os,*}},.aliases{,.local},.dircolors}; do
   grep -E -q '.swp$|.bak$|~$' <<< "$f" && continue
   [ -f "$f" ] || continue
-  source "$f" || { log.error "RC=$? during $f"; return; }
+  source "$f" || { log.error "RC=$? during $f, execution halted."; return; }
 done
 
 addPath -"$HOME"/{,.local/}bin
