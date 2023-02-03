@@ -7,6 +7,7 @@ alias git.diff_history='\git log -p --'
 # undo unhelpful whitespace changes
 #'\git diff --ignore-space-change --numstat | awk '$1 == 0 && $2 == 0 { print $NF }' | xargs git checkout HEAD --'
 
+set -a
 function __GIT() {
   ${DEBUG:+ runv GIT_TRACE=2} \git ${NOOP:+ --no-commit --no-ff} "$@"
 }
@@ -67,6 +68,8 @@ function git.mirror() {
   __GIT fetch "${flags[@]}" "$src" --tags
   __GIT push "$dest" --tags
 }
+
+set +a
 #--- END git ---
 }
 

@@ -418,6 +418,7 @@ function iam.sshkeys {
 }
 
 
+#alt aws-session attemp https://github.com/ksperling/aws-session/blob/master/aws-session
 
 # IP ranges - https://ip-ranges.amazonaws.com/ip-ranges.json
 # 'EC2' ranges are for instances, not services but subset of 'AMAZON'
