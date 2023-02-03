@@ -50,7 +50,7 @@ export -f runv
 #TODO is_what() returns 'type -t' or 'declare -p' mapped back to English
 #function is_what
 
-function __is_type() {  # WARN! selective short-circuit on first error
+function __is_type() {  #WARN! selective short-circuit on first error
   local -Ar __types=(
       ['a']='array'       ['array']='a'
       ['A']='hash'        ['hash']='A'
@@ -458,7 +458,7 @@ function string.join() {
             ;;
       \?)   log.error "unknown option '-$OPTARG'" ;&
       h|*)  >&2 cat <<_EOF
-Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
+Usage: $FUNCNAME [ options ] <str> [<str> ...]
 
   -l        to lower case
   -u        to upper case
@@ -506,12 +506,44 @@ copy_function string.join join_string
 
 function join_quote() { QUOTE=\' string.join "$@"; }
 
+
 function bool_to_i() {
-  case ${1,,} in
-    0|false)    echo 0; false ;;
-    1|true)     echo 1; true  ;;
-  esac
+# Usage: [-u] <value|VAR_NAME> ...
+  local opt
+  local -i OPTIND _unset rc
+
+  while getopts ':u' opt; do
+    case "$opt" in
+      u)    _unset=1 ;;
+      \?)   log.error "unknown option '-$OPTARG'" ;&
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  # save state
+  local _extglob=`shopt -p extglob`
+
+  while (($#)); do
+    case ${1,,} in
+      0|false)      echo 0; false ;;
+      1|true)       echo 1; true  ;;
+      +([a-z])*)    if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
+                      local -n vref=$1
+                      vref=`$FUNCNAME "$vref"` || { [ ${_unset} -eq 1 ] && unset vref; }
+                    else
+                      local v=$1
+                      eval $v=`$FUNCNAME "${!v}"` || { [ ${_unset} -eq 1 ] && unset $v; }
+                    fi
+    esac
+    rc=$?   #NOTE returns last if $# > 1
+    shift
+  done
+
+  # restore state
+  ${_extglob}
+  return $rc
 }
+
 
 #function __parse_options() {
 # http://mywiki.wooledge.org/BashFAQ/035

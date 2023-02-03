@@ -429,9 +429,9 @@ function aws.get() {
             # or
             #   IFS=$'\n' array=( `func` )
               __AWS ssm get-parameters --names "${@:?parameter(s)}" --with-decryption 2>/dev/null |
-                  __JQR '.Parameters[] | "\(.Name)", "\(.Value)"'
+                  __JQR '.Parameters[] | .Name, .Value'
 
-#TODO return associative array so no caller parsing, use format from above
+#TODO return Bash associative array '[key]=value' to minimize caller parsing
 #                __JQR '.Parameters[] | "[\(.Name)]=\'\(.Value)\'"'
             fi
             ;;
