@@ -55,7 +55,7 @@ alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{t
 # increasing order of preference
 is_exec curl && \
   alias myip='curl -sk https://checkip.amazonaws.com/'
-# alt: https://diagnostic.opendns.com/myip'
+# alt: https://diagnostic.opendns.com/myip', https://ifconfig.me/ip, http://ipv4.icanhazip.com/
 
 is_exec nslookup && \
   alias myip='nslookup myip.opendns.com resolver1.opendns.com.'
