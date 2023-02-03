@@ -510,7 +510,7 @@ function join_quote() { QUOTE=\' string.join "$@"; }
 function bool_to_i() {
 # Usage: [-u] <value|VAR_NAME> ...
   local opt
-  local -i OPTIND _unset rc
+  local -i OPTIND _unset=0 rc
 
   while getopts ':u' opt; do
     case "$opt" in
@@ -520,14 +520,11 @@ function bool_to_i() {
   done
   shift $((OPTIND - 1))
 
-  # save state
-  local _extglob=`shopt -p extglob`
-
   while (($#)); do
     case ${1,,} in
       0|false)      echo 0; false ;;
       1|true)       echo 1; true  ;;
-      +([a-z])*)    if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
+      [a-z]*)    if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
                       local -n vref=$1
                       vref=`$FUNCNAME "$vref"` || { [ ${_unset} -eq 1 ] && unset vref; }
                     else
@@ -538,9 +535,6 @@ function bool_to_i() {
     rc=$?   #NOTE returns last if $# > 1
     shift
   done
-
-  # restore state
-  ${_extglob}
   return $rc
 }
 
