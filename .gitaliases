@@ -43,6 +43,11 @@
   push1 = ! "f() { git push ${1:?remote} ${2:?hash}:${3:?branch}; }; f"
   push-all = ! "for rem in `git remote`; do echo -e $rem\t...; git push $rem; echo; done"
 
+  # merge of $2 -> $1
+  review = ! "git merge-tree $(git merge-base ${1?dest} ${2:?source} 2>/dev/null) $1 $2"
+  dry = ! "git merge --no-commit --no-ff ${1:?source}"
+  # then 'diff --cached' and optionally 'merge --abort'
+
   sb = status --short --branch
 
 #  tl = tag --sort=-creatordate	# or 'version:refname'
@@ -57,8 +62,6 @@
 
 
 # Misc
-  # review merge of B2 into B1: ${2:?source} ${1:?dest}
-  review = ! "git merge-tree $(git merge-base ${:?dest} ${2:?source} 2>/dev/null)"
   whitespace = ! "git diff-tree --check $(git hash-object -t tree /dev/null) HEAD"
   findsha = ! "git branch -r --contains ${1:?commit}"
   # see .bashrc_devops for alias to 'git.render' which strips diff markers for easy cut/paste

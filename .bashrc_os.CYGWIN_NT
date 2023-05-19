@@ -47,13 +47,12 @@ shopt -s nocaseglob
 
 # Example of a semi-smart search, but probably best to define in .aliases.local
 # or better yet put $LOCALAPPDATA on $PATH and symlink to actual.
-#which 'notepad++' &>/dev/null || {
-#    bin='Notepad++/notepad++.exe'
-#    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
-#      dir=`convert_path -E "${!dir}"`
-#      [ -x "$dir/$bin" ] && { alias npp="run \"$dir/$bin\""; break; }
-#    done
-#  }
+which 'notepad++' &>/dev/null || {
+    bin='Notepad++/notepad++.exe'
+    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+      [ -x "${!dir}/$bin" ] && { alias npp="run $(convert_path -e "${!dir}/$bin")"; break; }
+    done
+  }
 
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
