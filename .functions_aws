@@ -535,7 +535,7 @@ function aws.format_tags() {
       [ $# -gt 1 ] || log.warn "discarding extra args" "${@:2}"
 
       tags=( '--cli-input-json' "$1" )  #XXX need re-encoding with to_json or @sh?
-      #TODO 
+      #TODO
       IFS=$'\n' echo "${tags[*]}"
       return
     fi
@@ -603,19 +603,17 @@ function aws.set() {
 
 
 function asg.suspend() {
-  local asg=${1:?ASG name}; shift
-
   __AWS autoscaling enter-standby \
-      --auto-scaling-group-name "$asg" \
+      --auto-scaling-group-name "${1:?ASG_name}" \
       --should-decrement-desired-capacity \
-      ${1:+ --instance-ids "$@"}
+      ${2:+'--instance-ids' "${@:2}"}
 }
 
 
 function asg.resume() {
   __AWS autoscaling exit-standby \
-      --auto-scaling-group-name "${1:?ASG name}" \
-      ${2:+ --instance-ids "${@:1}"}
+      --auto-scaling-group-name "${1:?ASG_name}" \
+      ${2:+'--instance-ids' "${@:2}"}
 }
 
 
@@ -625,16 +623,32 @@ function asg.scale-zero() {
 
 
 function asg.set-capacity() {
-  local -i min desired max
+  local -i min desired max OPTIND
+  local OPTARG opt
 
-  [ -n "${min}${desired}${max}" ] || return 2
-  asg=${1:?ASG name}; shift
+  while getopts ':d:m:M:h' opt; do
+    case "$opt" in
+      d)    desired=$OPTARG ;;
+      M)    max=$OPTARG ;;
+      m)    min=$OPTARG ;;
+
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  [ -n "${min}${desired}${max}" ] || {
+      log.error "none of 'min|max|desired' specified"; return 2
+    }
 
   __AWS autoscaling update-auto-scaling-group \
-      --auto-scaling-group-name "$asg" \
-      ${min:+ --min-size $min} \
-      ${desired:+ --desired-capacity $desired} \
-      ${max:+ --max-size $max}
+      --auto-scaling-group-name "${1:?ASG_name}" \
+      ${min:+'--min-size' $min} \
+      ${desired:+'--desired-capacity' $desired} \
+      ${max:+'--max-size' $max} "${@:2}"
 }
 
 
@@ -644,15 +658,16 @@ function asg.set-capacity() {
 # eval hsh=( `emit [x]=y words )
 
 #TODO really should be aws.get or aws.describe | aws.printf -a/-A <field> [<2nd_field>]
+#FIXME this function doesn't actually DO anything yet!!!
 function aws.list() {
-  local -i sort name
-  local OPTIND opt format= keyword field=
+  local -i sort name OPTIND
+  local OPTARG opt format= keyword field=
 
   while getopts ':aAf:h' opt; do    # no ^':' so pass args to aws.describe()
     case "$opt" in
-      a)    format='array'  ;;
-      A)    format='hash'   ;;    #TODO? use H or something else
-      f)    format=$OPTARG  ;;
+      a)    format='array' ;;
+      A)    format='hash'  ;;
+      f)    format=$OPTARG ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
@@ -684,7 +699,7 @@ function aws.list() {
 
     # format? if TAB, 'while IFS=$'\t' read -t key val
     # otherwise, read key && read val
-    A|hash) __JQR --arg field "$field" '"[\(.[$field] | @sh)]=\(.Tags | from_entries | .Name | @sh)"'
+    A|hash) __JQR --arg field "$field" '"[\(.[$field])]=\(.Tags | from_entries | .Name | @sh)"'
             ;;
 
     json)   __JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
@@ -698,7 +713,34 @@ function aws.list() {
 }
 
 
-#function ec2.connect takes after 18f script that probes for region, VPC, and then instance
+#TODO model after 18f, probes for region, VPC, and instance when invoked with '-P' or '--prompt'
+function ec2.connect() {
+  local -i OPTIND lport rport
+  local OPTARG= opt
+  local -a cmd=()
+
+  while getopts ':L:h' opt; do
+    case "$opt" in
+      L)    # use SSH port-forward spec 'lport:remote_ip:rport'
+            lport=${OPTARG%%:*}; rport=${OPTARG##*:}
+            [ $lport -ne $rport ] || unset lport
+            [ $rport -gt 0 -a $rport -le 65535 ] || { log.error "invalid port ($rport)"; return 2; }
+            cmd+=( '--document-name' 'AWS-StartPortForwardingSession'
+                   '--parameters' "portNumber=$rport${lport:+,localPortNumber=$lport}" )
+                #alt: $((2048 + RANDOM % 1000))
+            ;;
+
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  __AWS ssm start-session --target ${1:?InstanceId} "${cmd[@]}" "${@:2}"
+}
+
 
 #function s3.restore
 #aws s3 ls s3://<bucket_name> | awk '{print $4}' | xargs -L 1 aws s3api restore-object --restore-request Days=<days> --bucket <bucket_name> --key
