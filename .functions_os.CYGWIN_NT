@@ -47,6 +47,9 @@ function sudo() {
     }
 
   ${DEBUG:+ runv} ${exec:+ exec} env ${preserve- -i} $env ${cmd:-$shell ${initial:+ -l}} $flags "$@"
+  #TODO elvated shell:
+  # powershell start-process powershell -verb runas
+  # powershell -Command "Start-Process cmd -ArgumentList '/K cd /D %CD%' -Verb RunAs"
 }
 readonly -f sudo
 
