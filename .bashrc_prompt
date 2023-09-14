@@ -105,15 +105,15 @@ fi
   fi
 
   #TODO use array with IFS
-  PS1="\n${PS_PREFIX}${_prompt}\n"
+  PS1="${PS_PREFIX}${_prompt}"
   [ $EUID -eq 0 ] && PS1+="${BRED}"
   [ $_rc -eq 0 ] && unset _rc
-  PS1+="\!${_rc:+($_rc)}$RS "${PS_SCREEN}'\$ '
+  PS1+="\n${INV}\A${RS} \!${_rc:+($_rc)}$RS ${PS_SCREEN}\$ "
 }
 
 PS_SCREEN='\[\033k\033\134\]'
-PS_PREFIX="${FCYN}\u${RS}@${FGRN}\h${RS} ${INV}\A${RS} ${FYEL}\w${RS}"
-PS1="\n${PS_PREFIX}\n\! "${PS_SCREEN}'\$ '
+PS_PREFIX="\n${FCYN}\u${RS}@${FGRN}\h${RS} ${FYEL}\w${RS}"
+PS1="${PS_PREFIX}\n\! ${PS_SCREEN}\$ "
 
 # Examples:
 # for ROOT
@@ -121,7 +121,7 @@ PS1="\n${PS_PREFIX}\n\! "${PS_SCREEN}'\$ '
 #
 #PS1="\[\e]0;\w\a\]\n\[\e[32m\]\u@\h \[\e[33m\]\w\[\e[0m\]\n\!,\j \$ "
 #\[\033[36m\][\t]\[\033[32m\][\u@\h:\[\033[33m\]\w\[\033[32m\]]-> \[\033[0m\]
-#
+
 # Whenever displaying the prompt, write the previous line to disk
 #PROMPT_COMMAND="history -a"
 declare -F __prompt >/dev/null && PROMPT_COMMAND=__prompt

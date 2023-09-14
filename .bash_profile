@@ -28,7 +28,7 @@ fi
 #[ -f "$OPENSC_LIB" -a  -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB" 2>/dev/null
 
 
-for f in ${BASH_SOURCE}.local "$HOME"/.bashrc; do
+for f in ${BASH_SOURCE}.local "$HOME"/.bashrc{_prompt,}; do
   [ -f "$f" ] || continue
   source "$f"
 done
