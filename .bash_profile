@@ -6,13 +6,14 @@ export LANG='en_US.utf8'
 # kill WINDOWS' PATH inheritance, but MUST set in ControlPanel->System->Environment
 # see logic in /etc/profile via CYGWIN_NOWINPATH
 
-if [ -z "$SSH_AUTH_SOCK" -a `type -p ssh-agent` ]; then
+#TODO? detect inside SSH session; [ -n "$SSH_CONNECTION" ]
+if [ -z "$SSH_AUTH_SOCK" ] && type -p ssh-agent >/dev/null; then
   eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
-  trap "kill -9 $SSH_AGENT_PID" EXIT
+  [ -n "$SSH_AGENT_PID" ] && trap "kill -9 $SSH_AGENT_PID" EXIT
 fi
 
 # Amazon Linux family doesn't support '-q' or much of anything
-[ -n "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
+[ -S "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
 
 # CAC/PIF card support
 #FIXME paths should come from bashrc_`uname`, not hard-coded here
@@ -28,14 +29,18 @@ fi
 #[ -f "$OPENSC_LIB" -a  -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB" 2>/dev/null
 
 
-for f in ${BASH_SOURCE}.local "$HOME"/.bashrc{_prompt,}; do
+for f in ${BASH_SOURCE}.local; do
   [ -f "$f" ] || continue
   source "$f"
 done
 
-: ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
-: ${PAGER:='\less -RF'}
-export EDITOR PAGER
+# check interactive
+[[ $- == *i* ]] || return 0
+
+for f in "$HOME"/.bashrc ; do
+  [ -f "$f" ] || continue
+  source "$f"
+done
 
 
 # vim: expandtab:ts=4:sw=4

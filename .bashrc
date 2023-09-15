@@ -7,37 +7,40 @@ ulimit -S -c 0
 ${ABORT:+ set -eE}
 ${CONTINUE:+ set +e}
 
+#---------------
+# temporary settings
 # don't search PATH for target of 'source'
 shopt -u sourcepath
-
-#---------------
 shopt -s nullglob
 
 for f in "$HOME"/.functions{,.local,_logging}; do
   [ -f "$f" ] || continue
-  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, execution halted.\n"; return; }
-done
-
-for f in "$HOME"/{.bashrc{.local,_{os,*}},.aliases{,.local},.dircolors}; do
-  grep -E -q '.swp$|.bak$|~$' <<< "$f" && continue
-  [ -f "$f" ] || continue
-  source "$f" || { log.error "RC=$? during $f, execution halted."; return; }
+  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, aborting.\n"; return; }
 done
 
 addPath -"$HOME"/{,.local/}bin
 
-# programmable completion enhancements
-# Any completions you add in ~/.bash_completion are sourced last.
 case $- in
-  *i*)  for f in {,/usr/local}/etc/{,profile.d/}bash_completion{,.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
+  *i*)  # somewhat redundant
+        for f in "$HOME"/{.bashrc{.local,_{os,*}},.aliases{,.local},.dircolors}; do
+          [ -f "$f" ] || continue
+          grep -E -q '.swp$|.bak$|~$' <<< "$f" && continue
+          source "$f" || { log.error "RC=$? during $f, aborting."; return; }
+        done
+
+        # programmable completion enhancements
+        # Any completions you add in ~/.bash_completion are sourced last.
+        for f in {,/usr/local}/etc/{,profile.d/}bash_completion{,.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
           [ -f "$f" ] || continue
           source "$f" || log.error "RC=$? during $f"
         done
+
+        : ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
+        : ${PAGER:='\less -RF'}
+        export EDITOR PAGER
         ;;
   *c*)  SSH_AGENT=
 esac
-unset f
-
 #---------------
 
 # Get immediate notification of background job termination
