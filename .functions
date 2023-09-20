@@ -10,12 +10,13 @@ function is_interactive() {
 is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
 
-#TODO use 'command -v' instead
-function __WHICH() { \command -v "$@"; }
+#NOTE 'command' is unsuitable since returns aliases and functions
+function __WHICH() { \which --skip-aliases --skip-functions "$@"; }
 function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
 
 function __JQ() { \jq --exit-status "$@"; }
 function __JQR() { __JQ "$@" | \jq --raw-output '. // empty'; }
+function __JQ_merge() { \jq --slurp 'reduce .[] as $item ({}; . * $item)'; }
 function __CURL() { \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar} "$@"; }
 
 # override 'exit on error' program flow
@@ -73,13 +74,14 @@ function __is_type() {  #WARN! selective short-circuit on first error
   done
   shift $((OPTIND - 1))
 
+  local keyword=${FUNCNAME[1]#is_}
+  local -i rc=
+
   # read STDIN (pipe) if no args
   (( $# )) || set -- $( < /dev/stdin )
 
-  local keyword=$KEYWORD
-  case "${keyword:=${FUNCNAME[1]#is_}}" in
+  case "${keyword:?}" in
     dir*|file)
-            local -i rc=
             while (( $# )); do
               [ -d "${1:?parameter}" -o -f "$1" ] || { rc=1
                   [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
@@ -89,8 +91,8 @@ function __is_type() {  #WARN! selective short-circuit on first error
             return $rc
             ;;
 
-    command|exec*)
-            local -i rc=; local bin
+#    command)    # allow alias and functions
+    exec*)  local bin
             while (( $# )); do
               bin=`__WHICH "${1:?parameter}" 2>/dev/null` || rc=1
               if [ -n "$VERBOSE" ]; then
@@ -101,7 +103,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
             return $rc
             ;;
 
-    func*)  local -i rc=; local fn
+    func*)  local fn
             while (( $# )); do
               fn=`declare -F "${1:?parameter}"` || rc=1
               if [ -n "$VERBOSE" ]; then
@@ -114,10 +116,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
 
     read*)  local -i _readonly=1
             ;;
-    *)      [ -n "${__types[$keyword]}" ] || {
-                log.error "unsupported type ($keyword)"
-                return 2
-              }
+    *)      [ -n "${__types[$keyword]}" ] || { log.error "unsupported type ($keyword)"; return; }
   esac
 
   local whatami flag _type
@@ -142,7 +141,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
   done
 }
 # data-type wrappers
-for f in array command dir{,ectory} exec{,utable} file hash integer string function readonly; do
+for f in array dir{,ectory} exec{,utable} file hash integer string function readonly; do
   eval function is_$f '{ __is_type "$@"; }'
 done
 
@@ -180,7 +179,7 @@ function define() {
 #TODO? extend to other types
 function whereis_function() {
   ( shopt -s extdebug
-    declare -F ${1:?} | awk '{ printf("%-50s#%d\n", $3, $2); }'
+    declare -F ${1:?} | awk '{ printf("%-50s #%d\n", $3, $2); }'
   )
 }
 
@@ -190,13 +189,13 @@ function list_functions() {
   while (( $# )); do
     [ -f "$1" ] || { shift; continue; }
 
-    # use sub-shell to not contaminate current, recurse
+    # use sub-shell to not contaminate current
     ( source "$1"; $FUNCNAME )
     shift
   done
 
   ( shopt -s extdebug
-    declare -F `compgen -A function` | awk '{ printf("%-25s%s  #%d\n", $1, $3, $2); }'
+    declare -F `compgen -A function` | awk '{ printf("%-25s%-50s #%d\n", $1, $3, $2); }'
   )
 }
 # alt:
@@ -251,6 +250,10 @@ function copy_function() {
 function rename_function() {
   copy_function "${1:?source}" "${2:?dest}" && unset -f "$1"
 }
+
+
+# more efficient
+is_exec pv && { is_function cat || function cat() { pv -q "$@"; }; }
 
 
 function convert_path() {
@@ -438,6 +441,7 @@ function rmPath() {
 }
 
 
+#TODO? use printf '%q'
 function string.join() {
   local flags= DELIM delim QUOTE quote ESCAPE escape
   [ -n "$DELIM" ] && delim=$DELIM
@@ -473,7 +477,11 @@ _EOF
   [ -n "${delim+X}" ] || { delim=$1; shift; }
 
   # escape whitespace, or even delimiter (rare)
-  [ -n "$quote" ] && { [ "$quote" = "$delim" ] && escape=$delim; } || : ${escape=${IFS:0:1}}
+  if [ -n "$quote" ]; then
+    [ "$quote" = "$delim" ] && escape=$delim
+  else
+    : ${escape=${IFS:0:1}}
+  fi
 
   # unset empty args and remove holes
   if [[ $flags =~ z ]]; then
@@ -487,7 +495,7 @@ _EOF
 
   [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
   #WARN unintended side-effects
-  [[ "${escape}${delim}${quote}" =~ [a-zA-Z]  && "$flags" =~ l|u ]] &&
+  [[ "${escape}${delim}${quote}" =~ [a-zA-Z] && "$flags" =~ l|u ]] &&
       log.warn "case change poses severe risk (${escape} ${delim} ${quote})"
   [[ "$flags" =~ l ]] && set -- "${@,,}"
   [[ "$flags" =~ u ]] && set -- "${@^^}"
@@ -497,12 +505,12 @@ _EOF
   # prepend each word during expansion
   local IFS=
   local str=${*/#/${quote}${delim}${quote}}
-
   # strip leading 'delim' and tack on trailing 'quote'
   echo "${str#${quote}${delim}}$quote"
 }
 # backwards compat
 copy_function string.join join_string
+
 
 function join_quote() { QUOTE=\' string.join "$@"; }
 
@@ -696,10 +704,13 @@ function min() {
 function max() { min -r "$@"; }
 
 # Array or Hash
-#TODO bash 4.2.46 doesn't support. use 'eval ${$1}'
-function keys() { local -n nref=${1:?}; echo "${!nref[@]}"; }
-function values() { local -n nref=${1:?}; echo "${nref[@]}"; }
-function value()  { local -n nref=${1:?}; echo "${nref[${2:?element}]}"; }
+#TODO bash 4.2.46 doesn't support 'nref', use 'eval ${$1}'
+#  bash 4.4 has "${!nref[@]@Q}"
+#if [[ "$BASH_VERSION" =~ 5|4.4 ]]; then
+#  function values() { local -n nref=${1:?}; printf '%s\n' "${nref[@]@Q}"; }
+function keys()   { local -n nref=${1:?}; printf '%q\n' "${!nref[@]}"; }
+function values() { local -n nref=${1:?}; printf '%q\n' "${nref[@]}"; }
+function value()  { local -n nref=${1:?}; printf '%q' "${nref[${2:?element}]}"; }
 
 function array.print() {
   local format
@@ -708,15 +719,18 @@ function array.print() {
       ['with_keys']='%s: %s\n'
       ['default']='%s\n'
     )
+
+#FIXME define 'to_hash' 'to_array' and use '%q' to properly escape specials
+#TODO deprecate in favor of something smarter?
 #TODO getopts -k for with_keys
   if [ ${with_keys:-0} -eq 1 ]; then
     : ${format:=${__formats['with_keys']}}
     for k in `keys $1`; do
-      printf "$format" "$k" `value "$1" "$k"`
+      printf "$format" "$k" "`value $1 $k`"
     done
   else
     : ${format:=${__formats['default']}}
-    printf "$format" `values "$1"`
+    printf "$format" "`values $1`"
   fi
 }
 
@@ -796,7 +810,7 @@ function log.error() {
       [[ $(\ps -p $PPID | awk 'END { print $NF; }') =~ screen ]]; then
     return ${RC:-$rc}
   fi
-  exit ${RC:-$rc}
+  _continue || exit ${RC:-$rc}
 }
 
 copy_function log.debug log.trace

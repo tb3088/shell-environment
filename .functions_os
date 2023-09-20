@@ -173,7 +173,6 @@ os.detect
 #    ;;
 #esac
 
-#[ os.is_command (check for x.com) tree -o declare -F tree ] &>/dev/null ||
 is_exec tree{,.com} ||
 function os.tree() {
   local filter= type= reverse= flags=()

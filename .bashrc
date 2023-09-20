@@ -36,7 +36,7 @@ case $- in
         done
 
         : ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
-        : ${PAGER:='\less -RF'}
+        : ${PAGER:='less -RF'}
         export EDITOR PAGER
         ;;
   *c*)  SSH_AGENT=

@@ -90,7 +90,7 @@ read -rd '' __log_template <<'EOF'
 
   # check nesting level, inside script, or screen
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
-      [[ `\ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
+     [[ `\ps -p $PPID | awk 'END { print $NF; }'` =~  screen ]]; then
     return ${RC:-$rc}
   fi
 
