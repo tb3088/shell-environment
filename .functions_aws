@@ -39,7 +39,7 @@ declare -Ar __aws_regex=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# aws ec2 describe-regions | JQR '.Regions[].RegionName | sort'
+# aws ec2 describe-regions | __JQR '.Regions[].RegionName | sort'
 [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
     ap-northeast-{1,2}
@@ -147,7 +147,7 @@ function __AWS() {
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
 
   # strip DOS line-endings
-  ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d $'\r'
+  ${DEBUG:+ runv} "${cmd[@]}" "$@"  #| tr -d $'\r'
 }
 
 
@@ -231,20 +231,18 @@ function is_ec2() { ec2.metadata self &>/dev/null; }
 # }
 
 function aws.describe() {
-  # returns a series of JSON objects, optionally wrapped in array (-a)
-  local type= field= keyword sort_keys=
-  local -i force_array force_single
+  # returns a series of JSON objects    TODO? optionally wrapped in array (-a)
+  local keyword= type field
+  local -i single sort_keys
   local -a filter=() query=() cmd=() post=()
 
   local OPTIND opt
-  while getopts ':1at:w:q:h' opt; do
+  while getopts ':1at:q:sh' opt; do
     case "$opt" in
-      1)    force_single=1 ;;
-      a)    force_array=1 ;;
-      t)    filter+=( "$OPTARG" ) ;;
-      w)    keyword="$OPTARG" ;;
-#      s)    sort_keys=$OPTARG ;;
+      1)    single=1 ;;
       q)    query+=( "$OPTARG" ) ;;
+      s)    sort_keys=1 ;;
+      t)    filter+=( "$OPTARG" ) ;;
 
       :)    log.error "missing argument (-$OPTARG)"
             return 2 ;;
@@ -255,8 +253,7 @@ function aws.describe() {
   done
   shift $((OPTIND - 1))
 
-  # can also be injected
-  [ -n "$keyword" ] || { keyword=${1:?keyword}; shift; }
+  keyword=${1:?keyword}; shift
 
 #FIXME rewrite all to use --filter syntax and generic ending below
 #FIXME post should be JQ terms that join_string -d '|' glues together
@@ -301,10 +298,16 @@ function aws.describe() {
             type='instance'
             cmd+=( describe-tags )
             ;;&
-    eip.tag?(s)) type='elastic-ip'
+
+    eip.tag?(s))
+            type='elastic-ip'
             ;;&
+
     *tag?(s))
             field='Tags'
+            function pre_process() {
+              __JQ '.[] | { (.ResourceId): { (.Key): (.Value) } }' | __JQ_merge
+            }
 
             #TODO non-EC2 items, but do we really need?
             # sqs: list-queue-tags
@@ -321,14 +324,13 @@ function aws.describe() {
             #TODO do all 'type's support filter?
             filter+=(
                 "Name=resource-type,Values=${type:?}"
-                "Name=resource-id,Values=${1:?resource-id}"
+                "Name=resource-id,Values=${1:?resource_id}"
               )
             shift
+            # specify tags
+            #TODO escape special chars like '[],' also use aws.format_tags()
+            [ $# -ge 1 ] && filter+=( Name=key,Values=`string.join -zd ',' "$@"` )
 
-            # select specified tags, TODO escape special chars like '[],' also use aws.format_tags()
-            [ $# -ge 1 ] && filter+=( Name=key,Values=`join_string -zd ',' "$@"` )
-
-            post=( __JQ '--slurp' from_entries )
             ;;
 
 #    route)
@@ -390,24 +392,24 @@ function aws.describe() {
     unset field
   fi
 
-# may need {} or () or ':' for ELSE case
-#TODO? handle multiple fields
+  # non-trivial JQ operations defined above
+  is_function pre_process || function pre_process() { cat; }
+  is_function post_process || function post_process() { cat; }
 
-  #save state
-  local pf_state=`set +o | grep pipefail`
-  set +o pipefail
+  #NOTE not found  returns '{ <field>: [] }'
+  # each pipeline is a sub-shell, hinders short-circuit on-failure
+
   __AWS "${cmd[@]}" |
-      if [ -n "$field" ]; then __JQ --arg field "$field" '.[$field]'; else tee; fi |
-      if [ ${force_single:-0} -eq 1 ]; then __JQ '.[0]'; else __JQ '.[]'; fi |
-      if [ -n "$post" -gt 0 ]; then "${post[@]}"; else tee; fi |
-      if [ ${force_array:-0} -eq 1 ]; then __JQ '[ . ]'; else tee; fi
-  eval "$pf_state"
+      if [ -n "$field" ]; then
+        __JQ --arg field "$field" '.[$field] | if length > 0 then . else empty end'
+      else cat; fi |
 
-#  if [ -n "$post" ]; then
-#    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field]' | "${post[@]}"
-#  elif [ -n "$field" ]; then
-#    __AWS "${cmd[@]}" | __JQ --arg field "${field:?}" '.[$field]'
-#  fi
+      pre_process |
+
+      if [ ${sort_keys:-0} -eq 1 ]; then __JQ --sort-keys; else cat; fi |
+      if [ ${single:-0} -eq 1 ]; then __JQ '.[0]'; else cat; fi |
+
+      post_process
 }
 
 
@@ -505,11 +507,11 @@ function aws.format_tags() {
     sqs)    format=${__printf['kv']}; delim=','
         # __JQR '[ to_entries[] | "\(.key)=\(.value)" ] | join(",")'
             ;;
-    ddb|dynamodb)
-            format=${__printf[XXX]}; delim=X
-            ;;
+#    ddb|dynamodb)
+#            format=${__printf[???]}; delim=X
+#            ;;
     #ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/ec2/create-tags.html
-    ec2)    format=${__printf[KkVv]}
+    ec2)    format=${__printf['KkVv']}
             tags=( '--tags' )
             ;;
     *)      log.error "unsupported format ($opt)"
@@ -531,8 +533,7 @@ function aws.format_tags() {
 #    fi
 
     if __JQ '.' <<< "$1" &>/dev/null; then
-      [ ${json:=1} -eq 1 ] || { log.error "intermixing of (non-)JSON" "$1"; return; }
-      [ $# -gt 1 ] || log.warn "discarding extra args" "${@:2}"
+      [ ${json:=1} -eq 1 ] || { log.error "illegal intermixing of (non-)JSON" "$1"; return; }
 
       tags=( '--cli-input-json' "$1" )  #XXX need re-encoding with to_json or @sh?
       #TODO
@@ -541,7 +542,7 @@ function aws.format_tags() {
     fi
 
     # WARN - does not handle embedded multi-line
-    kv=( `sed 's/[=,]/\n/g' <<< "$1"` )     # IFS=$'\n'
+    kv=( `sed 's/[=,]/\n/g' <<< "$1"` )     # assumes IFS=$'\n' FIXME?
     if [[ ${kv[0]:-X} =~ [kK]ey$ && ${kv[2]:-X} =~ [vV]alue$ ]]; then
       tags+=( `printf "$format" "${kv[1]}" "${kv[3]}"` )
     elif [ ${#kv[@]} -gt 1 ]; then
@@ -559,37 +560,31 @@ function aws.format_tags() {
   # or read() from multi-line or assign to array
 }
 
+
 # Invoked as single-ton - use external loop, though some items allow cheating via comma-delimited
 function aws.set() {
-  local keyword= resource=
-  local -a cmd
-
-  keyword=${1:?keyword}; shift
+  local -a cmd=()
+  local keyword=${1:?keyword}; shift
 
   case "$keyword" in
-
 #    sqs.tag)
 #    dynamodb.tag)
 #    ec2.tag)
 #    *.tag)
 
     # ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/ec2/create-tags.html
+    # Usage: item[,item]... <tags>
     ec2.tag?(s))
-            cmd=( ec2 create-tags )
-            resource=${1:?resource}
-            local -a tags=( `aws.format_tag "$@"` )
-            #alt: eval tags=`aws.format_tag "$@"`
-
-            [ ${#tags[@]} -ge 2 ] || return
-
-            __AWS "${cmd[@]}" --resources "${resource//,/ }" "${tags[@]}"
+            [ ${DELETE:-0} -eq 1 ] && cmd=( delete-tags ) || cmd=( create-tags )
+            local -a tags=( `aws.format_tags "${@:2}"` )
+            __AWS ec2 "${cmd[@]}" --resources ${1//,/ } ${tags:+'--tags'} "${tags[@]}"
             ;;
 
-    ssm.parameter)
+    ssm.parameter)  #TODO getopt for 'force' 
             #[ "$1" = '-s' ] && { secure=1; shift; }
             #or inspect ${1%%:*} where member of String, List|StringList, Secure|SecureString
-            #_type=String
-            [ -n "$DELETE" ] &&
+            local _type
+            [ ${DELETE:-0} -eq 1 ] &&
                 cmd=( delete-parameter ) ||
                 cmd=( put-parameter '--type' ${_type:-String} '--overwrite' '--value' "$2" )
 
@@ -655,21 +650,22 @@ function asg.set-capacity() {
 # wrapper around aws.describe emits 2 columns: <resource id>   ["Tag:Name"] for
 # human-friendly display of items and dynamic array assembly
 # consume with readarray -t VAR < <(aws.list ...) or IFS=$'\n' ary=( `emit words` ), or
-# eval hsh=( `emit [x]=y words )
+# hsh=( `emit [x]=y ...` )
 
 #TODO really should be aws.get or aws.describe | aws.printf -a/-A <field> [<2nd_field>]
 #FIXME this function doesn't actually DO anything yet!!!
 function aws.list() {
-  local -i sort name OPTIND
-  local OPTARG opt format= keyword field=
+  local -i sort= OPTIND
+  local OPTARG opt format keyword= field=
 
-  while getopts ':aAf:h' opt; do    # no ^':' so pass args to aws.describe()
+  while getopts ':aAf:hS' opt; do    # no ^':' so pass args to aws.describe()
     case "$opt" in
-      a)    format='array' ;;
-      A)    format='hash'  ;;
-      f)    format=$OPTARG ;;
+      a)    format='array'  ;;
+      A)    format='hash'   ;;
+      f)    format=$OPTARG  ;;
+      S)    sort=1          ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      :)    log.error "missing argument (-$OPTARG)"; return ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
@@ -677,7 +673,7 @@ function aws.list() {
   done
   shift $((OPTIND - 1))
 
-  : ${keyword:=${1:?keyword}}
+  keyword=${1:?keyword}; shift
 #FIXME describe() returns ARRAY without '-S' flag
   case "$keyword" in
     autoscaling-group?(s))
@@ -685,7 +681,7 @@ function aws.list() {
             ;;
     vpc?(s)) field='VpcId' ;;
 
-    *)      log.error "unsupported keyword ($keyword)"; return 2
+    *)      log.error "unsupported keyword ($keyword)"; return
   esac
 
 #TODO if name=0  cmd[1]=__JQ --arg field "$field" '.[$field], ""'
@@ -697,7 +693,7 @@ function aws.list() {
             __JQR --arg field "$field" '.[$field]'
             ;;
 
-    # format? if TAB, 'while IFS=$'\t' read -t key val
+    # FIXME? if TAB, 'while IFS=$'\t' read -t key val
     # otherwise, read key && read val
     A|hash) __JQR --arg field "$field" '"[\(.[$field])]=\(.Tags | from_entries | .Name | @sh)"'
             ;;
@@ -714,23 +710,41 @@ function aws.list() {
 
 
 #TODO model after 18f, probes for region, VPC, and instance when invoked with '-P' or '--prompt'
-function ec2.connect() {
-  local -i OPTIND lport rport
-  local OPTARG= opt
-  local -a cmd=()
+#function ec2.connect() {
+
+function ec2.session() {
+  local -i OPTIND lport= rport=
+  local OPTARG= opt rhost
+  local -a cmd=( __AWS ssm start-session )
 
   while getopts ':L:h' opt; do
     case "$opt" in
-      L)    # use SSH port-forward spec 'lport:remote_ip:rport'
-            lport=${OPTARG%%:*}; rport=${OPTARG##*:}
-            [ $lport -ne $rport ] || unset lport
-            [ $rport -gt 0 -a $rport -le 65535 ] || { log.error "invalid port ($rport)"; return 2; }
-            cmd+=( '--document-name' 'AWS-StartPortForwardingSession'
-                   '--parameters' "portNumber=$rport${lport:+,localPortNumber=$lport}" )
-                #alt: $((2048 + RANDOM % 1000))
+      #ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html
+      L)    # pseudo SSH port-forward spec '[local_port:][remote_host:]remote_port'
+            IFS=: read -a words <<< "$OPTARG"
+            case ${#words[@]} in
+              1)    rport=$words
+                    ;;
+              2)    rport=${words[1]}
+                    # try assignment to detect type
+                    lport=$words
+                    [ $lport -gt 0 ] || { unset lport; rhost=$words; }
+                    ;;
+              3)    lport=$words
+                    rhost=${words[1]}
+                    rport=${words[2]}
+                    ;;
+              *)    log.error "invalid port-forward spec ('[local_port:][remote_host:]remote_port', $OPTARG)"; return
+            esac
+
+            grep -qE 'localhost|127\.+' <<< "$rhost" && unset rhost
+            [ $rport -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
+
+            cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
+                   '--parameters' "`string.join -zd ',' "portNumber=$rport" "localPortNumber=$lport" ${rhost:+"host=$rhost"}`" )
             ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      :)    log.error "missing argument (-$OPTARG)"; return ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2

@@ -13,6 +13,12 @@ is_windows && AWSCLI=Amazon/AWSCLIV2
 source ${BASH_SOURCE%_*}_3rdparty aws
 is_exec aws || return 0
 
+
+for f in "${BASH_SOURCE/bashrc/functions}"; do
+  [ -f "$f" ] || continue
+  source "$f" || { log.error "RC=$? during $f"; return; }
+done
+
 addPath /usr/local/ec2-ami-tools*/**/bin
 
 # SSM Session-Manager
@@ -24,21 +30,17 @@ is_exec session-manager-plugin || {
 
 link=`is_exec -v aws_completer` && complete -C "$link" aws
 
-for f in "${BASH_SOURCE/bashrc/functions}"; do
-  [ -f "$f" ] || continue
-  source "$f" || { log.error "RC=$? during $f"; return; }
-done
-
 # session credentials expire in 1h (default)
 export AWS_SESSION_DURATION=$((3600 * 8))
 
 alias aws.clearenv='aws.profile RESET'
-alias aws='__AWS'
 #deprecated: alias ec2.connect='__AWS ssm start-session --target'
-alias ec2.disconnect='__AWS ssm terminate-session --session'
+#alias ec2.disconnect='__AWS ssm terminate-session --session'
 
-function ec2.sessions() {
-  __AWS ssm describe-sessions --state Active | __JQR '.Sessions[] | "\(.Target): \(.SessionId)"'
+
+function ec2.list-sessions() {
+#TODO getopt 'A' -> '--state Active'
+  __AWS ssm describe-sessions | __JQR '.Sessions[] | "\(.Target): \(.SessionId)"'
 }
 
 function aws.printenv() { for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
