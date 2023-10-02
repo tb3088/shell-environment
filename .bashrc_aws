@@ -158,25 +158,37 @@ function aws.profile() {
 
 
 function aws.session-load() {
-  local format='text'
-  local input=$1
-  local cache_dir="$HOME"/.aws/cli/cache
+  local format=text input=
+  local cache_dir="$HOME/.aws/cli/cache"
 
-  if [ -z "$input" ]; then
-    local -a list=( `cd "$cache_dir" && find . -type f -mmin -$(( ${AWS_SESSION_DURATION:-3600} / 60))` )
+  local -ir now=`date '+%s'`
+  #clean up
+  for f in "$cache_dir"/*; do
+    [ -s "$f" ] || { rm -f "$f"; continue; }
 
-    [ ${#list[@]} -ge 1 ] || { log.warn "no cached sessions ($cache_dir)"; return; }
+    expires=$(date --date `__JQR '.Credentials.Expiration' "$f"` '+%s')
+    [ ${expires:-0} -ge ${now:?} ] || { rm -f "$f"; continue; }
+  done
+
+  # read file into variable
+  if [ -s "$1" ]; then
+    input=$( < "$1" ); shift
+  elif [ -s "$cache_dir/$1" ]; then
+    input=$( < "$cache_dir/$1" ); shift
+  elif [ -n "$1" ]; then
+    input="$1"; shift
+  else
+    local -a list=( `cd "$cache_dir" && find . -maxdepth 1 -type f` )
+#   -mmin -$(( ${AWS_SESSION_DURATION:-28800} / 60))` )
+    [ ${#list[@]} -ge 1 ] || { log.error "no cached sessions ($cache_dir)"; return; }
 
     echo
     with_keys=1 array.print list | column
     echo
     read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
 
-    [[ "${REPLY:0:1}" =~ [0-9] ]] && input="$cache_dir/${list[$REPLY]}" || input="$cache_dir/$REPLY"
+    [[ "${REPLY:0:1}" =~ [0-9] ]] && input=$( < "$cache_dir/${list[$REPLY]}" ) || input=$( < "$cache_dir/$REPLY" )
   fi
-
-  # read file into variable
-  [ -s "$input" ] && input=$( < "$input" )
 
   # jq doesn't error on empty input, not even '4'
   [ -n "$input" ] || return
@@ -213,8 +225,15 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
 
 
 function aws.session-write() {
-    local field
     local -u envvar
+
+    [ ${AWS_PROFILE:-default} = 'default' ] && {
+        log.error "would overwrite default credentials!"
+        return
+      }
+
+    read -t 4 -ep "Are you DAMN sure? [y/N]:  "
+    [[ "${REPLY,,}" =~ y ]] || return
 
     for field in `keys __aws_session`; do
       envvar=`value __aws_session "$field"`
@@ -228,28 +247,18 @@ function aws.session() {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
-  local -ir now=$(date '+%s')
-  local -i duration write=0 force=0 force_mfa=0
+  local -i duration write=0 force force_mfa=1
   # Bash 'integer' doesn't handle leading ZEROs
-  local cache output role profile token= mfa=
+  local cache role profile token mfa
 
   local OPTIND opt
-  while getopts ':cfm:Mp:r:T:t:W':w opt; do
+  while getopts ':c:Cfm:Mp:r:T:t:W':w opt; do
     case "$opt" in
-      c)    for f in "$HOME"/.aws/cli/cache/*; do
-              [ -f "$f" ] || continue
-
-              expires=$(date --date `__JQR '.Credentials.Expiration' "$f"` '+%s')
-              [ ${expires:-0} -ge ${now:-0} ] || { rm -f "$f"; continue; }
-
-              #FIXME first valid != desired AWS_PROFILE, is $profile set?
-              cache=$f
-              break
-            done
-            ;;
+      c)    cache=$OPTARG ;;
+      C)    cache= ;;
       f)    force=1 ;;
       m)    mfa=$OPTARG ;;
-      M)    force_mfa=1 ;;
+      M)    force_mfa=0 ;;
       p)    profile=$OPTARG ;;
       R)    role=$OPTARG ;;
       r)    region=$OPTARG ;;
@@ -292,34 +301,43 @@ function aws.session() {
     shift
   done
 
-
   aws.profile "${profile:-$AWS_PROFILE}" "${region:-$AWS_DEFAULT_REGION}" || return
-  : ${role:=`__AWS configure get role_arn`}
-  : ${mfa:=`__AWS configure get mfa_serial`}
-  #TODO prompt
-  #local -a list=( `__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'` )
-  if [ ${force_mfa:-0} -eq 1 -o -n "${token}${mfa}" ]; then
-    [ -n "$mfa" ] || { log.error "missing MFA"; return; }
-    [ -n "$token" ] || { log.error "missing token (MFA: $mfa)"; return; }
+
+  if [ ${force_mfa:-1} -eq 0 ]; then
+    unset mfa token
+  elif [ -z "$mfa" ]; then
+    local -a list=( `__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
+                    `__AWS configure get mfa_serial` )
+
+    [ ${#list[@]} -ge 1 ] || { log.error "no MFA found"; return; }
+
+    echo
+    with_keys=1 array.print list | column
+    echo
+    read -t 12 -ep "Choose MFA:  " -i "$list" || return
+
+    [[ "${REPLY:0:1}" =~ [0-9] ]] && mfa=${list[$REPLY]} || mfa=$REPLY
   fi
 
+  : ${role:=`__AWS configure get role_arn`}
   local cmd=()
 
   if [ -n "$role" ]; then
     # 'role-session-name' pattern is [\w+=,.@-]* and 45 char limit
-    local session_name="${role#*:role/}"
-    local session_suffix="${AWS_PROFILE:?}.$$"
-    session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
+#    local session_name="${role#*:role/}"
+#    local session_suffix="${AWS_PROFILE:-default}.$$"
+#    session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
+
+    local session_name=`printf '%.20s@%.15s.%d' "${role#*:role/}" "${AWS_PROFILE:-default}" $$
     session_name="${session_name//:/.}"
     cmd=( assume-role '--role-arn' "$role" '--role-session-name' "$session_name" )
   else
     cmd='get-session-token'
   fi
 
-  if [ -z "$cache" -o ${force:-0} -eq 1 ]; then
+  if [ -z "${cache+X}" -o ${force:-0} -eq 1 ]; then
     unset cache
-    output=$(
-#FIXME broken?
+    local output=$(
         local -u key
         for key in `keys __aws_session`; do
           unset $key
@@ -337,11 +355,9 @@ function aws.session() {
       ) || return
   fi
 
-  aws.session-load "${cache:-$output}" || return
+  aws.session-load "${cache-$output}" || return
+  #WARN really BAD idea!
   [ ${write:-0} -eq 1 ] && aws.session-write
-
-  log.info `aws.printenv`
-  export ${!AWS_*}
 }
 
 
