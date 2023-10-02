@@ -248,8 +248,8 @@ function aws.session() {
             done
             ;;
       f)    force=1 ;;
-	  m)    mfa=$OPTARG ;;
-	  M)	force_mfa=1 ;;
+      m)    mfa=$OPTARG ;;
+      M)    force_mfa=1 ;;
       p)    profile=$OPTARG ;;
       R)    role=$OPTARG ;;
       r)    region=$OPTARG ;;
@@ -299,8 +299,8 @@ function aws.session() {
   #TODO prompt
   #local -a list=( `__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'` )
   if [ ${force_mfa:-0} -eq 1 -o -n "${token}${mfa}" ]; then
-    [ -n "$token" ] || { log.error "missing Token)"; return; }
-	[ -n "$mfa" ] || { log.error "missing MFA SerialNumber"; return; }
+    [ -n "$mfa" ] || { log.error "missing MFA"; return; }
+    [ -n "$token" ] || { log.error "missing token (MFA: $mfa)"; return; }
   fi
 
   local cmd=()
