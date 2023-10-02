@@ -15,8 +15,51 @@ function __WHICH() { \which --skip-aliases --skip-functions "$@"; }
 function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
 
 function __JQ() { \jq --exit-status "$@"; }
-function __JQR() { __JQ "$@" | \jq --raw-output '. // empty'; }
+function __JQR() { \jq "$@" | \jq --exit-status --raw-output '. // empty'; }
+#TODO call it merge1 since it ONLY handles 1st level
 function __JQ_merge() { \jq --slurp 'reduce .[] as $item ({}; . * $item)'; }
+#TODO merge_deep(er)
+#jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)'
+#TODO when key1: valu1, key1: valu2 -> key1: [ valu1, valu2 ]
+# also maybe something like group_by(.key) | map({key:.[0].key,value:(map(.value) | join(" "))})
+#def merge_at_key(separator):
+#  reduce .[] as $o
+#    ([];
+#     $o["key"] as $k
+#     | (map(.key) | index($k)) as $i
+#     | if $i then (.[$i] | .value) += (separator + $o["value"])
+#       else . + [$o] end);
+# I think we can rewrite ^^ better
+#
+# Recursively meld a and b,
+# concatenating arrays and
+# favoring b when there is a conflict 
+#def meld(a; b):
+#  a as $a | b as $b
+#  | if ($a|type) == "object" and ($b|type) == "object"
+#    then reduce ([$a,$b]|add|keys_unsorted[]) as $k ({}; 
+#      .[$k] = meld( $a[$k]; $b[$k]) )
+#    elif ($a|type) == "array" and ($b|type) == "array"
+#    then $a+$b
+#    elif $b == null then $a
+#    else $b
+#    end;
+# then invoked as: jq -f meld.jq 1.json 2.json 'reduce inputs as $i (.; meld(.; $i))
+#
+# one-shot function definition and invocation
+#$ jq -s 'def deepmerge(a;b):
+#  reduce b[] as $item (a;
+#    reduce ($item | keys_unsorted[]) as $key (.;
+#      $item[$key] as $val | ($val | type) as $type | .[$key] = if ($type == "object") then
+#        deepmerge({}; [if .[$key] == null then {} else .[$key] end, $val])
+#      elif ($type == "array") then
+#        (.[$key] + $val | unique)
+#      else
+#        $val
+#      end)
+#    );
+#  deepmerge({}; .)' file1.json file2.json
+
 function __CURL() { \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar} "$@"; }
 
 # override 'exit on error' program flow
@@ -609,8 +652,44 @@ function bool_to_i() {
     # shift
 # done
 
-function version() { printf '%.3d' ${1//./ }; }
 
+function version_int() (
+  shopt -s nocaseglob
+
+  # superficial input sanitation
+  set -- "${@//-/.}"; set -- "${@//[^0-9]/}"
+
+  while ($#); do    #deliberate un-quoted
+    printf '%.3d' ${1//./ }; echo
+    shift
+  done
+)
+
+
+# dpkg --compare-versions $A <OP> $B
+#
+# use parameter expansion to replace dot by space, how about '-rcX'?
+#
+#xarr=(${CurrV//./ })
+#yarr=(${ExpecV//./ })
+#    
+#
+# suppose that ExpecV is newer (bigger) or equal to CurrV version:
+#
+#isnewer=true
+#
+#
+# loop over array keys:
+#
+#for i in "${!xarr[@]}"; do
+#  if [ ${yarr[i]} -gt ${xarr[i]} ]; then
+#    break
+#  elif [ ${yarr[i]} -lt ${xarr[i]} ]; then
+#    isnewer=false
+#    break
+#  fi
+#done
+#
 #function compare_versions {
 #    local a=${1%%.*} b=${2%%.*}
 #    [[ "10#${a:-0}" -gt "10#${b:-0}" ]] && return 1
@@ -618,6 +697,9 @@ function version() { printf '%.3d' ${1//./ }; }
 #    a=${1:${#a} + 1} b=${2:${#b} + 1}
 #    [[ -z $a && -z $b ]] || compare_versions "$a" "$b"
 #}
+#
+#simple greater-than
+# [ bigger = `printf '%s\n' $ver1 $ver2 | sort --check=quiet --version-sort --stable | head -n 1` ] 
 #
 # ref: https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
 # handle x.y.z with optional '-XX##' or 1.4.0b2
@@ -637,15 +719,15 @@ function version() { printf '%.3d' ${1//./ }; }
 #        exit 1
 #    fi
 #}
-
+#
 #function compare_versions() {
-    # Trivial v1 == v2 test based on string comparison
+#    # Trivial v1 == v2 test based on string comparison
 #    [[ "$1" == "$2" ]] && return 0
-
-    # Local variables
+#
+#    # Local variables
 #    local regex="^([0-9]+.*)-r([0-9]*)$" va1=() vr1=0 va2=() vr2=0 len i IFS="."
-
-    # Split version strings into arrays, extract trailing revisions
+#
+#    # Split version strings into arrays, extract trailing revisions
 #    if [[ "$1" =~ ${regex} ]]; then
 #        va1=(${BASH_REMATCH[1]})
 #        [[ -n "${BASH_REMATCH[2]}" ]] && vr1=${BASH_REMATCH[2]}
@@ -698,7 +780,7 @@ function min() {
     shift
   done
   local IFS=$'\n'
-  sort -n "${flag[@]}" "$*" | head -n 1
+  sort --numeric-sort "${flag[@]}" "$*" | head -n 1
 }
 
 function max() { min -r "$@"; }
