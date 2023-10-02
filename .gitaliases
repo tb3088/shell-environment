@@ -7,7 +7,7 @@
   ap = add --patch
   au = add --update
   ab = ! git.bulk_add
-  bl = ! "git show-branch --list ${@:- --all} 2>/dev/null"
+  bl = ! "git show-branch --list ${@:- --all}"
   bv = branch --verbose
 
   co = checkout
