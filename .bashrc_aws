@@ -328,7 +328,7 @@ function aws.session() {
 #    local session_suffix="${AWS_PROFILE:-default}.$$"
 #    session_name="${session_name:0:$((44-${#session_suffix}))}@${session_suffix}"
 
-    local session_name=`printf '%.20s@%.15s.%d' "${role#*:role/}" "${AWS_PROFILE:-default}" $$
+    local session_name=`printf '%.20s@%.15s.%d' "${role#*:role/}" "${AWS_PROFILE:-default}" $$`
     session_name="${session_name//:/.}"
     cmd=( assume-role '--role-arn' "$role" '--role-session-name' "$session_name" )
   else
