@@ -147,7 +147,7 @@ function __AWS() {
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
 
   # strip DOS line-endings
-  ${DEBUG:+ runv} "${cmd[@]}" "$@"  #| tr -d $'\r'
+  ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d $'\r'
 }
 
 
@@ -752,7 +752,7 @@ function ec2.session() {
   done
   shift $((OPTIND - 1))
 
-  __AWS ssm start-session --target ${1:?InstanceId} "${cmd[@]}" "${@:2}"
+  "${cmd[@]}" --target ${1:?InstanceId} "${@:2}"
 }
 
 

@@ -36,6 +36,7 @@ export AWS_SESSION_DURATION=$((3600 * 8))
 alias aws.clearenv='aws.profile RESET'
 #deprecated: alias ec2.connect='__AWS ssm start-session --target'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
+alias aws='__AWS'
 
 
 function ec2.list-sessions() {
@@ -46,14 +47,16 @@ function ec2.list-sessions() {
 function aws.printenv() { for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
 
 function aws.region() {
-  # 'DEFAULT' supplied by `aws configure` in aws.profile()
-  local DEFAULT region REGION
-  [ -n "${REGION+X}" ] && : ${region:=$REGION}
+  # '_default' supplied by `aws configure` in aws.profile()
+  local _default REGION region
+
+  # allow invocation style: 'env REGION=<xxx> $FUNCNAME'
+  [ -n "$REGION" ] && : ${region:=$REGION}
   [ -n "${region+X}" ] || { region=${1-'prompt'}; shift; }
 
-  # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set,
+  # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set
   # or can fall-back on configuration default
-  [ -z "$region" -a -n "${AWS_DEFAULT_REGION:-$DEFAULT}" ] && return
+  [ -z "$region" -a -n "${AWS_DEFAULT_REGION:-$_default}" ] && return
 
   if [ "$region" = 'prompt' ]; then
     echo
@@ -70,15 +73,18 @@ function aws.region() {
     }
 
   export AWS_DEFAULT_REGION=$region
+  #bug: Java API etc. use AWS_REGION - Amazon won't commit to consistency
+  export AWS_REGION=$region
 }
 
 
 function aws.profile() {
   [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return; }
 
-  # '' (empty string) avoids prompt, assumes $AWS_PROFILE or 'default'
-  local profile
-  [ -n "${PROFILE+X}" ] && : ${profile:=$PROFILE}
+  local PROFILE profile
+  # allow invocation style: 'PROFILE=<xxx> $FUNCNAME'
+  [ -n "$PROFILE" ] && : ${profile:=$PROFILE}
+  # '' (empty string) avoids prompt, will assume $AWS_PROFILE or 'default'
   [ -n "${profile+X}" ] || { profile=${1-'prompt'}; shift; }
 
   # but force the issue if called from aws.session()
@@ -94,8 +100,8 @@ function aws.profile() {
       }
   else
     unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
-    config=`__READLINK -ve "${__aws_defaults[config]}"` || return
-    creds=`__READLINK -ve "${__aws_defaults[credentials]}"` || return
+    config=`__READLINK -ve "${__aws_defaults['config']}"` || return
+    creds=`__READLINK -ve "${__aws_defaults['credentials']}"` || return
   fi
 
   if [ "${config%/*}" != "${creds%/*}" ]; then
@@ -105,10 +111,8 @@ function aws.profile() {
   fi
 
   if [ "$profile" = 'prompt' ]; then
-    local pattern='$1 ~ /^\[\w+/ { gsub(/\[|\]/, "", $NF); print $NF; }'
-    local -a list=( `awk -- "$pattern" "$config" "$creds"` )
-    # sanitize
-    list=( `IFS=$'\n' \sort -u <<< "${list[*]}"` )
+    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
+    local -a list=( `awk -- "$pattern" "$config" "$creds" | sort --unique` )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo
@@ -118,7 +122,7 @@ function aws.profile() {
 
       [[ "${REPLY:0:1}" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
     else
-      log.error "No profiles found ($config, $creds)"
+      log.error "no profile(s) found ($config, $creds)"
       return
     fi
   fi
@@ -132,13 +136,12 @@ function aws.profile() {
     # stacktrace if value of AWS_PROFILE is not defined in file(s).
     #
     # $? == 1 simply means no explicit declaration
-    local _region=$( __AWS --output text configure get region
-        ${profile:+ --profile "$profile"} 2>/dev/null | tr -d $'\r' )
+  local _region=`__AWS --output text configure get region ${profile:+ --profile "$profile"}`
 
-    [[ $? -eq 255 || "${_region:-unset}" =~ ProfileNotFound ]] && {
-        log.error "undefined profile ($profile)"
-        return 255
-      }
+  [[ $? -eq 255 || "${_region:-unset}" =~ ProfileNotFound ]] && {
+      log.error "invalid profile ($profile)"
+      return 255
+    }
 
   if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
     # cleanup previous environment
@@ -147,7 +150,7 @@ function aws.profile() {
   fi
 
   [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
-  DEFAULT="$_region" aws.region "$@" || return
+  _default="$_region" aws.region "$@" || return
 
   aws.addPath
   export ${!AWS_*}
@@ -173,8 +176,10 @@ function aws.session-load() {
   fi
 
   # read file into variable
-  [ -f "$input" ] && input=$( < "$input" )
+  [ -s "$input" ] && input=$( < "$input" )
 
+  # jq doesn't error on empty input, not even '4'
+  [ -n "$input" ] || return
   __JQ . <<< "$input" &>/dev/null && format='json'
 
   case "$format" in
@@ -192,7 +197,7 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
             # alt: source result of
             #   jq -r 'to_entries|map("\(.key|ascii_upcase)=\(.value|tostring)")|.[]'
             for field in `keys __aws_session`; do
-              envvar=`array.value __aws_session "$field"`
+              envvar=`value __aws_session "$field"`
               local -n nref=$envvar
               nref=`__JQR --arg field "$field" '.Credentials[$field]' <<< "$input"`
             done
@@ -224,12 +229,12 @@ function aws.session() {
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
   local -ir now=$(date '+%s')
-  local -i duration write=0 force=0
+  local -i duration write=0 force=0 force_mfa=0
   # Bash 'integer' doesn't handle leading ZEROs
-  local cache output role profile token mfa
+  local cache output role profile token= mfa=
 
   local OPTIND opt
-  while getopts ':cfp:r:T:t:W' opt; do
+  while getopts ':cfm:Mp:r:T:t:W':w opt; do
     case "$opt" in
       c)    for f in "$HOME"/.aws/cli/cache/*; do
               [ -f "$f" ] || continue
@@ -243,13 +248,15 @@ function aws.session() {
             done
             ;;
       f)    force=1 ;;
+	  m)    mfa=$OPTARG ;;
+	  M)	force_mfa=1 ;;
       p)    profile=$OPTARG ;;
       R)    role=$OPTARG ;;
       r)    region=$OPTARG ;;
       T)    duration=$OPTARG ;;
       t)    [[ "$OPTARG" =~ [0-9]{6} ]] && token=$OPTARG || {
                 log.error "invalid Token ($OPTARG)"
-                return
+                return 2
               }
             ;;
       # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
@@ -285,8 +292,16 @@ function aws.session() {
     shift
   done
 
+
   aws.profile "${profile:-$AWS_PROFILE}" "${region:-$AWS_DEFAULT_REGION}" || return
   : ${role:=`__AWS configure get role_arn`}
+  : ${mfa:=`__AWS configure get mfa_serial`}
+  #TODO prompt
+  #local -a list=( `__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'` )
+  if [ ${force_mfa:-0} -eq 1 -o -n "${token}${mfa}" ]; then
+    [ -n "$token" ] || { log.error "missing Token)"; return; }
+	[ -n "$mfa" ] || { log.error "missing MFA SerialNumber"; return; }
+  fi
 
   local cmd=()
 
@@ -316,9 +331,9 @@ function aws.session() {
 #An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
 
         __AWS sts "${cmd[@]}" \
-            ${mfa:+ --serial-number "$mfa"} \
-            ${token:+ --token-code $token} \
-            ${duration:+ --duration-seconds $duration}
+            ${mfa:+ '--serial-number' "$mfa"} \
+            ${token:+ '--token-code' "$token"} \
+            ${duration:+ '--duration-seconds' "$duration"}
       ) || return
   fi
 
