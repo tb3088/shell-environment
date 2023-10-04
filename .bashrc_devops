@@ -9,7 +9,7 @@ alias git.diff_history='\git log -p --'
 
 set -a
 function __GIT() {
-  ${DEBUG:+ runv GIT_TRACE=2} \git ${NOOP:+ --no-commit --no-ff} "$@"
+  ${DEBUG:+ runv GIT_TRACE=2} git ${NOOP:+ --no-commit --no-ff} "$@"
 }
 
 function git.current() { __GIT branch | awk '$1 == "*" { print $2; exit; }'; }
