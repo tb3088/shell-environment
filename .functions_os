@@ -173,10 +173,9 @@ os.detect
 #    ;;
 #esac
 
-is_exec tree{,.com} ||
 function os.tree() {
   local filter= type= reverse= flags=()
-  local -a cmd=( 'find' )    #alt: 'ls -R'
+  local -a cmd=( \find )    #alt: \ls -R -1 --quoting-style=shell
 
   local OPTIND opt
   while getopts ':hdlL:P:x' opt 2>/dev/null; do
@@ -214,7 +213,6 @@ _EOF
   done < <( ${DEBUG:+ runv} "${cmd[@]}" -H ${1:-.} ${flags[@]} )
   echo
 }
-alias tree=os.tree
 
 
 function os.file.replace() {

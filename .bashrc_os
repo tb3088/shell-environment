@@ -20,6 +20,9 @@ function pidof() {
   \ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
 }
 
+is_exec tree{,.com} ||
+alias tree='os.tree'
+
 __uname=`uname`  # alt: uname|sed -E 's/(-[0-9.]+)+$//'
 for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%-*}}; do
   [ -f "$f" ] || continue
