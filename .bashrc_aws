@@ -44,75 +44,109 @@ function ec2.list-sessions() {
   __AWS ssm describe-sessions | __JQR '.Sessions[] | "\(.Target): \(.SessionId)"'
 }
 
-function aws.printenv() { for v in ${!AWS_*}; do echo "$v=${!v}"; done; }
+
+function aws.printenv() { for v in ${!AWS_*}; do printf '%q=%q\n' "$v" "${!v}"; done; }
+#alt: echo "$v=${!v}"
+
 
 function aws.region() {
-  # '_default' supplied by `aws configure` in aws.profile()
-  local _default REGION region
+  local _default region			# supplied by aws.profile()
+  local OPTIND opt
+  while getopts ':Pr:h' opt; do
+    case "$opt" in
+      P)    region='prompt' ;;
+      r)    region=$OPTARG ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 cat <<-EOF
+			Usage: $FUNCNAME ... TODO
+			EOF
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
 
-  # allow invocation style: 'env REGION=<xxx> $FUNCNAME'
-  [ -n "${REGION+X}" ] && region=$REGION
-  : ${region=${1-'prompt'}}; shift
+  : ${region=${1-'prompt'}}
+  : ${_default=`__AWS configure get region`}
 
+#  [ "$region" != "$AWS_DEFAULT_REGION" ] || return 0
   # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set
-  # or can fall-back on AWS_CONFIG_FILE default
-  [ -n "$region" ] || {
-      [ -n "${AWS_REGION}${AWS_DEFAULT_REGION:-$_default}" ] && return; }
+  # or fall-back on AWS_CONFIG_FILE default 
+  #
+  #alt: ${FUNCNAME[1]} = aws.profile
+#  [ -z "${region}" -a  -n "${AWS_REGION}${AWS_DEFAULT_REGION:-$_default}" ] && return
+
+#  { [ "$region" = "$AWS_DEFAULT_REGION" ] ||
+#    [ -z "${region}" -a  -n "${AWS_REGION}${AWS_DEFAULT_REGION:-$_default}" ]; } && return
+
+  [[ "$region" = "$AWS_DEFAULT_REGION" ||
+     ( -z "${region}" && -n "${AWS_REGION}${AWS_DEFAULT_REGION}${_default}" ) ]] && return
 
   if [ "${region:-prompt}" = 'prompt' ]; then
     echo
     with_keys=1 array.print __aws_regions | column
     echo
-    read -t 15 -ep "Choose REGION:  " -i "${AWS_DEFAULT_REGION:-$__aws_regions}" || return
+    read -t 15 -ep "Choose REGION:  " -i "${__aws_defaults['region']}" || return
 
-    [[ "{$REPLY:0:1}" =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
+    [[ ${REPLY:0:1} =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
   fi
 
-  # validity check
+  # validity check TODO is_member
   [ -n "${__aws_availability_zones[$region]}" ] || {
       log.error "invalid region ($region)"; return
     }
 
   #bug: Java API etc. use AWS_REGION - Amazon won't commit to consistency
   export AWS_{DEFAULT_,}REGION=$region
+  [ -n "${FUNCNAME[1]}" ] || aws.printenv | log.info
 }
 
 
 function aws.profile() {
-  #Usage: $FN [profile] [region]
   [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return; }
 
-  #TODO getopt -p and -r
-  local PROFILE profile
-  # allow invocation style: 'PROFILE=<xxx> $FUNCNAME'
-  [ -n "${PROFILE+X}" ] && profile=$PROFILE
-  : ${profile=${1-'prompt'}}; shift;
+  local profile
+  local OPTIND opt
+  while getopts ':Pp:h' opt; do
+    case "$opt" in
+      P)    profile='prompt' ;;
+      p)    profile=$OPTARG ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 cat <<-EOF
+			Usage: $FUNCNAME [profile] [region]
+			EOF
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
 
-  # '' (empty string) avoids prompt if $AWS_PROFILE
-  if [ -n "$profile" ]; then
-    [ "$profile" = "$AWS_PROFILE" ] && return
-  else
-    [ -n "$AWS_PROFILE" ] && return
-#WHY? force the issue if called from aws.session()
-#   [ "${FUNCNAME[1]}" = 'aws.session' ] && profile='prompt'
-  fi
+  : ${profile=${1-'prompt'}}
+
+#  [ "$profile" != "$AWS_PROFILE" ] || return 0
+  # '' (empty string) avoids prompt provided AWS_PROFILE is set
+#  [ -z "$profile" -a -n "$AWS_PROFILE" ] && return
+  [[ "$profile" = "$AWS_PROFILE" || ( -z "$profile" && -n "$AWS_PROFILE" ) ]] && return
 
   if [ "${profile:-prompt}" = 'prompt' ]; then
 #    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
 #    local -a list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
-    local -a list=( default `__AWS configure list-profiles | grep -v default` )
+    local -a list=( `__AWS configure list-profiles` )
 
-    if [ ${#list[@]} -ge 1 ]; then
+    if [ ${#list[@]} -gt 1 ]; then
       echo
       with_keys=1 array.print list | column
       echo
       read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
 
-      [[ "${REPLY:0:1}" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
-    else
+      [[ ${REPLY:0:1} =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
+    elif [ ${#list[@]} -eq 1 ]; then
+	  profile=$list
+	else
       log.error "no profile(s) found"; return
     fi
   fi
+  [ "$profile" = 'default' ] && unset profile
 
   #WARN 'aws configure get' does NOT follow 'source_profile' keyword
   # nor fall-thru to 'default' if --profile is specified.
@@ -121,22 +155,26 @@ function aws.profile() {
   # stacktrace if value of AWS_PROFILE is not defined in file(s).
   #
   # $? == 1 simply means no explicit declaration
-  local region=`${profile:+AWS_PROFILE=$profile} __AWS configure get region`
+  local region=`__AWS ${profile:+ '--profile' "$profile"} configure get region`
 
   [[ $? -eq 255 || "${region:-unset}" =~ ProfileNotFound ]] && {
       log.error "profile not found ($profile)"
       return 255
     }
 
-  if [ "$profile" != "${AWS_PROFILE:-default}" ]; then
+  if [ "$profile" != "$AWS_PROFILE" ]; then
     # cleanup previous environment
     aws.rmPath
     unset AWS_{,SECRET_}ACCESS_KEY{_ID,} ${!AWS_SESSION_*}
   fi
 
-  [ "$profile" != 'default' ] && export AWS_PROFILE="$profile" || unset AWS_PROFILE
-  _default="$region" aws.region "$@" || return
+#  [ -n "$profile" ] &&  || unset AWS_PROFILE
+  export AWS_PROFILE=$profile
+  _default="$region" aws.region "$2" || return
+
   aws.addPath
+  aws.session
+  [ -n "${FUNCNAME[1]}" ] || aws.printenv | log.info
 }
 
 
@@ -145,7 +183,7 @@ function aws.session-load() {
 
   # jq doesn't error on empty input, not even '4'
   [ -n "$input" ] || return
-  __JQ . <<< "$input" &>/dev/null && format='json'
+  __JQ '.Credentials' <<< "$input" | log.debug && format=json || return
 
   case "${format:-text}" in
     text)   # see 'aws.session()' call to 'aws sts'
@@ -158,7 +196,6 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
             ;;
 
     json)   local field; local -u envvar
-            __JQ --sort-keys '.Credentials' <<< "$input" | log.debug
             # alt: eval output of
             #   jq -r 'to_entries|map("\(.key|ascii_upcase)=\(.value|tostring)")|.[]'
             for field in `keys __aws_session`; do
@@ -173,7 +210,7 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
   esac
 
   export ${!AWS_*}
-  aws.printenv | log.info
+  [ -n "${FUNCNAME[1]}" ] || aws.printenv | log.info
 }
 
 
@@ -185,8 +222,8 @@ function aws.session-write() {
         return
       }
 
-    read -t 4 -ep "Are you DAMN sure? [y/N]:  "
-    [[ "${REPLY,,}" =~ y ]] || return
+    read -t 4 -ep "Are you DAMN sure? [y/N]:  " || return
+    [[ ${REPLY,,} =~ y ]] || return
 
     for field in `keys __aws_session`; do
       envvar=`value __aws_session "$field"`
@@ -201,29 +238,18 @@ function aws.session() {
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
   #NOTE Bash 'integer' type doesn't handle leading ZEROs
-  local -i duration write=0 force use_mfa=1 use_cache=1
-  local role profile token mfa cache
+  local -i duration write=0 use_mfa=1 token=
+  local role profile mfa cache
   local cache_dir="$HOME/.aws/cli/cache"
 
   local OPTIND opt
-  while getopts ':Cc:d:fMm:p:r:T:t:W':w opt; do
+  while getopts ':c:l:T:t:W' opt; do
     case "$opt" in
-      c)    cache=$OPTARG ;;
-      C)    use_cache=0 ;;
-      d)    [ -d "$OPTARG" ] && cache_dir=$OPTARG || {
-                log.error "path not found ($OPTARG)"
-                return
-              }
-            ;;
-      f)    force=1 ;;
-      m)    mfa=$OPTARG ;;
-      M)    use_mfa=0 ;;
-      p)    profile=$OPTARG ;;
-      R)    role=$OPTARG ;;
-      r)    region=$OPTARG ;;
+      c)    cache=$OPTARG ;;		# possible out-of-tree
+      l)    role=$OPTARG ;;
       T)    duration=$OPTARG ;;
-      t)    [[ "$OPTARG" =~ [0-9]{6,} ]] && token=$OPTARG || {
-                log.error "invalid Token ($OPTARG)"
+      t)    [[ "$OPTARG" =~ ${__aws_regex['token']} ]] && token=$OPTARG || {
+                log.error "invalid token format ($OPTARG)"
                 return 2
               }
             ;;
@@ -255,96 +281,95 @@ function aws.session() {
     fi
     shift
   done
-  # override 'negative' flags
-  [ -n "$cache" ] && use_cache=1
-  [ -n "${token}${mfa}" ] && use_mfa=1
 
+  # try dereference; aws.session-load() will validate
+  [ -n "$cache" ] &&
+      for f in {,"$cache_dir"/}"$cache"; do
+        [ -s "$f" ] && { cache=$( < "$f" ); break; }
+      done
 
-  aws.profile "${profile:-$AWS_PROFILE}" "${region:-$AWS_DEFAULT_REGION}" || return
+  local -a cmd=( __AWS sts )
 
-  if [ ${use_mfa:-1} -eq 0 ]; then
-    unset mfa token
-  elif [ -z "$mfa" ]; then
-    local -a list=( `__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
-                    `__AWS configure get mfa_serial` )
-
-    if [ ${#list[@]} -ge 1 ]; then
-      echo
-      with_keys=1 array.print list | column
-      echo
-      read -t 12 -ep "Choose MFA:  " -i "$list" || return
-
-      [[ "${REPLY:0:1}" =~ [0-9] ]] && mfa=${list[$REPLY]} || mfa=$REPLY
-    else log.notice "no MFA found"
-    fi
-  fi
-
-  if [ ${use_cache:-1} -eq 1 ]; then
+  # explicit or implicit 'Role'
+  if [ -n "${role:-`__AWS configure get role_arn`}" ]; then
+    # cleanup $cache_dir
     local -ir now=`date '+%s'`
-
-    for f in "$cache_dir"/*; do     # cleanup
+    for f in "$cache_dir"/*; do
       [ -f "$f" ] || continue
-      [ -s "$f" ] || { rm -f "$f"; continue; }
 
-      expires=$(date --date `__JQR '.Credentials.Expiration' "$f"` '+%s')
+      local expires=$( date --date `__JQR '.Credentials.Expiration' "$f"` '+%s' )
       [ ${expires:-0} -ge ${now:?} ] || rm -f "$f"
     done
-
-    if [ -n "$cache" ]; then
-      local -i found=0
-      for f in {,"$cache_dir"/}"$cache"; do
-        [ -s "$f" ] && { cache=$( < "$f" ); found=1; break; }
-      done
-      [ ${found:-0} -eq 1 ] || { log.error "file not found ($cache)"; return; }
-    else
-      local -a list=( `\find "$cache_dir" -maxdepth 1 -type f -printf '%P\n'` )
-      #alt: \ls -1 --quoting-style=shell "$cache_dir"/ needs post-processing
-      if [ ${#list[@]} -ge 1 ]; then
-        echo
-        with_keys=1 array.print list | column
-        echo
-        read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
-
-        [[ "${REPLY:0:1}" =~ [0-9] ]] && cache=$( < "$cache_dir/${list[$REPLY]}" ) || cache=$( < "$cache_dir/$REPLY" )
-      else log.notice "no cached sessions ($cache_dir)"
-      fi
-    fi
-  fi
-
-  local -a cmd=()
-
-  : ${role:=`__AWS configure get role_arn`}
-  if [ -n "$role" ]; then
+set -x
     #NOTE STS rejects duration > 3600 if role-chaining
     # https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
 
-    local session_name=`printf '%.20s@%.15s.%d' "${role##*:role*/}" "${AWS_PROFILE:-default}" $$`
+    local session_name=`printf 'SN%.20s@%.15s.%d' "${role##*:role*/}" "${AWS_PROFILE:-default}" $$`
     #ref: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html#options
-    cmd=( assume-role '--role-arn' "$role" '--role-session-name' "${session_name//[^a-zA-Z0-9@=.,-]/}" )
+    cmd+=( assume-role ${role:+ '--role-arn' "$role"} '--role-session-name' "${session_name//[^a-zA-Z0-9@=.,-]/}" )
+
+# cache file use is automatic, but HOW?
+#    if [ ${use_cache:-1} -eq 1 ]; then
+#      local -a list=( `find "$cache_dir" -maxdepth 1 -type f -printf '%P\n'` )
+#      #alt: ls -1 --quoting-style=shell "$cache_dir"/ needs post-processing
+#      if [ ${#list[@]} -gt 1 ]; then
+#        echo
+#        with_keys=1 array.print list | column
+#        echo
+#        read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
+#
+#        [[ ${REPLY:0:1} =~ [0-9] ]] && cache=$( < "$cache_dir/${list[$REPLY]}" ) || cache=$( < "$cache_dir/$REPLY" )
+#	  elif [ ${#list[@]} -eq 1 ]
+#	    cache=$( < "$cache_dir/$list" )
+#     fi
+#    fi
   else
-    cmd=( get-session-token )
+    cmd+=( get-session-token )
   fi
 
-  if [ -z "$cache" -o ${force:-0} -eq 1 ]; then
+  # explicit or implicit 'MFA'
+  if [ -n "${mfa:-`__AWS configure get mfa_serial`}" -a -z "$token" ]; then
+    while read -t 20 -ep "MFA token:  " -N 6 || return; do
+      [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
+    done
+  fi
+#  else
+#    local -a list=( `__AWS configure get mfa_serial` )
+#	#`__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
+#	#alt: printf ... | sort -u
+#	list=( `IFS=$'\n'; echo "${list[*]}" | sort -u` )
+#
+#    if [ ${#list[@]} -gt 1 ]; then
+#      echo
+#      with_keys=1 array.print list | column
+#      echo
+#      read -t 12 -ep "Choose MFA:  " -i "$list" || return
+#
+#      [[ ${REPLY:0:1} =~ [0-9] ]] && mfa=${list[$REPLY]} || mfa=$REPLY
+#	elif [ ${#list[@]} -eq 1 ]
+#	  mfa=$list
+#    fi
+
+  if [ -z "$cache" ]; then
     unset cache
+#FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
+#	"An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed,
+#	 must provide both MFA serial number and one time pass code."
+# if the token is wrong you get:
+#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
     local output=$(
         local -u key
         for key in `keys __aws_session`; do
           unset $key
         done
 
-#FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
-#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed, must provide both MFA serial number and one time pass code.
-# if the token is wrong you get:
-#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
-
-        __AWS sts "${cmd[@]}" \
+        "${cmd[@]}" \
             ${mfa:+ '--serial-number' "$mfa"} \
             ${token:+ '--token-code' "$token"} \
             ${duration:+ '--duration-seconds' "$duration"}
       ) || return
   fi
-
+set +x
   aws.session-load "${cache:-$output}" || return
   #WARN really BAD idea!
   [ ${write:-0} -eq 1 ] && aws.session-write
@@ -411,7 +436,7 @@ function aws.route53-export() {
     echo -e "; $zone\n"
     #TODO use printf() with width
     __AWS route53 list-resource-record-sets --hosted-zone-id=${zone:?} |
-        __JQR -j '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
+        __JQR --join-output '.ResourceRecordSets[] | "\(.Name)\t\(.TTL)\t\(.Type)\t\(.ResourceRecords[].Value)\n"'
     echo
   done
 }
