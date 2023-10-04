@@ -241,7 +241,6 @@ function os.file.replace() {
       ${uid:+ -o $uid} ${gid:+ -g $gid} ${context:+ --context=$context} \
       ${flags:- -b} "$new" "$orig"
 }
-alias replace_file='os.file.replace'
 
 
 #TODO move to .functions_os
