@@ -51,14 +51,15 @@ function aws.region() {
   local _default REGION region
 
   # allow invocation style: 'env REGION=<xxx> $FUNCNAME'
-  [ -n "$REGION" ] && : ${region:=$REGION}
-  [ -n "${region+X}" ] || { region=${1-'prompt'}; shift; }
+  [ -n "${REGION+X}" ] && region=$REGION
+  : ${region=${1-'prompt'}}; shift
 
   # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set
-  # or can fall-back on configuration default
-  [ -z "$region" -a -n "${AWS_DEFAULT_REGION:-$_default}" ] && return
+  # or can fall-back on AWS_CONFIG_FILE default
+  [ -n "$region" ] || {
+      [ -n "${AWS_REGION}${AWS_DEFAULT_REGION:-$_default}" ] && return; }
 
-  if [ "$region" = 'prompt' ]; then
+  if [ "${region:-prompt}" = 'prompt' ]; then
     echo
     with_keys=1 array.print __aws_regions | column
     echo
@@ -78,40 +79,28 @@ function aws.region() {
 
 
 function aws.profile() {
+  #Usage: $FN [profile] [region]
   [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return; }
 
+  #TODO getopt -p and -r
   local PROFILE profile
   # allow invocation style: 'PROFILE=<xxx> $FUNCNAME'
-  [ -n "$PROFILE" ] && : ${profile:=$PROFILE}
-  # '' (empty string) avoids prompt, will assume $AWS_PROFILE or 'default'
-  [ -n "${profile+X}" ] || { profile=${1-'prompt'}; shift; }
+  [ -n "${PROFILE+X}" ] && profile=$PROFILE
+  : ${profile=${1-'prompt'}}; shift;
 
-  # force the issue if called from aws.session()
-  [ "${FUNCNAME[1]}" = 'aws.session' ] && {
-      [ -n "$profile" ] || profile='prompt'
-    }
-
-  local config creds
-  if [ -n "$AWS_CONFIG_FILE" ]; then
-    config=`__READLINK -ve "$AWS_CONFIG_FILE"` || return
-    [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] && {
-        creds=`__READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
-      }
+  # '' (empty string) avoids prompt if $AWS_PROFILE
+  if [ -n "$profile" ]; then
+    [ "$profile" = "$AWS_PROFILE" ] && return
   else
-    unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
-    config=`__READLINK -ve "${__aws_defaults['config']}"` || return
-    creds=`__READLINK -ve "${__aws_defaults['credentials']}"` || return
+    [ -n "$AWS_PROFILE" ] && return
+#WHY? force the issue if called from aws.session()
+#   [ "${FUNCNAME[1]}" = 'aws.session' ] && profile='prompt'
   fi
 
-  if [ "${config%/*}" != "${creds%/*}" ]; then
-    AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
-    log.notice "overriding CREDENTIALS_FILE (${creds:-unset} -> $AWS_SHARED_CREDENTIALS_FILE)"
-    creds=`__READLINK -ve "$AWS_SHARED_CREDENTIALS_FILE"` || return
-  fi
-
-  if [ "$profile" = 'prompt' ]; then
-    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
-    local -a list=( `awk -- "$pattern" "$config" "$creds" | sort --unique` )
+  if [ "${profile:-prompt}" = 'prompt' ]; then
+#    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
+#    local -a list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
+    local -a list=( default `__AWS configure list-profiles | grep -v default` )
 
     if [ ${#list[@]} -ge 1 ]; then
       echo
@@ -121,37 +110,32 @@ function aws.profile() {
 
       [[ "${REPLY:0:1}" =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
     else
-      log.error "no profile(s) found ($config, $creds)"
-      return
+      log.error "no profile(s) found"; return
     fi
   fi
 
-  [ "$profile" = 'default' ] && unset profile
+  #WARN 'aws configure get' does NOT follow 'source_profile' keyword
+  # nor fall-thru to 'default' if --profile is specified.
+  #
+  # aws-cli (boto-core) returns 255 on ProfileNotFound, but will also
+  # stacktrace if value of AWS_PROFILE is not defined in file(s).
+  #
+  # $? == 1 simply means no explicit declaration
+  local region=`${profile:+AWS_PROFILE=$profile} __AWS configure get region`
 
-    # BUG! 'aws configure get' does NOT follow 'source_profile' keyword
-    # nor fall-thru to 'default' if --profile is specified.
-    #
-    # aws-cli (boto-core) returns 255 on ProfileNotFound, but will also
-    # stacktrace if value of AWS_PROFILE is not defined in file(s).
-    #
-    # $? == 1 simply means no explicit declaration
-  local _region=`__AWS --output text configure get region ${profile:+ --profile "$profile"}`
-
-  [[ $? -eq 255 || "${_region:-unset}" =~ ProfileNotFound ]] && {
-      log.error "invalid profile ($profile)"
+  [[ $? -eq 255 || "${region:-unset}" =~ ProfileNotFound ]] && {
+      log.error "profile not found ($profile)"
       return 255
     }
 
-  if [ "${profile:-A}" != "${AWS_PROFILE:-B}" ]; then
+  if [ "$profile" != "${AWS_PROFILE:-default}" ]; then
     # cleanup previous environment
     aws.rmPath
-    unset AWS_{,SECRET_}ACCESS_KEY{_ID,} AWS_SESSION_{TOKEN,EXPIRE}
+    unset AWS_{,SECRET_}ACCESS_KEY{_ID,} ${!AWS_SESSION_*}
   fi
 
-  [ -n "$profile" ] && AWS_PROFILE="$profile" || unset AWS_PROFILE
-  _default="$_region" aws.region "$@" || return
-
-  export ${!AWS_*}
+  [ "$profile" != 'default' ] && export AWS_PROFILE="$profile" || unset AWS_PROFILE
+  _default="$region" aws.region "$@" || return
   aws.addPath
 }
 

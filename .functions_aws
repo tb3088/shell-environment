@@ -7,6 +7,7 @@ shopt -s extglob
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 __aws_bin=`is_exec -v "aws${AWS_VERSION}"` || return
 __aws_api=`"$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }'`
+
 #TODO version_compare() w/ sort -g (--version-sort doesn't actually work)
 # echo -e '2.3.43\n2.3.7' | sort -t . -k 1,1 -k 2,2 -k 3,3
 #ref:   https://github.com/ivan-dyachenko/version
@@ -39,16 +40,22 @@ declare -Ar __aws_regex=(
   )
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
-# aws ec2 describe-regions | __JQR '.Regions[].RegionName | sort'
+# aws ec2 describe-regions | __JQR '.Regions[].RegionName' | sort
 [ ${#__aws_regions[@]} -ge 16 ] ||
 declare -ar __aws_regions=(
-    ap-northeast-{1,2}
-    ap-south-1
-    ap-southeast-{1,2}
+    af-south-1
+    ap-east-1
+    ap-south-{1,2}
+    ap-southeast-{1,2,3,4}
+    ap-northeast-{1,2,3}
     ca-central-1
-    eu-central-1
+    eu-central-{1,2}
     eu-north-1
+    eu-south-{1,2}
     eu-west-{1,2,3}
+    il-central-1
+    me-south-1
+    me-central-1
     sa-east-1
     us-east-{1,2}
     us-west-{1,2}
@@ -86,46 +93,76 @@ declare -Ar __aws_availability_zones=(
 
 
 function __AWS() {
-  local cmd=() region=
+  local cmd=() conf= creds= REGION region OUTPUT
+
+  [ -n "${REGION+X}" ] && { region=$REGION; export AWS_{DEFAULT_,}REGION=$region; }
+
+  if [ -n "$AWS_CONFIG_FILE" ]; then
+    conf=`__READLINK -e "$AWS_CONFIG_FILE"` && [ -s "$conf" ] || {
+        log.error "file not found/invalid (AWS_CONFIG_FILE: $AWS_CONFIG_FILE)"
+        return
+      }
+
+    creds=`__READLINK -e "${AWS_SHARED_CREDENTIALS_FILE:=${conf%/*}/credentials}"` && [ -s "$creds" ] || {
+        log.notice "file not found/invalid (AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE)"
+        unset AWS_SHARED_CREDENTIALS_FILE creds
+      }
+
+    # path mismatch?
+    if [ -n "$creds" ]; then
+      [ "${conf%/*}" = "${creds%/*}" ] ||
+          log.warn "path mismatch" "AWS_CONFIG_FILE: $conf" "AWS_SHARED_CREDENTIALS_FILE: $creds"
+    fi
+  else unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
+  fi
 
   # windows binary can't walk symlinks or handle unix'y paths
   if is_windows "${__aws_bin:?}"; then
     [ -n "$AWS_CONFIG_FILE" ] &&
-        cmd+=( AWS_CONFIG_FILE=`convert_path -am "$AWS_CONFIG_FILE"` )
+        cmd+=( AWS_CONFIG_FILE=`convert_path -m "$conf"` )
 
     [ -n "$AWS_SHARED_CREDENTIALS_FILE" ] &&
-        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -am "$AWS_SHARED_CREDENTIALS_FILE"` )
+        cmd+=( AWS_SHARED_CREDENTIALS_FILE=`convert_path -m "$creds"` )
 
-    [[ "$cmd" =~ AWS_ ]] && cmd=( env "${cmd[@]}" )
+    [[ "$cmd" =~ AWS_ ]] && cmd=( 'env' "${cmd[@]}" )
 
-    # crude search for file arguments since symlinks not supported
+    # crude search for 'file://' arguments
     local -a args=( "$@" )
     for ((i=0; i < $#; i++)); do
-      [[ "${args[$i]}" =~ file:// ]] && args[$i]=file://`convert_path -am "${args[$i]#file://}"`
+      [[ "${args[$i]}" =~ file:// ]] && args[$i]=file://`convert_path -m "${args[$i]#file://}"`
     done
     set -- "${args[@]}"
   fi
 
-  cmd+=( "$__aws_bin"
-      '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
-      '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
-    )
+  cmd+=( "$__aws_bin" )
+  [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
 
-  # bail out EC2. WARN! interactive use assumes correctness and may still error
-  if [ -z "`eval echo \$AWS{,_DEFAULT}_REGION`" ] && is_ec2; then
-    region=`ec2.metadata region || "${cmd[@]}" configure get region ${AWS_PROFILE:+ '--profile' "$AWS_PROFILE"}`
-
-    [ -n "$region" ] && export AWS_DEFAULT_REGION=$region AWS_REGION=$region || {
-        log.warn "region unavailable. forcing default (${__aws_defaults['region']})"
-        region=${__aws_defaults['region']}
-        cmd+=( '--region' "${region:?}" )
-      }
+  # bail out EC2. WARN! interactive assumes correctness and may still error
+  if [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ]; then
+    region=`ec2.metadata region ||
+            "${cmd[@]}" ${AWS_PROFILE:+'--profile' "$AWS_PROFILE"} configure get region`
+    if [ -n "$region" ]; then
+      #TODO validate
+      export AWS_{DEFAULT_,}REGION=$region
+    else
+      log.warn "forcing to default region (${__aws_defaults['region']})"
+      region=${__aws_defaults['region']}
+      cmd+=( '--region' "${region:?}" )
+    fi
   fi
 
   case "$1" in
     # known N/A
     configure)
+            #cmd+=( '--output' text )
             ;;
+    #FIXME check SHLVL or FUNCNAME[1] or BASH_SOURCE and decide what to do about default
+    # format specified in AWS_CONFIG_FILE. Text doesn't work in progromatic invocation.
+    *)      cmd+=( '--output' ${OUTPUT:-json}
+                   '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
+                   '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
+                 )
+            ;;&
     # limited support
     ec2)    cmd+=( ${NOOP:+ '--dry-run'} ) ;;&
     s3)     cmd+=( ${NOOP:+ '--dryrun'} ) ;;&
@@ -140,14 +177,10 @@ function __AWS() {
 #                cmd+=( '--endpoint-url' "https://${endpoint}/" ) ||
 #                log.debug "name resolution failed ($endpoint)"
             ;;
-    *)      # unsupported
   esac
 
-  cmd+=( '--output' json )
-  [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
-
   # strip DOS line-endings
-  ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d $'\r'
+  ${DEBUG:+ runv} "${cmd[@]}" "$@" | \tr -d '\r'
 }
 
 
@@ -190,13 +223,13 @@ function ec2.metadata() {
             while read line; do
               while read format; do
                 # convert multi-line to single
-                $FUNCNAME "_$item/${line%%=*}/$format" | sed ':a;N;s/\n//;ta'
+                $FUNCNAME "_$item/${line%%=*}/$format" | \sed ':a;N;s/\n//;ta'
               done < <( $FUNCNAME "_$item/${line%%=*}" )
             done < <( $FUNCNAME "_$item" )
             #TODO selective print by index or by key name
             return
             ;;
-    region) $FUNCNAME 'availability-zone' | sed 's/[a-z]$//'; return
+    region) $FUNCNAME 'availability-zone' | \sed 's/[a-z]$//'; return
             ;;
     subnet?(-id))
             item="network/interfaces/macs/$($FUNCNAME mac)/subnet-id"
@@ -213,7 +246,7 @@ function ec2.metadata() {
   esac
 
   # intermediary items (eg. MACs) leave behind trailing '/'
-  __CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
+  __CURL "$url/${mapping[$item]:-$item}" | \sed 's|/$||'
 }
 
 
@@ -232,9 +265,9 @@ function is_ec2() { ec2.metadata self &>/dev/null; }
 
 function aws.describe() {
   # returns a series of JSON objects    TODO? optionally wrapped in array (-a)
-  local keyword= type field
-  local -i single sort_keys
-  local -a filter=() query=() cmd=() post=()
+  local keyword= type= field=
+  local -i single=0 sort_keys=0
+  local -a filter=() query=() post=()
 
   local OPTIND opt
   while getopts ':1at:q:sh' opt; do
@@ -258,6 +291,7 @@ function aws.describe() {
 #FIXME rewrite all to use --filter syntax and generic ending below
 #FIXME post should be JQ terms that join_string -d '|' glues together
 
+  local -a cmd=()
   #!! WARN plural supported but beware side-effects !!
   case "$keyword" in
     vpc*)   ;&
@@ -305,9 +339,6 @@ function aws.describe() {
 
     *tag?(s))
             field='Tags'
-            function pre_process() {
-              __JQ '.[] | { (.ResourceId): { (.Key): (.Value) } }' | __JQ_merge
-            }
 
             #TODO non-EC2 items, but do we really need?
             # sqs: list-queue-tags
@@ -322,7 +353,7 @@ function aws.describe() {
 
             : ${type:=${keyword%.tag*}}
             #TODO do all 'type's support filter?
-            filter+=(
+            filter=(
                 "Name=resource-type,Values=${type:?}"
                 "Name=resource-id,Values=${1:?resource_id}"
               )
@@ -331,6 +362,9 @@ function aws.describe() {
             #TODO escape special chars like '[],' also use aws.format_tags()
             [ $# -ge 1 ] && filter+=( Name=key,Values=`string.join -zd ',' "$@"` )
 
+            function pre_process() {
+              __JQ '.[] | { (.ResourceId): { (.Key): (.Value) } }' | __JQ_merge
+            }
             ;;
 
 #    route)
@@ -422,7 +456,7 @@ function aws.get() {
   keyword=${1:?item}; shift
 
   case "$keyword" in
-    *.tag)  aws.describe "$keyword" "$@" |
+    *.tag)  aws.describe "$keyword" "${1:?resouce-id}" "${@:2}" |
                 __JQR --arg key "${2:?key}" '.[$key]'
             ;;
 
@@ -433,7 +467,7 @@ function aws.get() {
     ssm.parameter?(s))
             # mute ParameterNotFound
             if [ $# -eq 1 ]; then
-              __AWS ssm get-parameter --with-decryption --name "${1:?parameter}" 2>/dev/null |
+              __AWS ssm get-parameter --with-decryption --name "${1:?parameter}" |
                   __JQR '.Parameter.Value'
             else
             # key and value emitted on successive lines to simplify whitespace handling.
@@ -441,8 +475,10 @@ function aws.get() {
             # Example:
             #   while read -r key; do read -r value; ... done
             # or
-            #   IFS=$'\n' array=( `func` )
-              __AWS ssm get-parameters --names "${@:?parameter(s)}" --with-decryption 2>/dev/null |
+            #   IFS=, read -a foo < <( echo "one,three" )
+            #   IFS=, read -a foo <<< "one,two"
+
+              __AWS ssm get-parameters --with-decryption --names "${@:?parameter(s)}" |
                   __JQR '.Parameters[] | .Name, .Value'
 
 #TODO return Bash associative array '[key]=value' to minimize caller parsing
@@ -532,17 +568,18 @@ function aws.format_tags() {
 #       set -- $( < "$f" )
 #    fi
 
-    if __JQ '.' <<< "$1" &>/dev/null; then
+    # jq doesn't error on empty input, not even '4'
+    if [ -n "$1" ] && __JQ '.' <<< "$1" &>/dev/null; then
       [ ${json:=1} -eq 1 ] || { log.error "illegal intermixing of (non-)JSON" "$1"; return; }
 
       tags=( '--cli-input-json' "$1" )  #XXX need re-encoding with to_json or @sh?
-      #TODO
-      IFS=$'\n' echo "${tags[*]}"
+#XXX huh?
+      printf '%q\n' "${tags[*]}"    #alt: local IFS=$'\n'; echo ... NOTE semi-colon!
       return
     fi
 
-    # WARN - does not handle embedded multi-line
-    kv=( `sed 's/[=,]/\n/g' <<< "$1"` )     # assumes IFS=$'\n' FIXME?
+    #WARN does not handle embedded multi-line
+    kv=( `sed 's/[=,]/\n/g' <<< "$1"` )     #FIXME? assumes IFS=$'\n'
     if [[ ${kv[0]:-X} =~ [kK]ey$ && ${kv[2]:-X} =~ [vV]alue$ ]]; then
       tags+=( `printf "$format" "${kv[1]}" "${kv[3]}"` )
     elif [ ${#kv[@]} -gt 1 ]; then
@@ -577,10 +614,12 @@ function aws.set() {
     ec2.tag?(s))
             [ ${DELETE:-0} -eq 1 ] && cmd=( delete-tags ) || cmd=( create-tags )
             local -a tags=( `aws.format_tags "${@:2}"` )
+            #local IFS=,; for i in $1; do xxx; note non-quoted
+            FIXME
             __AWS ec2 "${cmd[@]}" --resources ${1//,/ } ${tags:+'--tags'} "${tags[@]}"
             ;;
 
-    ssm.parameter)  #TODO getopt for 'force' 
+    ssm.parameter)  #TODO getopt for 'force'
             #[ "$1" = '-s' ] && { secure=1; shift; }
             #or inspect ${1%%:*} where member of String, List|StringList, Secure|SecureString
             local _type
