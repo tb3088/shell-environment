@@ -303,6 +303,8 @@ function convert_path() {
   # Usage: caller use 'while read()' one entry per line for whitespace
   # management if providing multiple arguments, assign to array, or set --
   #
+  # WARN validity or existence is NOT checked!
+  #
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
   # This *magical* behavior does NOT extend to other PATH-like variables!
   #     eg. GOPATH, RUBYPATH, RUBYLIB, PUPPET_MODULE_PATH, JAVA_HOME
@@ -316,8 +318,8 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local flags=() QUOTE quote opt=
-  local -i abs= escape= OPTIND
+  local flags=() QUOTE quote opt= exist=
+  local -i abs= escape OPTIND
 
   # do NOT default a quote character
   [ -n "${QUOTE+X}" ] && quote=$QUOTE
@@ -351,7 +353,7 @@ function convert_path() {
     is_windows && p=`cygpath "${flags[@]}" -- "$p"`
 
 #TODO? leverage string.quote
-    [ ${escape:-1} -eq 1 ] && echo "${p// /\\ }" || echo "${quote}$p${quote}"
+    [ ${escape:-1} -eq 1 ] && printf '%q\n' "$p" || echo "${quote}$p${quote}"
     shift
   done
 }
@@ -820,6 +822,9 @@ function hash.print() { with_keys=1 array.print "$@"; }
 
 #TODO array functions; push, pop, delete, replace, truncate
 #TODO array.append|.add|.insert, prune|delete, length, equal, is_empty, clear, dedup, index_of|key,
+
+#TODO
+#function is_member() { [ -n "${__aws_availability_zones[$region]}" ]; }
 
 
 function expand_dvq() {
