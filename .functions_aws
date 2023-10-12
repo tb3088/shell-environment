@@ -108,10 +108,8 @@ function __AWS() {
       }
 
     # path mismatch?
-    if [ -n "$creds" ]; then
-      [ "${conf%/*}" = "${creds%/*}" ] ||
-          log.warn "path mismatch" "AWS_CONFIG_FILE: $conf" "AWS_SHARED_CREDENTIALS_FILE: $creds"
-    fi
+    [ -n "$creds" -a "${conf%/*}" != "${creds%/*}" ] &&
+        log.warn "path mismatch" "AWS_CONFIG_FILE: $conf" "AWS_SHARED_CREDENTIALS_FILE: $creds"
   else
     unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
   fi
@@ -137,31 +135,29 @@ function __AWS() {
   cmd+=( "$__aws_bin" )
   [ "${DEBUG:-0}" -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
 
-  # bail out EC2; interactive requires correctness
-  if [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ] && is_ec2; then
+  # bail out EC2
+  if [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ] &&
+      grep --quiet --invert-match -e '--region' - -- <<< "$*" &&
+	  is_ec2; then
     local region=`ec2.metadata region || "${cmd[@]}" configure get region`
-    if [ -n "$region" ]; then
-      #TODO validate
-      export AWS_{DEFAULT_,}REGION=$region
-	  #"${cmd[@]}" configure set region "$region"
-    else
-      log.warn "forcing region to default (${__aws_defaults['region']})"
-      region=${__aws_defaults['region']}
-      cmd+=( '--region' "${region:?}" )
-    fi
+    [ -z "$region" ] && {
+	    region=${__aws_defaults['region']}
+	    log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
+      }
+	cmd+=( '--region' "${region:?}" )
   fi
 
   case "$1" in
     # known N/A
-    configure)
+    configure)	# 'text' appears hard-coded, explicit json|yaml|text doesn't work
             #cmd+=( '--output' text )
             ;;
-    #FIXME check SHLVL or FUNCNAME[1] or BASH_SOURCE and decide what to do about default
+    #FIXME [ -n "${FUNCNAME[1]}" ] to force json?
     # format specified in AWS_CONFIG_FILE. Text doesn't work in progromatic invocation.
-    *)      cmd+=( '--output' ${OUTPUT:-json}
-                   '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
-                   '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
-                 )
+    *)      grep --quiet -e '--output' - -- <<< "$*" || cmd+=( '--output' ${OUTPUT:-json} )
+			cmd+=( 
+                '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
+                '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}} )
             ;;&
     # limited support
     ec2)    cmd+=( ${NOOP:+ '--dry-run'} ) ;;&

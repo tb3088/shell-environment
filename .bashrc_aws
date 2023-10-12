@@ -30,7 +30,7 @@ is_exec session-manager-plugin || {
 
 link=`is_exec -v aws_completer` && complete -C "$link" aws
 
-# session credentials expire in 1h (default)
+# session credentials expire in 8h
 export AWS_SESSION_DURATION=$((3600 * 8))
 
 alias aws.clearenv='aws.profile RESET'
@@ -67,26 +67,19 @@ function aws.region() {
   shift $((OPTIND - 1))
 
   : ${region=${1-'prompt'}}
-  : ${_default=`__AWS configure get region`}
 
-#  [ "$region" != "$AWS_DEFAULT_REGION" ] || return 0
-  # '' (empty string) avoids prompt provided AWS_DEFAULT_REGION is set
-  # or fall-back on AWS_CONFIG_FILE default 
-  #
-  #alt: ${FUNCNAME[1]} = aws.profile
-#  [ -z "${region}" -a  -n "${AWS_REGION}${AWS_DEFAULT_REGION:-$_default}" ] && return
-
-#  { [ "$region" = "$AWS_DEFAULT_REGION" ] ||
-#    [ -z "${region}" -a  -n "${AWS_REGION}${AWS_DEFAULT_REGION:-$_default}" ]; } && return
-
-  [[ "$region" = "$AWS_DEFAULT_REGION" ||
-     ( -z "${region}" && -n "${AWS_REGION}${AWS_DEFAULT_REGION}${_default}" ) ]] && return
+  # 'blank' argument or match current short-circuits further processing
+  # except AWS_*REGION can't be left blank since it's ambiguous to user.
+  [[ "$region" = "${AWS_DEFAULT_REGION:-_unset}" ||
+     ( -z "${region}" && -n "${AWS_REGION}${AWS_DEFAULT_REGION}" ) ]] && return
+  # force value if possible
+  : ${region:=${_default-`__AWS configure get region`}}
 
   if [ "${region:-prompt}" = 'prompt' ]; then
     echo
     with_keys=1 array.print __aws_regions | column
     echo
-    read -t 15 -ep "Choose REGION:  " -i "${__aws_defaults['region']}" || return
+    read -t 15 -ep "Choose REGION:  " -i "${region:-$list}" || return
 
     [[ ${REPLY:0:1} =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
   fi
@@ -98,17 +91,19 @@ function aws.region() {
 
   #bug: Java API etc. use AWS_REGION - Amazon won't commit to consistency
   export AWS_{DEFAULT_,}REGION=$region
-  [ -n "${FUNCNAME[1]}" ] || aws.printenv | log.info
 }
 
 
 function aws.profile() {
-  [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return; }
+  [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return 0; }
 
   local profile
   local OPTIND opt
-  while getopts ':Pp:h' opt; do
+  while getopts ':LPp:h' opt; do
     case "$opt" in
+	  L)	__AWS configure list-profiles | column
+			return
+			;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
@@ -123,10 +118,10 @@ function aws.profile() {
 
   : ${profile=${1-'prompt'}}
 
-#  [ "$profile" != "$AWS_PROFILE" ] || return 0
-  # '' (empty string) avoids prompt provided AWS_PROFILE is set
-#  [ -z "$profile" -a -n "$AWS_PROFILE" ] && return
-  [[ "$profile" = "$AWS_PROFILE" || ( -z "$profile" && -n "$AWS_PROFILE" ) ]] && return
+  # 'blank' argument or match current short-circuits further processing
+  [ "$profile" = "$AWS_PROFILE" -o \( -z "$profile" -a -n "$AWS_PROFILE" \) ] && {
+      aws.region "$2"; return
+    }
 
   if [ "${profile:-prompt}" = 'prompt' ]; then
 #    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
@@ -143,39 +138,56 @@ function aws.profile() {
     elif [ ${#list[@]} -eq 1 ]; then
 	  profile=$list
 	else
-      log.error "no profile(s) found"; return
+      log.notice "no profile(s) found"
+	  profile=
     fi
   fi
-  [ "$profile" = 'default' ] && unset profile
 
-  #WARN 'aws configure get' does NOT follow 'source_profile' keyword
+  #NOTE 'configure get' does NOT follow 'source_profile' keyword
   # nor fall-thru to 'default' if --profile is specified.
   #
   # aws-cli (boto-core) returns 255 on ProfileNotFound, but will also
   # stacktrace if value of AWS_PROFILE is not defined in file(s).
   #
   # $? == 1 simply means no explicit declaration
-  local region=`__AWS ${profile:+ '--profile' "$profile"} configure get region`
+  local _region=`__AWS ${profile:+ '--profile' "$profile"} configure get region`
 
-  [[ $? -eq 255 || "${region:-unset}" =~ ProfileNotFound ]] && {
+  [[ $? -eq 255 || "${_region:-_unset}" =~ ProfileNotFound ]] && {
       log.error "profile not found ($profile)"
       return 255
     }
 
-  if [ "$profile" != "$AWS_PROFILE" ]; then
+  if [ "${profile:-default}" != "${AWS_PROFILE:-default}" ]; then
     # cleanup previous environment
     aws.rmPath
     unset AWS_{,SECRET_}ACCESS_KEY{_ID,} ${!AWS_SESSION_*}
   fi
 
-#  [ -n "$profile" ] &&  || unset AWS_PROFILE
+  [ "$profile" != 'default' ] || unset profile
   export AWS_PROFILE=$profile
-  _default="$region" aws.region "$2" || return
+  _default="$_region" aws.region "$2" || return
 
   aws.addPath
-  aws.session
-  [ -n "${FUNCNAME[1]}" ] || aws.printenv | log.info
+  #do NOT call aws.session
 }
+
+
+# Config directive 'source_profile' does NOT pick up MFA, or perhaps fails ONLY when source_profile=default?
+# any CLI command invoked with role_arn defined will transparently invoke assume-role and get session creds
+# and saves them to cli/cache.
+#{
+#  "Credentials": {
+#    "AccessKeyId": "ASIAB",
+#    "SecretAccessKey": "y71g2qNo0PsvgoflGC",
+#    "SessionToken": "FwoDwNY=",
+#    "Expiration": "2023-10-12T01:14:31+00:00"
+#  },
+#  "AssumedRoleUser": {
+#    "AssumedRoleId": "AROAQ7JR2ZADYF5UFG4GB:botocore-session-1697069671",
+#    "Arn": "arn:aws-us-gov:sts::067213379591:assumed-role/deployer/botocore-session-1697069671"
+#  }
+#
+# so any profile that requires MFA must explicitely call it out? even if duplicated over and over?
 
 
 function aws.session-load() {
@@ -183,19 +195,22 @@ function aws.session-load() {
 
   # jq doesn't error on empty input, not even '4'
   [ -n "$input" ] || return
-  __JQ '.Credentials' <<< "$input" | log.debug && format=json || return
+  log.debug "$input"
+  __JQ '.Credentials' <<< "$input" && format=json
 
   case "${format:-text}" in
-    text)   # see 'aws.session()' call to 'aws sts'
-            local header rest
-            log.debug "$input"
+    text)   local header rest
+#   --output text \
+#    --query "Credentials.[AccessKeyId, SecretAccessKey, SessionToken]")
 #FIXME something very wrong in 'text' mode
-log.error "code is broken ($FUNCNAME, $format)"; return 128
-#            IFS=$'\t' read -r header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
-#                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
+#log.error "code is broken ($FUNCNAME, $format)"; return 128
+#            IFS=$'\t' 
+            read header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
+                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
 
     json)   local field; local -u envvar
+	        
             # alt: eval output of
             #   jq -r 'to_entries|map("\(.key|ascii_upcase)=\(.value|tostring)")|.[]'
             for field in `keys __aws_session`; do
@@ -215,16 +230,15 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
 
 
 function aws.session-write() {
-    local -u envvar
-
-    [ ${AWS_PROFILE:-default} = 'default' ] && {
+    [ ${AWS_PROFILE:-default} != 'default' ] || {
         log.error "would overwrite default credentials!"
-        return
+        return 128
       }
 
-    read -t 4 -ep "Are you DAMN sure? [y/N]:  " || return
+    read -t 5 -ep "Are you DAMN sure? [y/N]:  " || return
     [[ ${REPLY,,} =~ y ]] || return
 
+    local -u envvar
     for field in `keys __aws_session`; do
       envvar=`value __aws_session "$field"`
       __AWS configure set "${envvar,,}" "${!envvar}"
@@ -237,27 +251,44 @@ function aws.session() {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
-  #NOTE Bash 'integer' type doesn't handle leading ZEROs
-  local -i duration write=0 use_mfa=1 token=
+  local -i duration write=0 use_mfa=1 token_len=6
   local role profile mfa cache
+  local token=	# MUST be string, Bash strips leading ZEROs, printf treats as Octal
   local cache_dir="$HOME/.aws/cli/cache"
 
   local OPTIND opt
-  while getopts ':c:l:T:t:W' opt; do
+  while getopts ':Cc:Lr:T:t:' opt; do
     case "$opt" in
-      c)    cache=$OPTARG ;;		# possible out-of-tree
-      l)    role=$OPTARG ;;
+      c)    cache=$OPTARG
+            for f in {,"$cache_dir"/}"$cache"; do
+			  [ -s "$f" ] && { cache=$( < "$f" ); break; }
+			done
+			aws.session-load "$cache"
+			;;
+	  C|L)	find "$cache_dir" -maxdepth 1 -type f -mtime +1 -exec rm {} \; 2>/dev/null
+			local -ir now=`date '+%s'`
+			for f in "$cache_dir"/*; do
+			  [ -f "$f" ] || continue
+
+			  local expires=$( date --date `__JQR '.Credentials.Expiration' "$f"` '+%s' )
+			  [ ${expires:-0} -ge ${now:?} ] || { rm -f "$f"; continue; }
+
+			  [ "$opt" = 'L' ] && __JQR '.AssumedRoleUser.Arn' "$f"
+			done
+			return
+			;;
+      r)    role=$OPTARG ;;
       T)    duration=$OPTARG ;;
       t)    [[ "$OPTARG" =~ ${__aws_regex['token']} ]] && token=$OPTARG || {
                 log.error "invalid token format ($OPTARG)"
                 return 2
               }
             ;;
-      # save session to AWS_SHARED_CREDENTIALS_FILE (potentially DANGEROUS!)
-      W)    write=1 ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
+      h|*)  >&2 cat <<-EOF
+			Usage: $FUNCNAME [options]
+			EOF
             return 2
     esac
   done
@@ -282,97 +313,38 @@ function aws.session() {
     shift
   done
 
-  # try dereference; aws.session-load() will validate
-  [ -n "$cache" ] &&
-      for f in {,"$cache_dir"/}"$cache"; do
-        [ -s "$f" ] && { cache=$( < "$f" ); break; }
-      done
+  #NOTE STS rejects duration > 3600 if role-chaining
+  #ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
 
-  local -a cmd=( __AWS sts )
-
-  # explicit or implicit 'Role'
-  if [ -n "${role:-`__AWS configure get role_arn`}" ]; then
-    # cleanup $cache_dir
-    local -ir now=`date '+%s'`
-    for f in "$cache_dir"/*; do
-      [ -f "$f" ] || continue
-
-      local expires=$( date --date `__JQR '.Credentials.Expiration' "$f"` '+%s' )
-      [ ${expires:-0} -ge ${now:?} ] || rm -f "$f"
-    done
-set -x
-    #NOTE STS rejects duration > 3600 if role-chaining
-    # https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
-
-    local session_name=`printf 'SN%.20s@%.15s.%d' "${role##*:role*/}" "${AWS_PROFILE:-default}" $$`
+  local -a cmd=( sts )
+  if [ -n "$role" ]; then
+    local session_name=$( printf 'SN%.15s@%.12s.%d,%s' "${role##*:role*/}" \
+						      "${AWS_PROFILE:-default}" $$ `date '+%T'` )
     #ref: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html#options
-    cmd+=( assume-role ${role:+ '--role-arn' "$role"} '--role-session-name' "${session_name//[^a-zA-Z0-9@=.,-]/}" )
-
-# cache file use is automatic, but HOW?
-#    if [ ${use_cache:-1} -eq 1 ]; then
-#      local -a list=( `find "$cache_dir" -maxdepth 1 -type f -printf '%P\n'` )
-#      #alt: ls -1 --quoting-style=shell "$cache_dir"/ needs post-processing
-#      if [ ${#list[@]} -gt 1 ]; then
-#        echo
-#        with_keys=1 array.print list | column
-#        echo
-#        read -t 12 -ep "Choose cached SESSION:  " -i "$list" || return
-#
-#        [[ ${REPLY:0:1} =~ [0-9] ]] && cache=$( < "$cache_dir/${list[$REPLY]}" ) || cache=$( < "$cache_dir/$REPLY" )
-#	  elif [ ${#list[@]} -eq 1 ]
-#	    cache=$( < "$cache_dir/$list" )
-#     fi
-#    fi
+    cmd+=( assume-role '--role-arn' "$role" '--role-session-name' "${session_name//[^a-zA-Z0-9@=.,-]/}" )
+  elif [ -n "`__AWS configure get role_arn`" ]; then
+    # CONFIG-defined role transparently invokes 'assume-role'
+    :
   else
     cmd+=( get-session-token )
   fi
 
-  # explicit or implicit 'MFA'
-  if [ -n "${mfa:-`__AWS configure get mfa_serial`}" -a -z "$token" ]; then
-    while read -t 20 -ep "MFA token:  " -N 6 || return; do
-      [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
-    done
-  fi
-#  else
-#    local -a list=( `__AWS configure get mfa_serial` )
+  #NOTE
+  # Technically 'get-session-token' works without an MFA, but likely that a
+  # 'ForceMFA'-style IAM policy is in effect, rendering such credentials void.
+  [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
+      while read -t 20 -ep "MFA ($mfa) Token:  " ${token_len:+'-N' $token_len} || return; do
+        [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
+      done
+
 #	#`__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
-#	#alt: printf ... | sort -u
-#	list=( `IFS=$'\n'; echo "${list[*]}" | sort -u` )
-#
-#    if [ ${#list[@]} -gt 1 ]; then
-#      echo
-#      with_keys=1 array.print list | column
-#      echo
-#      read -t 12 -ep "Choose MFA:  " -i "$list" || return
-#
-#      [[ ${REPLY:0:1} =~ [0-9] ]] && mfa=${list[$REPLY]} || mfa=$REPLY
-#	elif [ ${#list[@]} -eq 1 ]
-#	  mfa=$list
-#    fi
+#	list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
 
-  if [ -z "$cache" ]; then
-    unset cache
-#FIXME BotoCore has a bug (tries a second OP) that throws 255 despite first OP yields success
-#	"An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed,
-#	 must provide both MFA serial number and one time pass code."
-# if the token is wrong you get:
-#An error occurred (AccessDenied) when calling the AssumeRole operation: MultiFactorAuthentication failed with invalid MFA one time pass code.
-    local output=$(
-        local -u key
-        for key in `keys __aws_session`; do
-          unset $key
-        done
-
-        "${cmd[@]}" \
-            ${mfa:+ '--serial-number' "$mfa"} \
-            ${token:+ '--token-code' "$token"} \
-            ${duration:+ '--duration-seconds' "$duration"}
-      ) || return
-  fi
-set +x
-  aws.session-load "${cache:-$output}" || return
-  #WARN really BAD idea!
-  [ ${write:-0} -eq 1 ] && aws.session-write
+  local output=$( __AWS "${cmd[@]}" \
+        ${mfa:+ '--serial-number' "$mfa" '--token-code' "${token:?}"} \
+        ${duration:+ '--duration-seconds' "$duration"}
+    ) || return
+  aws.session-load "$output"
 }
 
 
@@ -380,13 +352,12 @@ function iam.assume-role() {
   : ${ROLE_ARN:=$1}
   local session_name=`printf '%.35s-%d' "${ROLE_ARN#*:role/}" $$`
 
-  set -a
   read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
       __AWS sts assume-role --output text --role-arn "${ROLE_ARN:?}" \
           --role-session-name "${session_name}" \
           --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]'
     )
-  set +a
+  export ${!AWS_*}
 }
 
 #TODO? call recursively
