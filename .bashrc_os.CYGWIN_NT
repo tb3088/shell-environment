@@ -17,14 +17,12 @@ _flavor=${_flavor#?*.}
 # CYGWIN variable
 #
 # see: https://cygwin.com/faq/faq.html#faq.api.symlinks
-#  'winsymlinks[:lnk]' needed wherever native DOS/WIN programs or Explorer
-#  ':native[strict]' works across MINGW/CYGWIN/WSL but not in SAMBA/CIFS or Dropbox
-#     and also requires SeCreateSymbolicLink rights
+#  'winsymlinks[:lnk]' only needed in *old* versions of DOS/WIN (pre-Win10)
+#  ':nativestrict' works across MINGW/CYGWIN/WSL but not in SAMBA/CIFS or Dropbox
 #
-#  since 2020 cygwin defaults to WSL reparse points w/ POSIX path
-#
-# for absolute best/seamless integration use 'lnk'
-#DELIM= string.contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
+#  since 2020 cygwin defaults to WSL reparse points w/ POSIX path but DOS programs (eg. AWS CLI)
+#  require real [sym]links as provided by :nativestrict or mklink
+DELIM= string.contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
 
 # prevent fork-bomb if cmd.exe unavailable
 [ -z "${CYGWIN_NOWINPATH+X}" ] && is_exec cmd.exe &&
