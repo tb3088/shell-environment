@@ -165,7 +165,7 @@ function aws.profile() {
 
   [ "$profile" != 'default' ] || unset profile
   export AWS_PROFILE=$profile
-  _default="$_region" aws.region "$2" || return
+  _default="$_region" aws.region $2 || return
 
   aws.addPath
   #do NOT call aws.session
@@ -327,23 +327,29 @@ function aws.session() {
     :
   else
     cmd+=( get-session-token )
+	# per https://github.com/aws/aws-cli/issues/1985 force MFA use even without Role
+	: ${mfa:=`__AWS configure get mfa_serial`}
   fi
 
   #NOTE
   # Technically 'get-session-token' works without an MFA, but likely that a
   # 'ForceMFA'-style IAM policy is in effect, rendering such credentials void.
-  [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
-      while read -t 20 -ep "MFA ($mfa) Token:  " ${token_len:+'-N' $token_len} || return; do
-        [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
-      done
 
+# don't interfere with auto-prompt
+#  [ -n "${mfa:-`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
+#      while read -t 20 -ep "MFA ($mfa) Token:  " ${token_len:+'-N' $token_len} || return; do
+#        [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
+#      done
 #	#`__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
 #	list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
 
-  local output=$( __AWS "${cmd[@]}" \
-        ${mfa:+ '--serial-number' "$mfa" '--token-code' "${token:?}"} \
-        ${duration:+ '--duration-seconds' "$duration"}
-    ) || return
+  local output=`mktemp --quiet "${FUNCNAME}_${profile}.XXXXX"`
+  trap "rm -f $output" RETURN
+  __AWS "${cmd[@]}" \
+      ${mfa:+ '--serial-number' "$mfa"} \
+	  ${token:+ '--token-code' "$token"} \
+      ${duration:+ '--duration-seconds' "$duration"} | tee "$output"
+  
   aws.session-load "$output"
 }
 
@@ -388,6 +394,52 @@ function aws.addPath() {
 
 function aws.rmPath() {
   DELETE=1 aws.addPath "$@"
+}
+
+
+#TODO model after 18f, probes for region, VPC, and instance when invoked with '-P' or '--prompt'
+#function ec2.connect() {
+function ec2.session() {
+  local -i OPTIND lport= rport=
+  local OPTARG= opt rhost
+  local -a cmd=( ssm start-session )
+
+  while getopts ':L:h' opt; do
+    case "$opt" in
+      #ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html
+      L)    # pseudo SSH port-forward spec '[local_port:][remote_host:]remote_port'
+            IFS=: read -a words <<< "$OPTARG"
+            case ${#words[@]} in
+              1)    rport=$words
+                    ;;
+              2)    rport=${words[1]}
+                    # try assignment to detect type
+                    lport=$words
+                    [ $lport -gt 0 ] || { unset lport; rhost=$words; }
+                    ;;
+              3)    lport=$words
+                    rhost=${words[1]}
+                    rport=${words[2]}
+                    ;;
+              *)    log.error "invalid port-forward spec ('[local_port:][remote_host:]remote_port', $OPTARG)"; return
+            esac
+
+            grep -qE 'localhost|127\.+' <<< "$rhost" && unset rhost
+            [ $rport -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
+
+            cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
+                   '--parameters' "`string.join -zd ',' "portNumber=$rport" "localPortNumber=$lport" ${rhost:+"host=$rhost"}`" )
+            ;;
+
+      :)    log.error "missing argument (-$OPTARG)"; return ;;
+      \?)   log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  __AWS "${cmd[@]}" --target ${1:?InstanceId} "${@:2}"
 }
 
 

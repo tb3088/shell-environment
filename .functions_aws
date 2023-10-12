@@ -745,53 +745,6 @@ function aws.list() {
 }
 
 
-#TODO model after 18f, probes for region, VPC, and instance when invoked with '-P' or '--prompt'
-#function ec2.connect() {
-
-function ec2.session() {
-  local -i OPTIND lport= rport=
-  local OPTARG= opt rhost
-  local -a cmd=( __AWS ssm start-session )
-
-  while getopts ':L:h' opt; do
-    case "$opt" in
-      #ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html
-      L)    # pseudo SSH port-forward spec '[local_port:][remote_host:]remote_port'
-            IFS=: read -a words <<< "$OPTARG"
-            case ${#words[@]} in
-              1)    rport=$words
-                    ;;
-              2)    rport=${words[1]}
-                    # try assignment to detect type
-                    lport=$words
-                    [ $lport -gt 0 ] || { unset lport; rhost=$words; }
-                    ;;
-              3)    lport=$words
-                    rhost=${words[1]}
-                    rport=${words[2]}
-                    ;;
-              *)    log.error "invalid port-forward spec ('[local_port:][remote_host:]remote_port', $OPTARG)"; return
-            esac
-
-            grep -qE 'localhost|127\.+' <<< "$rhost" && unset rhost
-            [ $rport -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
-
-            cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
-                   '--parameters' "`string.join -zd ',' "portNumber=$rport" "localPortNumber=$lport" ${rhost:+"host=$rhost"}`" )
-            ;;
-
-      :)    log.error "missing argument (-$OPTARG)"; return ;;
-      \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
-            return 2
-    esac
-  done
-  shift $((OPTIND - 1))
-
-  "${cmd[@]}" --target ${1:?InstanceId} "${@:2}"
-}
-
-
 #function s3.restore
 #aws s3 ls s3://<bucket_name> | awk '{print $4}' | xargs -L 1 aws s3api restore-object --restore-request Days=<days> --bucket <bucket_name> --key
 # or better
