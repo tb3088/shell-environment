@@ -50,7 +50,7 @@ function aws.printenv() { for v in ${!AWS_*}; do printf '%q=%q\n' "$v" "${!v}"; 
 
 
 function aws.region() {
-  local _default region			# supplied by aws.profile()
+  local _default region                 # supplied by aws.profile()
   local OPTIND opt
   while getopts ':Pr:h' opt; do
     case "$opt" in
@@ -58,9 +58,9 @@ function aws.region() {
       r)    region=$OPTARG ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 cat <<-EOF
-			Usage: $FUNCNAME ... TODO
-			EOF
+      h|*)  >&2 cat <<EOF
+Usage: $FUNCNAME ... TODO
+EOF
             return 2
     esac
   done
@@ -101,16 +101,16 @@ function aws.profile() {
   local OPTIND opt
   while getopts ':LPp:h' opt; do
     case "$opt" in
-	  L)	__AWS configure list-profiles | column
-			return
-			;;
+      L)    __AWS configure list-profiles | column
+            return
+            ;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 cat <<-EOF
-			Usage: $FUNCNAME [profile] [region]
-			EOF
+      h|*)  >&2 cat <<EOF
+Usage: $FUNCNAME [profile] [region]
+EOF
             return 2
     esac
   done
@@ -135,11 +135,12 @@ function aws.profile() {
       read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
 
       [[ ${REPLY:0:1} =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
+
     elif [ ${#list[@]} -eq 1 ]; then
-	  profile=$list
-	else
+      profile=$list
+    else
       log.notice "no profile(s) found"
-	  profile=
+      unset profile
     fi
   fi
 
@@ -168,7 +169,7 @@ function aws.profile() {
   _default="$_region" aws.region $2 || return
 
   aws.addPath
-  #do NOT call aws.session
+  #do NOT call iam.session
 }
 
 
@@ -190,7 +191,7 @@ function aws.profile() {
 # so any profile that requires MFA must explicitely call it out? even if duplicated over and over?
 
 
-function aws.session-load() {
+function iam.session-load() {
   local format input=$1
 
   # jq doesn't error on empty input, not even '4'
@@ -203,14 +204,14 @@ function aws.session-load() {
 #   --output text \
 #    --query "Credentials.[AccessKeyId, SecretAccessKey, SessionToken]")
 #FIXME something very wrong in 'text' mode
-#log.error "code is broken ($FUNCNAME, $format)"; return 128
-#            IFS=$'\t' 
+log.error "code is broken ($FUNCNAME, $format)"; return 128
+#            IFS=$'\t'
             read header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
                 AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
 
     json)   local field; local -u envvar
-	        
+
             # alt: eval output of
             #   jq -r 'to_entries|map("\(.key|ascii_upcase)=\(.value|tostring)")|.[]'
             for field in `keys __aws_session`; do
@@ -229,31 +230,31 @@ function aws.session-load() {
 }
 
 
-function aws.session-write() {
-    [ ${AWS_PROFILE:-default} != 'default' ] || {
-        log.error "would overwrite default credentials!"
-        return 128
-      }
+function iam.session-write() {
+  [ ${AWS_PROFILE:-default} != 'default' ] || {
+      log.error "would overwrite default credentials!"
+      return 128
+    }
 
-    read -t 5 -ep "Are you DAMN sure? [y/N]:  " || return
-    [[ ${REPLY,,} =~ y ]] || return
+  read -t 5 -ep "Are you DAMN sure? [y/N]:  " || return
+  [[ ${REPLY,,} =~ y ]] || return
 
-    local -u envvar
-    for field in `keys __aws_session`; do
-      envvar=`value __aws_session "$field"`
-      __AWS configure set "${envvar,,}" "${!envvar}"
-    done
+  local -u envvar
+  for field in `keys __aws_session`; do
+    envvar=`value __aws_session "$field"`
+    __AWS configure set "${envvar,,}" "${!envvar}"
+  done
 }
 
 
 # alt: iam.assume-role
-function aws.session() {
+function iam.session() {
   # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
   #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
 
   local -i duration write=0 use_mfa=1 token_len=6
   local role profile mfa cache
-  local token=	# MUST be string, Bash strips leading ZEROs, printf treats as Octal
+  local token=  # MUST be string, Bash strips leading ZEROs, printf treats as Octal
   local cache_dir="$HOME/.aws/cli/cache"
 
   local OPTIND opt
@@ -261,22 +262,22 @@ function aws.session() {
     case "$opt" in
       c)    cache=$OPTARG
             for f in {,"$cache_dir"/}"$cache"; do
-			  [ -s "$f" ] && { cache=$( < "$f" ); break; }
-			done
-			aws.session-load "$cache"
-			;;
-	  C|L)	find "$cache_dir" -maxdepth 1 -type f -mtime +1 -exec rm {} \; 2>/dev/null
-			local -ir now=`date '+%s'`
-			for f in "$cache_dir"/*; do
-			  [ -f "$f" ] || continue
+              [ -s "$f" ] && { cache=$( < "$f" ); break; }
+            done
+            iam.session-load "$cache"
+            ;;
+      C|L)  find "$cache_dir" -maxdepth 1 -type f -mtime +1 -exec rm {} \; 2>/dev/null
+            local -ir now=`date '+%s'`
+            for f in "$cache_dir"/*; do
+              [ -f "$f" ] || continue
 
-			  local expires=$( date --date `__JQR '.Credentials.Expiration' "$f"` '+%s' )
-			  [ ${expires:-0} -ge ${now:?} ] || { rm -f "$f"; continue; }
+              local expires=$( date --date `__JQR '.Credentials.Expiration' "$f"` '+%s' )
+              [ ${expires:-0} -ge ${now:?} ] || { rm -f "$f"; continue; }
 
-			  [ "$opt" = 'L' ] && __JQR '.AssumedRoleUser.Arn' "$f"
-			done
-			return
-			;;
+              [ "$opt" = 'L' ] && __JQR '.AssumedRoleUser.Arn' "$f"
+            done
+            return
+            ;;
       r)    role=$OPTARG ;;
       T)    duration=$OPTARG ;;
       t)    [[ "$OPTARG" =~ ${__aws_regex['token']} ]] && token=$OPTARG || {
@@ -286,9 +287,9 @@ function aws.session() {
             ;;
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 cat <<-EOF
-			Usage: $FUNCNAME [options]
-			EOF
+      h|*)  >&2 cat <<EOF
+Usage: $FUNCNAME [options]
+EOF
             return 2
     esac
   done
@@ -315,20 +316,21 @@ function aws.session() {
 
   #NOTE STS rejects duration > 3600 if role-chaining
   #ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
-
   local -a cmd=( sts )
+
   if [ -n "$role" ]; then
     local session_name=$( printf 'SN%.15s@%.12s.%d,%s' "${role##*:role*/}" \
-						      "${AWS_PROFILE:-default}" $$ `date '+%T'` )
+                              "${AWS_PROFILE:-default}" $$ `date '+%T'` )
     #ref: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html#options
     cmd+=( assume-role '--role-arn' "$role" '--role-session-name' "${session_name//[^a-zA-Z0-9@=.,-]/}" )
+
   elif [ -n "`__AWS configure get role_arn`" ]; then
     # CONFIG-defined role transparently invokes 'assume-role'
     :
   else
     cmd+=( get-session-token )
-	# per https://github.com/aws/aws-cli/issues/1985 force MFA use even without Role
-	: ${mfa:=`__AWS configure get mfa_serial`}
+    # per https://github.com/aws/aws-cli/issues/1985 force MFA use even without Role
+    : ${mfa:=`__AWS configure get mfa_serial`}
   fi
 
   #NOTE
@@ -340,17 +342,17 @@ function aws.session() {
 #      while read -t 20 -ep "MFA ($mfa) Token:  " ${token_len:+'-N' $token_len} || return; do
 #        [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
 #      done
-#	#`__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
-#	list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
+#       #`__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
+#       list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
 
   local output=`mktemp --quiet "${FUNCNAME}_${profile}.XXXXX"`
   trap "rm -f $output" RETURN
   __AWS "${cmd[@]}" \
-      ${mfa:+ '--serial-number' "$mfa"} \
-	  ${token:+ '--token-code' "$token"} \
-      ${duration:+ '--duration-seconds' "$duration"} | tee "$output"
-  
-  aws.session-load "$output"
+      ${mfa:+'--serial-number' "$mfa"} \
+      ${token:+'--token-code' "$token"} \
+      ${duration:+'--duration-seconds' "$duration"} | tee "$output" # | log.info
+
+  iam.session-load "$output"
 }
 
 
@@ -398,24 +400,23 @@ function aws.rmPath() {
 
 
 #TODO model after 18f, probes for region, VPC, and instance when invoked with '-P' or '--prompt'
-#function ec2.connect() {
-function ec2.session() {
-  local -i OPTIND lport= rport=
-  local OPTARG= opt rhost
+function ec2.connect() {
+  local -i OPTIND
+  local OPTARG= opt
   local -a cmd=( ssm start-session )
 
   while getopts ':L:h' opt; do
     case "$opt" in
       #ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html
-      L)    # pseudo SSH port-forward spec '[local_port:][remote_host:]remote_port'
+      L)    local -i lport rport
+            local rhost
+            # pseudo SSH port-forward spec '[local_port:][remote_host:]remote_port'
             IFS=: read -a words <<< "$OPTARG"
             case ${#words[@]} in
               1)    rport=$words
                     ;;
               2)    rport=${words[1]}
-                    # try assignment to detect type
-                    lport=$words
-                    [ $lport -gt 0 ] || { unset lport; rhost=$words; }
+                    is_number($words) && lport=$words || rhost=$words
                     ;;
               3)    lport=$words
                     rhost=${words[1]}
@@ -424,16 +425,21 @@ function ec2.session() {
               *)    log.error "invalid port-forward spec ('[local_port:][remote_host:]remote_port', $OPTARG)"; return
             esac
 
-            grep -qE 'localhost|127\.+' <<< "$rhost" && unset rhost
-            [ $rport -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
+            # exclude 'localhost', TODO ipv6
+            grep -qE 'localhost|127\.[0-9]+' - -- <<< "$rhost" && unset rhost
+            [ ${rport:?} -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
 
             cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
-                   '--parameters' "`string.join -zd ',' "portNumber=$rport" "localPortNumber=$lport" ${rhost:+"host=$rhost"}`" )
+                   '--parameters' "`string.join -zd ',' "portNumber=$rport"
+                       ${lport:+localPortNumber=$lport}
+                       ${rhost:+host=$rhost}`" )
             ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
+      h|*)  >&2 cat <<EOF
+Usage: $FUNCNAME ... TODO
+EOF
             return 2
     esac
   done
@@ -441,6 +447,8 @@ function ec2.session() {
 
   __AWS "${cmd[@]}" --target ${1:?InstanceId} "${@:2}"
 }
+# backwards compat
+function ec2.session() { log.warn "deprecated - use 'ec2.connect()'"; ec2.connect "$@"; }
 
 
 function aws.route53-export() {
@@ -449,7 +457,7 @@ function aws.route53-export() {
 
   # if doesn't match pattern assume Domain name was specified
   #FIXME will pick first occurance which is likely not intended, use read() to prompt
-  grep -qE '([A-Z]|[0-9]){12,}' <<< "$zone_id" || zone_id=$(
+  grep -qE '([A-Z]|[0-9]){12,}' - -- <<< "$zone_id" || zone_id=$(
       __AWS route53 list-hosted-zones |
           __JQR --arg domain "$domain" '.HostedZones[] | select(.Name == $domain) | .Id' |
           cut -d'/' -f3 | head -n 1

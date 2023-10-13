@@ -653,6 +653,7 @@ function asg.scale-zero() {
 }
 
 
+#TODO aws.set asg.capacity
 function asg.set-capacity() {
   local -i min desired max OPTIND
   local OPTARG opt
