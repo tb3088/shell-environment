@@ -33,11 +33,11 @@ function __JQ_merge() { \jq --slurp 'reduce .[] as $item ({}; . * $item)'; }
 #
 # Recursively meld a and b,
 # concatenating arrays and
-# favoring b when there is a conflict 
+# favoring b when there is a conflict
 #def meld(a; b):
 #  a as $a | b as $b
 #  | if ($a|type) == "object" and ($b|type) == "object"
-#    then reduce ([$a,$b]|add|keys_unsorted[]) as $k ({}; 
+#    then reduce ([$a,$b]|add|keys_unsorted[]) as $k ({};
 #      .[$k] = meld( $a[$k]; $b[$k]) )
 #    elif ($a|type) == "array" and ($b|type) == "array"
 #    then $a+$b
@@ -174,8 +174,8 @@ function __is_type() {  #WARN! selective short-circuit on first error
         [ -n "$VERBOSE" ] && log.error "${keyword:-item} not found ($1)"
         return 1
       }
-
     whatami=${whatami#-}
+
     [[ "$whatami" =~ ${__types[$keyword]} ]] || {
         [ -n "$VERBOSE" ] && log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"
         return 1
@@ -187,6 +187,11 @@ function __is_type() {  #WARN! selective short-circuit on first error
 for f in array dir{,ectory} exec{,utable} file hash integer string function readonly; do
   eval function is_$f '{ __is_type "$@"; }'
 done
+
+function is_number() {
+  printf '%d' "$@" &>/dev/null
+  #alt: grep -qE '^0x[0-9a-f]+$|[0-9]+$' - -- <<< "$@"
+}
 
 
 # DO NOT MOVE - though properly belongs in .functions_os.cygwin,
@@ -357,7 +362,7 @@ function convert_path() {
     shift
   done
 }
-# backwards compat
+#TODO
 #function convert_path=os.filepath.print
 
 
@@ -390,7 +395,7 @@ function string.contains() {
   esac
 }
 # backwards compat
-copy_function string.contains contains
+function contains() { log.warn "deprecated - use 'string.contains()'"; string.contains "$@"; }
 
 
 #do NOT move to 'os'
@@ -407,7 +412,7 @@ function addPath() {
 
 #  while getopts ':fk:' opt; do
 #    case "$opt" in
-#      f)    
+#      f)
 #      k)    k=$OPTARG ;;
 #      v)    local VERBOSE=1 ;;
 #      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
@@ -486,29 +491,28 @@ function rmPath() {
 }
 
 
-#TODO? use printf '%q'
+#TODO? if QUOTE=1 use printf '%q'
 function string.join() {
   local flags= DELIM delim QUOTE quote ESCAPE escape
-  [ -n "$DELIM" ] && delim=$DELIM
-  [ -n "$QUOTE" ] && quote=$QUOTE
-  [ -n "$ESCAPE" ] && quote=$ESCAPE     # rare
+  [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
+  [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
+  [ -n "${ESCAPE+X}" ] && : ${quote=$ESCAPE}
 
   local OPTIND= opt=
   while getopts ':d:e:lq:uz' opt; do
     case "$opt" in
-      d)    : ${delim=$OPTARG} ;;
-      e)    : ${escape=$OPTARG} ;;
+      d)    delim=$OPTARG ;;
+      e)    escape=$OPTARG ;;
       l)    flags+=l ;;     # to_lower
-      q)    : ${quote=$OPTARG} ;;
+      q)    quote=$OPTARG ;;
       u)    flags+=u ;;     # to_upper
       z)    flags+=z ;;     # remove blanks
 
       :)    log.error "missing argument to '-$OPTARG'"; return 2
-            ;;
+88            ;;
       \?)   log.error "unknown option '-$OPTARG'" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <str> [<str> ...]
-
   -l        to lower case
   -u        to upper case
   -z        remove blank args
@@ -541,10 +545,11 @@ _EOF
   [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
   #WARN unintended side-effects
   [[ "${escape}${delim}${quote}" =~ [a-zA-Z] && "$flags" =~ l|u ]] &&
-      log.warn "case change poses severe risk (${escape} ${delim} ${quote})"
+      log.warn "case change poses severe risk (escape=${escape}, delim=${delim}, quote=${quote})"
   [[ "$flags" =~ l ]] && set -- "${@,,}"
   [[ "$flags" =~ u ]] && set -- "${@^^}"
 
+  # shortcut
   [ -z "$quote" -a ${#delim} -le 1 ] && { local IFS=$delim; echo "$*"; return; }
 
   # prepend each word during expansion
@@ -554,9 +559,9 @@ _EOF
   echo "${str#${quote}${delim}}$quote"
 }
 # backwards compat
-copy_function string.join join_string
+function join_string() { log.warn "deprecated - use 'string.join()'"; string.join "$@"; }
 
-
+#TODO
 function join_quote() { QUOTE=\' string.join "$@"; }
 
 
@@ -674,7 +679,7 @@ function version_int() (
 #
 #xarr=(${CurrV//./ })
 #yarr=(${ExpecV//./ })
-#    
+#
 #
 # suppose that ExpecV is newer (bigger) or equal to CurrV version:
 #
@@ -701,7 +706,7 @@ function version_int() (
 #}
 #
 #simple greater-than
-# [ bigger = `printf '%s\n' $ver1 $ver2 | sort --check=quiet --version-sort --stable | head -n 1` ] 
+# [ bigger = `printf '%s\n' $ver1 $ver2 | sort --check=quiet --version-sort --stable | head -n 1` ]
 #
 # ref: https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
 # handle x.y.z with optional '-XX##' or 1.4.0b2
