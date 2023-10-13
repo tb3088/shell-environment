@@ -137,7 +137,7 @@ function __AWS() {
 
   # bail out EC2
   if [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ] &&
-      grep --quiet --invert-match -e '--region' - -- <<< "$*" &&
+      grep -q --invert-match -e '--region' - -- <<< "$*" &&
 	  is_ec2; then
     local region=`ec2.metadata region || "${cmd[@]}" configure get region`
     [ -z "$region" ] && {
@@ -154,7 +154,7 @@ function __AWS() {
             ;;
     #FIXME [ -n "${FUNCNAME[1]}" ] to force json?
     # format specified in AWS_CONFIG_FILE. Text doesn't work in progromatic invocation.
-    *)      grep --quiet -e '--output' - -- <<< "$*" || cmd+=( '--output' ${OUTPUT:-json} )
+    *)      grep -q -e '--output' - -- <<< "$*" || cmd+=( '--output' ${OUTPUT:-json} )
 			cmd+=( 
                 '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
                 '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}} )
@@ -419,7 +419,7 @@ function aws.describe() {
   if [ -n "$query" ]; then
     cmd+=( '--query' "${query[@]}" )
     unset field
-  elif grep -q -- '--query' <<< "$*"; then
+  elif grep -qe '--query' - -- <<< "$*"; then
     unset field
   fi
 
