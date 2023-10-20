@@ -338,6 +338,7 @@ function convert_path() {
       t)    flags+=( '--type' "$OPTARG" )
             [ "$OPTARG" = 'unix' ] || abs=1
             ;;
+
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       d|m|w) abs=1 ;&
       # pass-thru unhandled args
@@ -508,8 +509,7 @@ function string.join() {
       u)    flags+=u ;;     # to_upper
       z)    flags+=z ;;     # remove blanks
 
-      :)    log.error "missing argument to '-$OPTARG'"; return 2
-88            ;;
+      :)    log.error "missing argument to '-$OPTARG'"; return 2 ;;
       \?)   log.error "unknown option '-$OPTARG'" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <str> [<str> ...]
@@ -559,16 +559,15 @@ _EOF
   echo "${str#${quote}${delim}}$quote"
 }
 # backwards compat
-function join_string() { log.warn "deprecated - use 'string.join()'"; string.join "$@"; }
+function join_string() { log.warn "deprecated. use 'string.join()'"; string.join "$@"; }
 
-#TODO
 function join_quote() { QUOTE=\' string.join "$@"; }
 
 
 function bool_to_i() {
 # Usage: [-u] <value|VAR_NAME> ...
-  local opt
-  local -i OPTIND _unset=0 rc
+  local opt to_bool
+  local -i OPTIND _unset=0
 
   while getopts ':u' opt; do
     case "$opt" in
@@ -578,42 +577,50 @@ function bool_to_i() {
   done
   shift $((OPTIND - 1))
 
-  while (($#)); do
+  local -i rc
+  while (( $# )); do
     case ${1,,} in
-      0|false)      echo 0; false ;;
-      1|true)       echo 1; true  ;;
-      [a-z]*)    if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
-                      local -n vref=$1
-                      vref=`$FUNCNAME "$vref"` || { [ ${_unset} -eq 1 ] && unset vref; }
-                    else
-                      local v=$1
-                      eval $v=`$FUNCNAME "${!v}"` || { [ ${_unset} -eq 1 ] && unset $v; }
-                    fi
+      0|false)  [ -n "${to_bool+X}" ] && echo 'false' || echo 0; false ;;
+      1|true)   [ -n "${to_bool+X}" ] && echo 'true' || echo 1; true ;;
+
+      [a-z]*)   if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
+                  local -n vref=$1
+                  vref=`$FUNCNAME "$vref"` || { [ ${_unset} -eq 1 ] && unset vref; }
+                else
+                  local v=$1
+                  eval $v=`$FUNCNAME "${!v}"` || { [ ${_unset} -eq 1 ] && unset $v; }
+                fi
     esac
-    rc=$?   #NOTE returns last if $# > 1
+    rc=$?
     shift
   done
-  return $rc
+  return $rc       #NOTE only last entry if $#>1
 }
 
+function i_to_bool() { to_bool=1 bool_to_i "$@"; }
 
-#function __parse_options() {
-# http://mywiki.wooledge.org/BashFAQ/035
-#  local option{,2} arg IFS='
-# ,/|'
-#FIXME this looks very odd.
-# enforce --[no-][a-zA-Z]+=<value>, --[no-][a-zA-Z] <value>, --<flag> sets $flag=1,
-# create a hash of options and values and any single dash are likewise treated as long
-  # for arg in $1; do
-    # case "$arg" in
-      # ---*) break ;;
-      # --?*) option="$arg"; break ;;
-      # -?*)  [ -n "$option" ] || option="$arg" ;;
-      # *)    break ;;
-    # esac;
-  # done
-#  # [ -n "$option" ] || return 0
+
+#function __GETOPT() {
+#https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash
+#https://gist.github.com/kaushalmodi/74e9875d5ab0a2bc1010447f1bee5d0a
+#getopt --longoptions 'file:,verbose' --options '+vf:' -- --verbose -f foobar another thing
+#yields: --verbose -f 'foobar' -- 'another' 'thing'
 #
+#Usage: __GETOPT [--options ${getopts_string without leading ':'}] [--longoptions <longopt] --name ${0:-$FUNCNAME} -- "$@"
+# for any items that LOOK like options (leading '-') either put them behind an *obvious* not an option, OR put '--' between arg sequence you want parsed and "ignore everything after"
+#consume via:
+# set -- `__GETOPT ...` || return 2 from parse error or getopt is the old version
+#otherwise parsed_args=( `__GETOPT ...` )
+#
+# while (($#)); do
+#   case "$1" in
+#     --) shift; break; # reached end of short+long options. tack $@ onto downstream command
+#     -s|--long) stuff; items+=( $2 ); shift
+#   esac
+#   shift
+# done
+#
+# http://mywiki.wooledge.org/BashFAQ/035
 #   IFS='
 # '
   # if [[ $option =~ (\[((no|dont)-?)\]). ]]; then
@@ -625,48 +632,16 @@ function bool_to_i() {
   # option="${option%%[<{().[]*}"
   # printf '%s\n' "${option/=*/=}"
 # }
-#
-# another long-option solution
-# ARGS=$(getopt --options +ade:f:hn:lp:s:w: \
-       # --long auto-servernum,error-file:auth-file:,help,server-num:,listen-tcp,xauth-protocol:,server-args:,wait: \
-       # --name "$PROGNAME" -- "$@")
-# GETOPT_STATUS=$?
-
-# if [ $GETOPT_STATUS -ne 0 ]; then
-    # error "internal error; getopt exited with status $GETOPT_STATUS"
-    # exit 6
-# fi
-
-# eval set -- "$ARGS"
-
-# while :; do
-    # case "$1" in
-        # -a|--auto-servernum) SERVERNUM=$(find_free_servernum) ;;
-        # -d|--auto-display) AUTO_DISPLAY=1 ;;
-        # -e|--error-file) ERRORFILE="$2"; shift ;;
-        # -f|--auth-file) AUTHFILE="$2"; shift ;;
-        # -h|--help) SHOWHELP="yes" ;;
-        # -n|--server-num) SERVERNUM="$2"; shift ;;
-        # -l|--listen-tcp) LISTENTCP="" ;;
-        # -p|--xauth-protocol) XAUTHPROTO="$2"; shift ;;
-        # -s|--server-args) XVFBARGS="$2"; shift ;;
-        # -w|--wait) STARTWAIT="$2"; shift ;;
-        # --) shift; break ;;
-        # *) error "internal error; getopt permitted \"$1\" unexpectedly"
-           # exit 6
-           # ;;
-    # esac
-    # shift
-# done
 
 
-function version_int() (
+
+function version_to_i() (   #runs in sub-shell
   shopt -s nocaseglob
 
   # superficial input sanitation
   set -- "${@//-/.}"; set -- "${@//[^0-9]/}"
 
-  while ($#); do    #deliberate un-quoted
+  while (( $# )); do    #deliberate un-quoted
     printf '%.3d' ${1//./ }; echo
     shift
   done

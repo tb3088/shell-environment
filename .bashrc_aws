@@ -416,7 +416,7 @@ function ec2.connect() {
               1)    rport=$words
                     ;;
               2)    rport=${words[1]}
-                    is_number($words) && lport=$words || rhost=$words
+                    is_number "${words:?}"  && lport=$words || rhost=$words
                     ;;
               3)    lport=$words
                     rhost=${words[1]}
@@ -435,7 +435,7 @@ function ec2.connect() {
                        ${rhost:+host=$rhost}`" )
             ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return ;;
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 cat <<EOF
 Usage: $FUNCNAME ... TODO
