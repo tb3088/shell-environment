@@ -1,7 +1,7 @@
 # http://quenenni.domainepublic.net/screenrc.txt
 # http://aperiodic.net/screen/appearance, title_examples
 
-shell ${SHELL}
+#shell ${SHELL}     is the default
 shelltitle "$ |shell"
 
 vbell off
