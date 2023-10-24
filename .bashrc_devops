@@ -7,12 +7,68 @@ alias git.diff_history='\git log -p --'
 # undo unhelpful whitespace changes
 #'\git diff --ignore-space-change --numstat | awk '$1 == 0 && $2 == 0 { print $NF }' | xargs git checkout HEAD --'
 
-set -a
 function __GIT() {
-  ${DEBUG:+ runv GIT_TRACE=2} git ${NOOP:+ --no-commit --no-ff} "$@"
+  ${DEBUG:+runv GIT_TRACE=2} git ${NOOP:+'--no-commit' '--no-ff'} "$@"
 }
 
-function git.current() { __GIT branch | awk '$1 == "*" { print $2; exit; }'; }
+set -o allexport
+
+function __prompt.git() {
+  [ -n "$GIT_PROMPT" ] || return 0
+
+  local _branch _upstream _stat{us,} _delta
+  local -i _mod _del _add _unk _ign _tot
+
+  #TODO
+  # short-circuit on not a git repo
+  # set branch,upstream via git branch --show-current or git branch -vv --color | awk '{ print $2, $3, $4 }'
+  # then get rid of '--branch' below
+
+  eval $(
+    set -e -o pipefail
+    awk '
+        NR==1 {
+            sub(/\(no branch\)/, ""); gsub(/[\[\],]/, "")
+            i=2
+            printf "_branch='%s' _status='%s' _delta=%d ", $i, $(i+1), $(i+2)
+            next
+        }
+        $1 ~ /M/ { mod++ }
+        $1 ~ /D/ { del++ }
+        $1 ~ /A/ { add++ }
+        $1 ~ /\?/ { unk++ }
+        $1 ~ /!/ { ign++ }
+        END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1 }
+    ' < <( git --no-pager status --untracked-files=all --ignore-submodules --porcelain --branch )
+  )
+
+  [ -n "$_branch" ] || return 0
+  
+  _upstream=${_branch#*...*/}
+  _branch=${_branch%...*}
+  [ "$_upstream" != "$_branch" ] || unset _upstream
+
+  # TODO handle both ahead AND behind?
+  case "$_status" in
+    ahead)  _status="[${FGRN}${_status}${RS} $_delta]"
+            ;;
+    behind) _status="[${FRED}${_status}${RS} $_delta]"
+            ;;
+    up-to-date|*)
+            # _status=`echo -e '\u2713'`
+            unset _status _delta
+  esac
+
+  for v in _mod _del _add _unk _ign _tot; do
+    [ ${!v} -ne 0 ] || unset $v
+  done
+
+  _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
+  echo -ne "\n${UL}Git:${RS} ${HC}$_branch${_upstream:+...$_upstream}${RS} ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}${RS}}"
+}
+
+
+function git.current() { git branch | awk '$1 == "*" { print $2; exit; }'; }
 
 function git.bulk_add() {
   [ $# -gt 0 ] || set -- M A D R
@@ -69,7 +125,7 @@ function git.mirror() {
   __GIT push "$dest" --tags
 }
 
-set +a
+set +o allexport
 #--- END git ---
 }
 

@@ -19,6 +19,14 @@ for f in "${BASH_SOURCE/bashrc/functions}"; do
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
+# session credentials expire in 8h
+export AWS_SESSION_DURATION=$((3600 * 8))
+
+alias aws='__AWS'
+alias aws.clearenv='aws.profile RESET'
+#alias ec2.disconnect='__AWS ssm terminate-session --session'
+# TODO DELETE=1 ec2.connect -i <instnace>
+
 addPath /usr/local/ec2-ami-tools*/**/bin
 
 # SSM Session-Manager
@@ -30,13 +38,19 @@ is_exec session-manager-plugin || {
 
 link=`is_exec -v aws_completer` && complete -C "$link" aws
 
-# session credentials expire in 8h
-export AWS_SESSION_DURATION=$((3600 * 8))
 
-alias aws.clearenv='aws.profile RESET'
-#deprecated: alias ec2.connect='__AWS ssm start-session --target'
-#alias ec2.disconnect='__AWS ssm terminate-session --session'
-alias aws='__AWS'
+function __prompt.aws() {
+  [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ] || return 0
+
+  local _config=`sed -E "s|^$HOME/(.aws/)?||; s|/config$||" <<< "$AWS_CONFIG_FILE"`
+
+  echo -ne "\n${UL}AWS:${RS} ${FMAG}${_config:---} ${HC}${AWS_PROFILE:---}${RS} / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}${RS}"
+
+  if [ "$AWS_SESSION_EXPIRE" ]; then
+    local -i remain=$(( (`date --date="$AWS_SESSION_EXPIRE" '+%s'` - `date '+%s'`) / 60 ))
+    [ $remain -gt 0 ] && echo -ne "  (${remain}m)" || echo -ne "  (${BRED}expired${RS})"
+  fi
+}
 
 
 function ec2.list-sessions() {
@@ -56,6 +70,7 @@ function aws.region() {
     case "$opt" in
       P)    region='prompt' ;;
       r)    region=$OPTARG ;;
+
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 cat <<EOF
@@ -84,12 +99,13 @@ EOF
     [[ ${REPLY:0:1} =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
   fi
 
-  # validity check TODO is_member
+  # validity check; TODO is_member()
   [ -n "${__aws_availability_zones[$region]}" ] || {
-      log.error "invalid region ($region)"; return
+      log.error "invalid region ($region)"
+      return
     }
 
-  #bug: Java API etc. use AWS_REGION - Amazon won't commit to consistency
+  #BUG! Java API uses AWS_REGION - Amazon refused consistency fix
   export AWS_{DEFAULT_,}REGION=$region
 }
 
@@ -106,6 +122,7 @@ function aws.profile() {
             ;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
+
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 cat <<EOF
@@ -166,7 +183,7 @@ EOF
 
   [ "$profile" != 'default' ] || unset profile
   export AWS_PROFILE=$profile
-  _default="$_region" aws.region $2 || return
+  _default="$_region" aws.region "${@:1}" || return
 
   aws.addPath
   #do NOT call iam.session
@@ -194,10 +211,12 @@ EOF
 function iam.session-load() {
   local format input=$1
 
-  # jq doesn't error on empty input, not even '4'
-  [ -n "$input" ] || return
-  log.debug "$input"
-  __JQ '.Credentials' <<< "$input" && format=json
+  [[ "${1:0:1}" =~ \.|/ || -s "$1" ]] && input=$( < "$1" )
+  [ -n "$input" ] || { log.error "empty input"; return; }
+
+  if is_json "$input"; then format='json'
+#  :else
+  fi
 
   case "${format:-text}" in
     text)   local header rest
@@ -206,27 +225,32 @@ function iam.session-load() {
 #FIXME something very wrong in 'text' mode
 log.error "code is broken ($FUNCNAME, $format)"; return 128
 #            IFS=$'\t'
-            read header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
-                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
+#            read header AWS_ACCESS_KEY_ID AWS_SESSION_EXPIRE \
+#                AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN rest <<< "$input"
             ;;
 
     json)   local field; local -u envvar
-
-            # alt: eval output of
-            #   jq -r 'to_entries|map("\(.key|ascii_upcase)=\(.value|tostring)")|.[]'
+            __JQ '.Credentials' <<< "$input" | log.debug || {
+                log.error "invalid input"; return
+              }
+            # JSON fields != ENVVAR names (missing underscores)
+            # jq -r '.Credentials | to_entries | map("\(.key|ascii_upcase)=\(.value|tostring)") | .[]'
             for field in `keys __aws_session`; do
               envvar=`value __aws_session "$field"`
               local -n nref=$envvar
               nref=`__JQR --arg field "$field" '.Credentials[$field]' <<< "$input"`
             done
-            __JQR '.AssumedRoleUser' <<< "$input" | log.info
+#TODO only if role. assign to AWS_SESSION_ROLE_ID and use in prompt
+#ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/sts/assume-role.html
+# may need to use Arn instead otherwise it'll be a session_id
+#            __JQR '.AssumedRoleUser.AssumedRoleId' <<< "$input" | log.info
             ;;
 
     *)      log.error "unsupported format ($format)"; return 2
   esac
 
   export ${!AWS_*}
-  [ -n "${FUNCNAME[1]}" ] || aws.printenv | log.info
+  if [ -z "${FUNCNAME[1]}" ]; then aws.printenv | log.info; fi
 }
 
 
@@ -258,7 +282,7 @@ function iam.session() {
   local cache_dir="$HOME/.aws/cli/cache"
 
   local OPTIND opt
-  while getopts ':Cc:Lr:T:t:' opt; do
+  while getopts ':Cc:Lr:t:X:' opt; do
     case "$opt" in
       c)    cache=$OPTARG
             for f in {,"$cache_dir"/}"$cache"; do
@@ -271,7 +295,7 @@ function iam.session() {
             for f in "$cache_dir"/*; do
               [ -f "$f" ] || continue
 
-              local expires=$( date --date `__JQR '.Credentials.Expiration' "$f"` '+%s' )
+              local expires=`date --date $(__JQR '.Credentials.Expiration' "$f") '+%s'`
               [ ${expires:-0} -ge ${now:?} ] || { rm -f "$f"; continue; }
 
               [ "$opt" = 'L' ] && __JQR '.AssumedRoleUser.Arn' "$f"
@@ -279,12 +303,14 @@ function iam.session() {
             return
             ;;
       r)    role=$OPTARG ;;
-      T)    duration=$OPTARG ;;
-      t)    [[ "$OPTARG" =~ ${__aws_regex['token']} ]] && token=$OPTARG || {
+      t)    [[ "$OPTARG" =~ ${__aws_regex['token']} ]] || {
                 log.error "invalid token format ($OPTARG)"
                 return 2
               }
+            token=$OPTARG
             ;;
+      X)    duration=$OPTARG ;;
+
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
       h|*)  >&2 cat <<EOF
@@ -309,7 +335,7 @@ EOF
       profile=$1
     else
       log.error "unknown argument ($1)"
-      return
+      return 2
     fi
     shift
   done
@@ -329,30 +355,29 @@ EOF
     :
   else
     cmd+=( get-session-token )
-    # per https://github.com/aws/aws-cli/issues/1985 force MFA use even without Role
-    : ${mfa:=`__AWS configure get mfa_serial`}
+    # Technically 'get-session-token' works fine without an MFA, but a
+    # 'ForceMFA'-style IAM policy likely in effect, rendering such credentials void.
+    #
+    # list=( `__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'` )
+    # list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
+    #
+    #BUG!
+    # per https://github.com/aws/aws-cli/issues/1985 implicit MFA ignored.
+    # also no prompt for missing Token, whereas 'assume-role' does checks
+    [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
+        while read -t 20 -ep "MFA ($mfa) token:  " ${token_len:+'-N' $token_len} || return; do
+          [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
+        done
   fi
 
-  #NOTE
-  # Technically 'get-session-token' works without an MFA, but likely that a
-  # 'ForceMFA'-style IAM policy is in effect, rendering such credentials void.
-
-# don't interfere with auto-prompt
-#  [ -n "${mfa:-`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
-#      while read -t 20 -ep "MFA ($mfa) Token:  " ${token_len:+'-N' $token_len} || return; do
-#        [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
-#      done
-#       #`__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'`
-#       list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
-
-  local output=`mktemp --quiet "${FUNCNAME}_${profile}.XXXXX"`
+  local output=`mktemp --quiet "${FUNCNAME}${profile:+_$profile}.XXXXX"`
   trap "rm -f $output" RETURN
   __AWS "${cmd[@]}" \
       ${mfa:+'--serial-number' "$mfa"} \
       ${token:+'--token-code' "$token"} \
-      ${duration:+'--duration-seconds' "$duration"} | tee "$output" # | log.info
-
-  iam.session-load "$output"
+      ${duration:+'--duration-seconds' "$duration"} | tee "$output" | log.info
+#FIXME abort on error
+#  iam.session-load "$output"
 }
 
 

@@ -33,87 +33,10 @@ BMAG='\[\e[45m\]' # background magenta
 BCYN='\[\e[46m\]' # background cyan
 BWHT='\[\e[47m\]' # background white
 
-function __prompt() {
-  local _rc=$?
-  #TODO _prompt=() and use IFS='<enter' to join elements
-  local _prompt=
-
-if [ -n "$GIT_PROMPT" ]; then
-  local _branch _upstream _stat{us,} _delta
-  local -i _mod _del _add _unk _ign _tot
-
-  #TODO
-  # short-circuit on not a git repo
-  # set branch,upstream via git branch --show-current or git branch -vv --color | awk '{ print $2, $3, $4 }'
-  # then get rid of '--branch' below
-
-  eval $(
-    set -e -o pipefail
-    awk '
-        NR==1 {
-            sub(/\(no branch\)/, ""); gsub(/[\[\],]/, "")
-            i=2
-            printf "_branch='%s' _status='%s' _delta=%d ", $i, $(i+1), $(i+2)
-            next
-        }
-        $1 ~ /M/ { mod++ }
-        $1 ~ /D/ { del++ }
-        $1 ~ /A/ { add++ }
-        $1 ~ /\?/ { unk++ }
-        $1 ~ /!/ { ign++ }
-        END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1 }
-    ' < <( git --no-pager status --untracked-files=all \
-            --ignore-submodules --porcelain --branch 2>/dev/null )
-  )
-
-  if [ -n "$_branch" ]; then
-    _upstream=${_branch#*...*/}
-    _branch=${_branch%...*}
-    [ "$_upstream" = "$_branch" ] && unset _upstream
-
-    # TODO handle both ahead AND behind?
-    case "$_status" in
-	'ahead')  _status="[${FGRN}${_status}$RS $_delta]"
-	    ;;
-	'behind') _status="[${FRED}${_status}$RS $_delta]"
-	    ;;
-	'up-to-date'|*)
-	    # _status=`echo -e '\u2713'`
-	    unset _status _delta
-    esac
-
-    local v
-    for v in _mod _del _add _unk _ign _tot; do
-      [ ${!v} -ne 0 ] || unset $v
-    done
-
-    _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
-    _prompt+="\n${UL}Git:$RS ${HC}$_branch${_upstream:+...$_upstream}$RS ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}$RS}"
-  fi
-fi
-
-  if [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ]; then
-    local _config=${AWS_CONFIG_FILE#$HOME/}
-    _config=${_config%/*}; _config=${_config#.aws/}
-    _prompt+="\n${UL}AWS:${RS} ${FMAG}${_config:+$_config:}${HC}${AWS_PROFILE:---}${RS} / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}${RS}"
-
-    if [ "$AWS_SESSION_EXPIRE" ]; then
-      local _session=`date -d $AWS_SESSION_EXPIRE '+%R'`
-      [ `date -d $AWS_SESSION_EXPIRE '+%s'` -gt `date '+%s'` ] || unset _session
-      _prompt+="  (${_session:-${BRED}expired${RS}})"
-    fi
-  fi
-
-  #TODO use array with IFS
-  PS1="${PS_PREFIX}${_prompt}"
-  [ $EUID -eq 0 ] && PS1+="${BRED}"
-  [ $_rc -eq 0 ] && unset _rc
-  PS1+="\n${INV}\A${RS} \!${_rc:+($_rc)}$RS ${PS_SCREEN}\$ "
-}
-
-PS_SCREEN='\[\033k\033\134\]'
+PS_SCREEN='\[\033k\033\134\]'		# missing '\h', '%n', or '$1' after 33k?
+#alt: echo -ne "\ek<XXX>\e\\"
 PS_PREFIX="\n${FCYN}\u${RS}@${FGRN}\h${RS} ${FYEL}\w${RS}"
-PS1="${PS_PREFIX}\n\! ${PS_SCREEN}\$ "
+PS1="${PS_PREFIX}\n\! \$ "
 
 # Examples:
 # for ROOT
@@ -122,6 +45,26 @@ PS1="${PS_PREFIX}\n\! ${PS_SCREEN}\$ "
 #PS1="\[\e]0;\w\a\]\n\[\e[32m\]\u@\h \[\e[33m\]\w\[\e[0m\]\n\!,\j \$ "
 #\[\033[36m\][\t]\[\033[32m\][\u@\h:\[\033[33m\]\w\[\033[32m\]]-> \[\033[0m\]
 
+
+function __prompt() {
+  local _RC=$?
+  #TODO _prompt=() and use IFS='<enter' to join elements
+  local _prompt=
+
+  PS1="${PS_PREFIX}"
+  while read fn; do
+    [ "$fn" != "$FUNCNAME" ] || continue
+    PS1+=`$fn`
+  done < <( declare -F | awk '{ print $NF }' | grep "^${FUNCNAME}" )
+
+  [ $EUID -eq 0 ] && PS1+="${BRED}"
+  [ $_RC -eq 0 ] && unset _RC
+  PS1+="\n${INV}\A${RS} \!${_RC:+($_RC)}$RS \$ "
+}
+
+
 # Whenever displaying the prompt, write the previous line to disk
 #PROMPT_COMMAND="history -a"
 declare -F __prompt >/dev/null && PROMPT_COMMAND=__prompt
+
+# vim: expandtab:ts=8:sw=4
