@@ -134,7 +134,6 @@ readonly -f __log_lookup
 
 function log() {
   local -i level mask offset=1
-  local format=${LOG_FORMAT:-'%-5s\t%s'}
 
   # auto-detect level from invocation style
   if level=`__log_lookup ${level:-$LOG_LEVEL}`; then
@@ -178,35 +177,33 @@ function log() {
     mask='TRACE' level='TRACE' offset=2 $FUNCNAME "${msg[@]}"
   fi
 
-  local fname=
-  local level_name=${__log_levels[$level]}
+  local fname= level_name=${__log_levels[$level]}
+  local logger_bin=`is_exec -v "${LOGGER:-logger}"`
 
   # embed FUNCNAME in output
   [ -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] &&
-        fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
+      fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
 
-  if [ $# -ge 1 ]; then
-    __log_print "$@"
-  else
+  if [ $# -eq 0 ]; then
     # slurp STDIN. 'IFS=' not needed when read() arg is 1
+    # '-r' allows primitive escape sequences
     while read -r; do __log_print "$REPLY"; done
+  else
+    while (( $# )); do __log_print "$1"; shift; done
   fi
 }
 readonly -f log
 
 
 function __log_print() {
-  local line
+  local line format=${LOG_FORMAT:-'%-5s\t%q'}
 
-  while [ -n "${1:x}" ]; do
-    printf -v line "${LOG_TIMESTAMP:+`date '+%FT%T.%3N'` }${format}" "$level_name" "${fname}$1"
-    # allow primitive escape sequences and send to STDERR
-    echo -e "$line" | tee ${LOGFILE:+ -a "$LOGFILE"} >&2
-    if [ -n "$SYSLOG" ] && is_exec "${LOGGER:=logger}"; then
-      "$LOGGER" --priority user.${level_name,,} -- "$line"
-    fi
-    shift
-  done
+  printf -v line "${LOG_TIMESTAMP:+`date '+%FT%T.%3N'` }${format}" "$level_name" "${fname}$1"
+  >&2 echo -e "$line" | tee ${LOGFILE:+'-a' "$LOGFILE"}
+
+  if [ -n "${SYSLOG}" -a -n "$logger_bin" ]; then
+    "$logger_bin" --priority user.${level_name,,} -- "$line"
+  fi
 }
 readonly -f __log_print
 
