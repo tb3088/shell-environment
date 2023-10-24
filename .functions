@@ -127,7 +127,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
     dir*|file)
             while (( $# )); do
               [ -d "${1:?parameter}" -o -f "$1" ] || { rc=1
-                  [ -n "$VERBOSE" ] && log.error "$keyword not found ($1)"
+                  [ -n "${VERBOSE}${DEBUG}" ] && log.error "$keyword not found ($1)"
                 }
               shift
             done
@@ -138,7 +138,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
     exec*)  local bin
             while (( $# )); do
               bin=`__WHICH "${1:?parameter}" 2>/dev/null` || rc=1
-              if [ -n "$VERBOSE" ]; then
+              if [ -n "${VERBOSE}${DEBUG}" ]; then
                 [ -n "$bin" ] && echo "$bin" || log.error "command not found ($1)"
               fi
               shift
@@ -149,7 +149,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
     func*)  local fn
             while (( $# )); do
               fn=`declare -F "${1:?parameter}"` || rc=1
-              if [ -n "$VERBOSE" ]; then
+              if [ -n "${VERBOSE}${DEBUG}" ]; then
                 [ -n "$fn" ] && { whereis_function "$1"; } || log.error "function not found ($1)"
               fi
               shift
@@ -159,7 +159,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
 
     read*)  local -i _readonly=1
             ;;
-    *)      [ -n "${__types[$keyword]}" ] || { log.error "unsupported type ($keyword)"; return; }
+    *)      [ -n "${__types[$keyword]}" ] || { log.error "unsupported type ($keyword)"; return 2; }
   esac
 
   local whatami flag _type
@@ -171,13 +171,13 @@ function __is_type() {  #WARN! selective short-circuit on first error
     [ ${_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag=F || flag=
 
     whatami=`declare -p${flag} "$1" | awk '{ print $2; }' 2>/dev/null` || {
-        [ -n "$VERBOSE" ] && log.error "${keyword:-item} not found ($1)"
+        [ -n "${VERBOSE}${DEBUG}" ] && log.error "${keyword:-item} not found ($1)"
         return 1
       }
     whatami=${whatami#-}
 
     [[ "$whatami" =~ ${__types[$keyword]} ]] || {
-        [ -n "$VERBOSE" ] && log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"
+        [ -n "${VERBOSE}${DEBUG}" ] && log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"
         return 1
       }
     shift
@@ -194,10 +194,14 @@ function is_number() {
 }
 
 
-# DO NOT MOVE - though properly belongs in .functions_os.cygwin,
-# required primarily for .functions_aws
+#NOTE - DO NOT MOVE!!
+# Properly belongs in '.functions_os.cygwin' but required for various
+# scripts and helper functions. Leaving it here simplifies includes.
 function is_windows() {
-  [ $# -eq 0 ] && { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; }
+  if [ $# -eq 0 ]; then
+    [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
+    return
+  fi
 
   local bin
   # multi-arg supported, but not recommended
@@ -209,6 +213,47 @@ function is_windows() {
     [[ "$bin" =~ ^/cygdrive ]] || file "$bin" | grep -q 'for MS Windows' || return
     shift
   done
+}
+
+
+function __is_markup() {
+  : ${cmd:?}		#WARN not safe
+  local -i rc
+
+  { # selective mutism
+  if [ $# -eq 0 ]; then
+    "${cmd[@]}"
+  else
+    while (( $# )); do
+      if [[ -f "$1" || "${1:0:1}" =~ \.|/ ]]; then
+        "${cmd[@]}" < "$1"
+      elif [ -n "$1" ]; then
+        "${cmd[@]}" <<< "$1"
+      else
+        false
+      fi || { rc=$?; break; }
+      shift
+    done
+  fi
+
+  [ ${rc-$?} -eq 0 ]
+  } 2>&1 >/dev/null | log.debug
+
+  [ $? -eq 0 ] || {
+      [ -n "${VERBOSE}${DEBUG}" ] && log.error "invalid input" "$1"
+      return 1
+    }
+}
+
+#WARN accepts both JSON and YAML
+function is_yaml() {
+  local -a cmd=( python -c 'import yaml, sys; yaml.safe_load(sys.stdin)' )
+  __is_markup "$@"
+}
+
+function is_json() {
+  local -a cmd=( python -c 'import json, sys; json.load(sys.stdin)' )
+  __is_markup "$@"
 }
 
 
