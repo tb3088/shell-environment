@@ -53,12 +53,6 @@ function __prompt.aws() {
 }
 
 
-function ec2.list-sessions() {
-#TODO getopt 'A' -> '--state Active'
-  __AWS ssm describe-sessions | __JQR '.Sessions[] | "\(.Target): \(.SessionId)"'
-}
-
-
 function aws.printenv() { for v in ${!AWS_*}; do printf '%q=%q\n' "$v" "${!v}"; done; }
 #alt: echo "$v=${!v}"
 
@@ -211,7 +205,13 @@ EOF
 function iam.session-load() {
   local format input=$1
 
-  [[ "${1:0:1}" =~ \.|/ || -s "$1" ]] && input=$( < "$1" )
+  if [[ "${1:0:1}" =~ \.|/ || -s "$1" ]]; then
+    input=$( < "$1" )
+  elif [ -n "$input" ]; then
+    :
+  else
+    input=$( <&0 )  #alt: /dev/stdin
+  fi
   [ -n "$input" ] || { log.error "empty input"; return; }
 
   if is_json "$input"; then format='json'
@@ -250,6 +250,7 @@ log.error "code is broken ($FUNCNAME, $format)"; return 128
   esac
 
   export ${!AWS_*}
+  # 'if' needed to thwart pipefail
   if [ -z "${FUNCNAME[1]}" ]; then aws.printenv | log.info; fi
 }
 
@@ -273,31 +274,34 @@ function iam.session-write() {
 
 # alt: iam.assume-role
 function iam.session() {
-  # https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
-  #NOTE AWS CLI will NOT let you 'get-session-token' if there is a 'role_arn' defined!
+  #NOTE! boto3 refuses 'get-session-token' if 'role_arn' defined
+  #ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
+
 
   local -i duration write=0 use_mfa=1 token_len=6
-  local role profile mfa cache
+  local role mfa cache
   local token=  # MUST be string, Bash strips leading ZEROs, printf treats as Octal
   local cache_dir="$HOME/.aws/cli/cache"
+  [ -d "$cache_dir" ] || mkdir -p "$cache_dir"
 
   local OPTIND opt
   while getopts ':Cc:Lr:t:X:' opt; do
     case "$opt" in
-      c)    cache=$OPTARG
-            for f in {,"$cache_dir"/}"$cache"; do
-              [ -s "$f" ] && { cache=$( < "$f" ); break; }
+      c)    for f in {,"$cache_dir"/}"$OPTARG"; do
+              [ -s "$f" ] && { cache=$f; break; }
             done
-            iam.session-load "$cache"
+            iam.session-load "${cache:-$OPTARG}"
             ;;
       C|L)  find "$cache_dir" -maxdepth 1 -type f -mtime +1 -exec rm {} \; 2>/dev/null
+            #XXX useful?
             local -ir now=`date '+%s'`
             for f in "$cache_dir"/*; do
               [ -f "$f" ] || continue
 
               local expires=`date --date $(__JQR '.Credentials.Expiration' "$f") '+%s'`
+#FIXME large number safe? use $((expr)) instead?
               [ ${expires:-0} -ge ${now:?} ] || { rm -f "$f"; continue; }
-
+#FIXME emit filename
               [ "$opt" = 'L' ] && __JQR '.AssumedRoleUser.Arn' "$f"
             done
             return
@@ -331,8 +335,6 @@ EOF
       role=$1
     elif [[ ${1,,} =~ ${__aws_regex['region']} ]]; then
       region=$1
-    elif [[ $1 =~ ${__aws_regex['profile']} ]]; then
-      profile=$1
     else
       log.error "unknown argument ($1)"
       return 2
@@ -362,22 +364,22 @@ EOF
     # list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
     #
     #BUG!
-    # per https://github.com/aws/aws-cli/issues/1985 implicit MFA ignored.
-    # also no prompt for missing Token, whereas 'assume-role' does checks
+    # per https://github.com/aws/aws-cli/issues/1985 implicit MFA ignored
+    # also no prompt for missing Token, whereas 'assume-role' checks
     [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
         while read -t 20 -ep "MFA ($mfa) token:  " ${token_len:+'-N' $token_len} || return; do
           [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
         done
   fi
 
-  local output=`mktemp --quiet "${FUNCNAME}${profile:+_$profile}.XXXXX"`
-  trap "rm -f $output" RETURN
+#FIXME use AWS_CONFIG_FILE middle like in __prompt_aws()
+  local output=`mktemp --quiet -p "$cache_dir" "${FUNCNAME}_${AWS_PROFILE:-default}.XXXXXXX"`
+#  trap "rm -f $output" RETURN
+  > "$output" \
   __AWS "${cmd[@]}" \
       ${mfa:+'--serial-number' "$mfa"} \
       ${token:+'--token-code' "$token"} \
-      ${duration:+'--duration-seconds' "$duration"} | tee "$output" | log.info
-#FIXME abort on error
-#  iam.session-load "$output"
+      ${duration:+'--duration-seconds' "$duration"} && iam.session-load "$output"
 }
 
 
@@ -474,6 +476,13 @@ EOF
 }
 # backwards compat
 function ec2.session() { log.warn "deprecated - use 'ec2.connect()'"; ec2.connect "$@"; }
+
+
+#TODO invoke as ec2.connect --list
+function ec2.session-list() {
+#TODO getopt 'A' -> '--state Active'
+  __AWS ssm describe-sessions --state Active | __JQR '.Sessions[] | "\(.Target): \(.SessionId)"'
+}
 
 
 function aws.route53-export() {
