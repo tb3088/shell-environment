@@ -185,9 +185,8 @@ function log() {
       fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
 
   if [ $# -eq 0 ]; then
-    # slurp STDIN. 'IFS=' not needed when read() arg is 1
-    # '-r' allows primitive escape sequences
-    while read -r; do __log_print "$REPLY"; done
+    local input=$( < /dev/stdin )
+    __log_print "$input"
   else
     while (( $# )); do __log_print "$1"; shift; done
   fi
@@ -196,7 +195,7 @@ readonly -f log
 
 
 function __log_print() {
-  local line format=${LOG_FORMAT:-'%-5s\t%q'}
+  local line format=${LOG_FORMAT:-'%-5s\t%s'}
 
   printf -v line "${LOG_TIMESTAMP:+`date '+%FT%T.%3N'` }${format}" "$level_name" "${fname}$1"
   >&2 echo -e "$line" | tee ${LOGFILE:+'-a' "$LOGFILE"}
