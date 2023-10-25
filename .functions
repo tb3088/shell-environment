@@ -9,6 +9,7 @@ function is_interactive() {
 
 is_interactive || { shopt -u failglob; shopt -s nullglob; }
 set -o pipefail
+shopt -s lastpipe
 
 #NOTE 'command' is unsuitable since returns aliases and functions
 function __WHICH() { \which --skip-aliases --skip-functions "$@"; }
@@ -66,7 +67,7 @@ function __CURL() { \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verb
 function _continue() { [ -n "$CONTINUE" ]; }
 
 function pause() {
-  [ $# -eq 0 ] && read -p 'Press [ENTER] to continue ...' || read -p "$*"
+  [ $# -eq 0 ] && { read -p 'Press [ENTER] to continue ...'; } || read -p "$*"
 }
 
 function confirm() {
@@ -239,7 +240,9 @@ function __is_markup() {
   [ ${rc-$?} -eq 0 ]
   } 2>&1 >/dev/null | log.debug
 
-  [ $? -eq 0 ] || {
+  # fancy-pants I/O redirection above will SIGPIPE (128+13) on no error
+  #ref: https://unix.stackexchange.com/a/254747, signal(7)
+  [ $? -eq 0 -o $? -eq 141 ] || {
       [ -n "${VERBOSE}${DEBUG}" ] && log.error "invalid input" "$1"
       return 1
     }
