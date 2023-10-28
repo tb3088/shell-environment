@@ -25,8 +25,9 @@ _flavor=${_flavor#?*.}
 DELIM= string.contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
 
 # prevent fork-bomb if cmd.exe unavailable
-[ -z "${CYGWIN_NOWINPATH+X}" ] && is_exec cmd.exe &&
+[ -n "${CYGWIN_NOWINPATH+X}" ] || { is_exec cmd.exe &&
     function command_not_found_handle() { cmd.exe /D /C "$@"; }
+  }
 
 if is_exec procps; then
   alias ps='\procps -e ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'

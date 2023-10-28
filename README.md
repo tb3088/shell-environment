@@ -1,6 +1,6 @@
 # Introduction
-This is intended to be checked out into your HOME directory. Typically that is not empty so
-a simple `git clone` will not work. The following sequence is best way forward.
+This file is intended to be checked out into your HOME directory. Typically that is not empty
+so a simple `git clone` will not work. The following sequence is best way forward:
 
 1. git init
 1. git remote add origin [REPO](https://github.com/tb3088/shell-environment.git)
@@ -13,15 +13,19 @@ Cygwin 'git' may complain about some of the submodules so add `ignore = all` to 
 Dropbox and environment-specific hooks (eg. Windows/Cygwin) can be helpful.
 Use `mklink` on certain shared paths to exure maximum compatability.
 
-### Tie in Windows to Cygwin
+### Tie Windows into Cygwin
+While within Cygwin `/home` is intuitive, but feeding a path element to CMD.exe
+(without calling `cygpath [-w|m]` which always fully qualifies) needs a symlink to avoid silly errors. 
 ```
 #/etc/fstab
 C:/Users /home none binary 0 0
 ```
-let Windows tools understand /cygpath/ via CMD.exe
+let Windows tools understand /cygdrive/ via CMD.exe
 ```
-mkdir C:\cygdrive; cd C:\cygpath
-mklink /J c C:\
+mklink /D home C:\Users
+
+mkdir C:\cygdrive; cd C:\cygdrive
+mklink /D c C:\
 ```
 
 ### Tie in Window to WSL
@@ -30,27 +34,37 @@ ln -s /mnt/c/Users/$USER .USERPROFILE
 ln -s .USERPROFILE/Dropbox
 ```
 ### HOMEDIR sym-links
-Git-Bash (MINGW) and Cygwin need `SeCreateSymbolicLink` rights to create NTFS-native links
-(`winsymlinks:native[strict]`). Launch `gpedit.msc` and navigate to
+Git-Bash (MINGW) doesn't support symlinks at all!
+
+While it's tempting to not set CYGWIN and leverage the new WSL-compatible reparse-points, Win10+ doesn't
+properly render or follow them be it binaries (eg. AWS CLI) or Explorer. A function `ln()` is defined
+to invoke `mklink` instead.
+
+[reference](https://cygwin.com/faq/faq.html#faq.api.symlinks)
+
+
+Deprecated:
+Launch `gpedit.msc` and navigate to
 `Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
-However it is better to use the simple directive, or not set anything and leverage the new
-WSL-compatible reparse-points.  [reference](https://cygwin.com/faq/faq.html#faq.api.symlinks)
 
 
 ```bash
 # .bashrc_os.cygwin|msys
-#CYGWIN|MSYS='winsymlinks[:lnk]'    NOT recommended
+CYGWIN|MSYS='winsymlinks:nativestrict'
 ```
 
+Reload SHELL before proceeding! Then just use `ln -s` as normal since it's now a wrapper.
 ```
+mklink /D home [C:]\Users
+
 mklink /D .WPHOME Dropbox/Work_Projects/XXX
 mklink .gitidentity .WPHOME/.gitidentity
 mklink /D .aws .WPHOME/.aws
 mklink /D .ssh .WPHOME/.ssh
-mkdir "$LOCALAPPDATA/workspace"
+mkdir -p "$LOCALAPPDATA/workspace"
 mklink /D workspace AppData/Local/workspace"	# WSL: .USERPROFILE/...
 
-ln -s .WPHOME/.*.local .
+ln -st . .WPHOME/.*.local
 ```
 
 ## Environment Variables
@@ -59,7 +73,8 @@ ln -s .WPHOME/.*.local .
 # Suggested Packages and Dependencies
 * Bash Autocomplete
 * Vim
-* Python3, Pip
+* Python3, Pip3
+* pip3 install [--user] wheel, yamllint, demjson3 (nee jsonlint)
 * [AWS Cli](https://docs.aws.amazon.com/cli/latest/userguide/installing.html)
 * [AMI tools](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/set-up-ami-tools.html)
 * [Elastic Beanstalk CLI](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb-cli3-install.html)
