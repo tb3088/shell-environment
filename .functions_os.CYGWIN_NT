@@ -11,7 +11,11 @@ function ln() {
       h)    flag='/h' ;;
       j)    flag='/j' ;;
       s)    unset flag ;;
-      t)    [ -d "${destdir:=$OPTARG}" ] || return ;;
+      t)    [ -d "${destdir:=$OPTARG}" ] || {
+                log.error "directory not found ($OPTARG)"
+                return
+              }
+            ;;
 
       :)    log.error "missing argument to '-$OPTARG'"; return 2 ;;
       \?)   #Usage
@@ -19,8 +23,16 @@ function ln() {
   done
   shift $((OPTIND-1))
 
-  if [ -n "$destdir" ]; then    #TODO? preserve original options
-    ( cd "$destdir"; while (( $# )); do $FUNCNAME "$1"; shift; done; )
+  # safety check
+  [ $# -le 2 -o -n "$destdir" ] || { log.error "more than 2 args requires '-t'"; return 2; }
+
+  if [ -n "$destdir" ]; then
+    ( cd "$destdir"
+      while (( $# )); do
+        ${flag:+ flag="$flag"} $FUNCNAME "$1"
+        shift
+      done
+    )
     return
   fi
 
