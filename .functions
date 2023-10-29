@@ -12,9 +12,10 @@ set -o pipefail
 shopt -s lastpipe
 
 #NOTE 'command' is unsuitable since returns aliases and functions
-function __WHICH() { \which --skip-aliases --skip-functions "$@"; }
+function __WHICH() { \which --skip-alias --skip-functions "$@"; }
 function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
 
+#function __YQ() { \yq ??? "$@"; }
 function __JQ() { \jq --exit-status "$@"; }
 function __JQR() { \jq "$@" | \jq --exit-status --raw-output '. // empty'; }
 #TODO call it merge1 since it ONLY handles 1st level
@@ -388,7 +389,6 @@ function convert_path() {
             ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      d|m|w) abs=1 ;&
       # pass-thru unhandled args
       \?)   flags+=( "-${OPTARG:-$opt}" ) ;;
       #h)
