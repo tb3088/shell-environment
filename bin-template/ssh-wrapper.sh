@@ -83,7 +83,7 @@ function _ssh() {
   local _cmd=SSH
   local -a _screen
 
-  if [[ "${TERM:-X}" =~ ^screen && -n "$SCREEN" ]]; then
+  if [[ -n "$SCREEN" && "${TERM:-X}" =~ ^screen ]]; then
     _screen=( "$SCREEN" -t "$PROFILE:$1" -T vt100 '--' )
   elif [ -n "$WT_SESSION" ]; then
     #NOTE! Win10 'ssh' can NOT be on PATH
@@ -105,16 +105,11 @@ function _ssh() {
         _cmd=${EDITOR:-vi}
   esac
 
-  # check that SSH_* files exist
+  # check that SSH_* files exist if already defined
   local v
-  for v in ${!SSH_*}; do
-    case $v in
-        # skip irrelevent
-        SSH_AGENT_PID|SSH_AUTH_SOCK|SSH_VERBOSE|SSH_OPTS) continue ;;
-    esac
-
-    local -n vv=$v
-    [ -n "${vv}" -a -s "${vv}" ] || log.error "file $v (${vv}) not found!"
+  for v in SSH_{CONFIG,KNOWN_HOSTS} ; do
+    local -n vf=$v
+    [ -s "${vf}" ] || { log.error "file $v not found (${vf})"; exit; }
   done
 
   # TODO? convert to function since identical
@@ -131,7 +126,7 @@ function _ssh() {
     done < <(
         [ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist
         [ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist
-        prefix="$HOME/.ssh" genlist
+        prefix="$HOME" genlist
       )
 
     : ${SSH_CONFIG:?not found}
@@ -142,17 +137,18 @@ function _ssh() {
   : ${SSH_KNOWN_HOSTS=${SSH_CONFIG/config/known_hosts}}
   log.debug "assuming SSH_KNOWN_HOSTS co-located with SSH_CONFIG" "\t$SSH_KNOWN_HOSTS"
 
-  # handy short-cut
-  [[ $_cmd =~ SSH|SCP|SFTP ]] || { $_cmd "${SSH_CONFIG}"; exit; }
+  # short-circuit
+  [[ $_cmd =~ SSH|SCP|SFTP ]] || { $_cmd "${SSH_CONFIG}"; return; }
 
   # propagate environment when running Screen
-  local _env=()
-  for v in DEBUG VERBOSE REGION ${!CLOUD_*} ${!SSH_*}; do
-    [ -n "${!v}" ] || continue
-
-    log.info "$v=${!v}"
+  local v _env=()
+  while read v; do
+    case $v in      # skip explicitly handled
+      SSH_IDENTITY|SSH_CONFIG|SSH_KNOWN_HOSTS|SSH_OPTS|SSH_VERBOSE)
+            continue ;;
+    esac
     _env+=( "$v=${!v}" )
-  done
+  done < <( eval printf '%s\\n' DEBUG VERBOSE REGION \${!${CLOUD}_*} ${!SSH_*} )
 
 #  is_windows "${!_cmd}" && __READLINK -am $SSH_CONFIG $SSH_IDENTITY $SSH_KNOWN_HOSTS
 
@@ -161,7 +157,7 @@ function _ssh() {
 
   ${DEBUG:+ runv} "${_screen[@]}" \
       /bin/env "${_env[@]}" \
-      ${!_cmd} ${SSH_VERBOSE:- -q} \
+      ${!_cmd} ${SSH_VERBOSE:-'-q'} \
       ${SSH_IDENTITY:+ -i "$SSH_IDENTITY"} \
       ${SSH_KNOWN_HOSTS:+ -o UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
       ${SSH_CONFIG:+ -F "$SSH_CONFIG"} \
