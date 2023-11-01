@@ -8,33 +8,30 @@
 # symlink to this wrapper will automatically set PROFILE
 
 source "$HOME"/.functions || exit
-is_function log runv || { >&2 echo -e "ERROR\tmissing functions (log, runv)"; exit 1; }
+is_function log runv || { >&2 echo -e "ERROR\tmissing essential functions (log, runv)"; exit 1; }
 
 shopt -s nullglob extglob
 
+
+#TODO use recursion
 function genlist() {
-  # Example list
+  #Example:
   #
-  # REGION/PROFILE/config REGION_PROFILE/config
-  # PROFILE/REGION/config PROFILE_REGION/config
-  # REGION/config_PROFILE REGION/config
-  # PROFILE/config_REGION PROFILE/config
-  # config_REGION_PROFILE config_PROFILE_REGION
-  # config_REGION         config_PROFILE
-  # config
+  # REGION/PROFILE/[.ssh/]config    REGION_PROFILE/config
+  # PROFILE/REGION/config           PROFILE_REGION/config
+  # REGION/config_PROFILE           REGION/config
+  # PROFILE/config_REGION           PROFILE/config
+  # config_REGION_PROFILE           config_PROFILE_REGION
+  # config_REGION                   config_PROFILE
+  # [.ssh/]config
 
   declare -a delim=('/' '.' '_')    # flavor to taste
 
-  local prefix stub combo
+  local prefix stub combo=()
   local file
   : ${file:=config}
   local b c {d,D}{1..3} e
   local item1=${1:-$PROFILE} item2=${2:-$REGION}
-
-  # TODO? if ${prefix: -1} overlaps $delim, single pass thru loop
-#  [[ -n "$prefix" && "${prefix: -1}" =~ [`printf '%s' "${delim[@]}"`] ]] && {
-#        D1="${prefix: -1}"; prefix="${prefix::-1}"
-#    }
 
   # bulk-set D* variable from defaults
   for i in D{1..3}; do eval "[ \${#$i[@]} -ne 0 ]" || declare -n $i=delim; done
@@ -45,25 +42,27 @@ function genlist() {
 
         # create combined suffix 'e' when b and c are empty
         [ -z "$b$c" -a -n "$item2" -a -n "$item1"  ] &&
-            combo="$item2\${d3}$item1 $item1\${d3}$item2"
+            combo=( "$item2\${d3}$item1" "$item1\${d3}$item2" )
 
         for d1 in "${D1[@]}"; do
             for d2 in "${D2[@]}"; do
                 [ -n "$b" -a -n "$c" ] && stub="$b$d2$c" || stub="$b$c"
 
-                for e in $combo $item2 $item1; do
+                for e in "${combo[@]}" "$item2" "$item1"; do
+                    [ -n "$e" ] || continue
                     [ "$e" = "$b" -o "$e" = "$c" ] && continue
 
                     for d3 in "${D3[@]}"; do
-                        # XXX does '$prefix.../config/*' have merit?
-                        # force '.../config*' format
+                        # force '.../config*' style, prevent further '/'
                         [ "$d3" = '/' ] && continue
 
-                        # unroll embedded $d3 inside $combo
-                        eval echo "$prefix${stub:+$d1$stub}/${file}${d3}$e"
+                        # 'eval' unrolls embedded $d3 inside $e when $combo
+                        eval printf '%s\\n' "${prefix}${stub:+${d1}${stub}}/{.ssh/,}${file}${d3}$e"
                     done
                 done
-                echo "$prefix${stub:+$d1$stub}/$file"
+                # trivial '/' case
+                eval printf '%s\\n' "$prefix${stub:+${d1}${stub}}/{.ssh/,}$file"
+
                 [ -z "$b$c" ] && break 2
                 [ -z "$b" ] && break
             done
@@ -84,7 +83,7 @@ function _ssh() {
   local _cmd=SSH
   local -a _screen
 
-  if [[ "${TERM:-X}" =~ ^screen ]]; then
+  if [[ "${TERM:-X}" =~ ^screen && -n "$SCREEN" ]]; then
     _screen=( "$SCREEN" -t "$PROFILE:$1" -T vt100 '--' )
   elif [ -n "$WT_SESSION" ]; then
     #NOTE! Win10 'ssh' can NOT be on PATH
@@ -115,35 +114,33 @@ function _ssh() {
     esac
 
     local -n vv=$v
-    [ -n "${vv}" -a -f "${vv}" ] || log.error "file $v (${vv}) not found!"
+    [ -n "${vv}" -a -s "${vv}" ] || log.error "file $v (${vv}) not found!"
   done
 
   # TODO? convert to function since identical
-  [ -n "$SSH_CONFIG" ] || {
+  if [ -z "$SSH_CONFIG" ]; then
     log.debug "looking for SSH_CONFIG"
 
     # NOTICE: This level of search can take a while, flavor to taste.
-    for _file in `[ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist` \
-          `[ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist` \
-          `prefix="$HOME/.ssh" genlist`; do
+    while read _file; do
+      # discard match on '.aws/config' since that is reserved
+      [ "$_file" = "${AWS_CONFIG_FILE:-$HOME/.aws/config}" ] && continue
 
-        # discard match on '.aws/config' since that is reserved
-        [ "$_file" = "${AWS_CONFIG_FILE:-$HOME/.aws/config}" ] && continue
+      log.debug "\t$_file"
+      [ -s "$_file" ] && { SSH_CONFIG="$_file"; break; }
+    done < <(
+        [ -n "$BASEDIR" ] && prefix="$BASEDIR" genlist
+        [ -n "$CLOUD_PROFILE" ] && prefix="$HOME/.$CLOUD/$CLOUD_PROFILE" genlist
+        prefix="$HOME/.ssh" genlist
+      )
 
-        log.debug "    $_file"
-        [ -f "$_file" ] && { SSH_CONFIG="$_file"; break; }
-    done
     : ${SSH_CONFIG:?not found}
-  }
+  fi
 
   # UserKnownHostFile shouldn't be defined inside 'config' because brittle
-  [ -n "$SSH_KNOWN_HOSTS" ] || {
-    log.debug "assuming SSH_KNOWN_HOSTS co-located with SSH_CONFIG"
-
-    _file="${SSH_CONFIG/config/known_hosts}"
-    log.debug "    $_file"
-    [ -f "$_file" ] && SSH_KNOWN_HOSTS="$_file" || : ${SSH_KNOWN_HOSTS:?not found}
-  }
+  #TODO pre-process CONFIG for said directive
+  : ${SSH_KNOWN_HOSTS=${SSH_CONFIG/config/known_hosts}}
+  log.debug "assuming SSH_KNOWN_HOSTS co-located with SSH_CONFIG" "\t$SSH_KNOWN_HOSTS"
 
   # handy short-cut
   [[ $_cmd =~ SSH|SCP|SFTP ]] || { $_cmd "${SSH_CONFIG}"; exit; }
