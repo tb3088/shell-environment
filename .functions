@@ -128,20 +128,25 @@ function __is_type() {  #WARN! selective short-circuit on first error
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              [ -d "${1:?parameter}" -o -f "$1" ] || { rc=1
-                  [ -n "${VERBOSE}${DEBUG}" ] && log.error "$keyword not found ($1)"
+              [ -d "${1:?parameter}" -o -f "$1" ] || {
+                  rc=1
+                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
+                  break
                 }
               shift
             done
             return $rc
             ;;
 
-#    command)    # allow alias and functions
+#    command)    #WARN allows alias and functions
     exec*)  local bin
             while (( $# )); do
               bin=`__WHICH "${1:?parameter}" 2>/dev/null` || rc=1
-              if [ -n "${VERBOSE}${DEBUG}" ]; then
-                [ -n "$bin" ] && echo "$bin" || log.error "command not found ($1)"
+              if  [ -n "$bin" ]; then
+                [ -n "${VERBOSE}" ] && echo "$bin"
+              else
+                [ -n "${VERBOSE}" ] && log.error "command not found ($1)"
+                break
               fi
               shift
             done
@@ -151,8 +156,11 @@ function __is_type() {  #WARN! selective short-circuit on first error
     func*)  local fn
             while (( $# )); do
               fn=`declare -F "${1:?parameter}"` || rc=1
-              if [ -n "${VERBOSE}${DEBUG}" ]; then
-                [ -n "$fn" ] && { whereis_function "$1"; } || log.error "function not found ($1)"
+              if [ -n "$fn" ]; then
+                [ -n "${VERBOSE}" ] && whereis_function "$1"
+              else
+                [ -n "${VERBOSE}" ] && log.error "function not found ($1)"
+                break
               fi
               shift
             done
@@ -328,15 +336,15 @@ function copy_function() {
     # ignore badly-formed arguments
     [ -n "$target" ] || continue
 
-    is_function "$target" && {
-        if [ ${overwrite:-0} -eq 1 ]; then
-          is_readonly "$target" && { log.debug "ERROR\tread-only function ($target)"; return 1; }
-          log.debug "NOTICE\toverwriting function ($target)"
-        else
-          log.debug "WARN\tfunction exits ($target)"
-          continue
-        fi
-      }
+    if is_function "$target"; then
+      if [ ${overwrite:-0} -eq 1 ]; then
+        is_readonly "$target" && { log.debug "ERROR\tread-only function ($target)"; return 1; }
+        log.debug "NOTICE\toverwriting function ($target)"
+      else
+        log.debug "WARN\tfunction exits ($target)"
+        continue
+      fi
+    fi
 
     #alt: "function $target ${body#*\(\)}"
     eval "${body/$fname/$target}"
@@ -347,10 +355,6 @@ function copy_function() {
 function rename_function() {
   copy_function "${1:?source}" "${2:?dest}" && unset -f "$1"
 }
-
-
-# more efficient
-is_exec pv && { is_function cat || function cat() { pv -q "$@"; }; }
 
 
 function convert_path() {
@@ -930,6 +934,12 @@ function log.error() {
 
 copy_function log.debug log.trace
 copy_function log.notice log.warn
+
+
+# more efficient
+if is_exec pv; then
+  is_function cat || function cat() { pv -q "$@"; }
+fi
 
 
 # vim: expandtab:ts=8:sw=4
