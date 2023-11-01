@@ -13,7 +13,10 @@ __aws_api=`"$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]
 #ref:   https://github.com/ivan-dyachenko/version
 #       https://stackoverflow.com/questions/48491662/comparing-two-version-numbers-in-a-shell-script
 #       https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
-[[ ${__aws_api} > 2.3.7 ]] || { >&2 echo -e "WARN\t old CLI version"; }
+[[ ${__aws_api} > 2.3.7 ]] || { >&2 echo -e "WARN\tvery old CLI version"; }
+
+is_exec jq || { log.error "missing required command (jq)"; return 1; }
+is_exec yq || log.warn "missing important command (yq)"
 
 
 # safety fall-back when neither AWS_DEFAULT_REGION or configuration defaults
