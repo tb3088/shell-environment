@@ -46,6 +46,7 @@ function __prompt.aws() {
 
   echo -ne "\n${UL}AWS:${RS} ${FMAG}${_config:---} ${HC}${AWS_PROFILE:---}${RS} / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}${RS}"
 
+#FIXME don't use math, print to common format and simple compare?
   if [ "$AWS_SESSION_EXPIRE" ]; then
     local -i remain=$(( (`date --date="$AWS_SESSION_EXPIRE" '+%s'` - `date '+%s'`) / 60 ))
     [ $remain -gt 0 ] && echo -ne "  (${remain}m)" || echo -ne "  (${BRED}expired${RS})"
@@ -54,7 +55,8 @@ function __prompt.aws() {
 
 
 function aws.printenv() { for v in ${!AWS_*}; do printf '%q=%q\n' "$v" "${!v}"; done; }
-#alt: echo "$v=${!v}"
+#TODO '-m' or MASK=1 causes **************<truncated value> to print. use printf for
+#padding and feed ${var:<pad_width>:<max_width>} to it.
 
 
 function aws.region() {
@@ -135,6 +137,7 @@ EOF
     }
 
   if [ "${profile:-prompt}" = 'prompt' ]; then
+# put this in __aws_regex, along with bit from __prompt_aws for CONFIG_FILE path elements
 #    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
 #    local -a list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
     local -a list=( `__AWS configure list-profiles` )
@@ -177,16 +180,16 @@ EOF
 
   [ "$profile" != 'default' ] || unset profile
   export AWS_PROFILE=$profile
-  _default="$_region" aws.region "${@:1}" || return
+  _default="$_region" aws.region "$2" || return
 
   aws.addPath
   #do NOT call iam.session
 }
 
 
-# Config directive 'source_profile' does NOT pick up MFA, or perhaps fails ONLY when source_profile=default?
-# any CLI command invoked with role_arn defined will transparently invoke assume-role and get session creds
-# and saves them to cli/cache.
+# Config directive 'source_profile' can NOT be chained to  pick up MFA
+# if role_arn defined, CLI will transparently invoke 'assume-role' and prompt for TOTP
+# and saves session creds to cli/cache.
 #{
 #  "Credentials": {
 #    "AccessKeyId": "ASIAB",
@@ -199,7 +202,16 @@ EOF
 #    "Arn": "arn:aws-us-gov:sts::067213379591:assumed-role/deployer/botocore-session-1697069671"
 #  }
 #
-# so any profile that requires MFA must explicitely call it out? even if duplicated over and over?
+# so any profile that requires MFA must explicitely call it out? even if duplicated over and over? yes
+
+#TODO aws.configure() that wraps the native and does RECURSION (-R) to look for stuff, like region and mfa or role.
+# delete a profile via:
+#   sed  '/^\[profile deployer/,/^\[/ { /^\[profile deployer/ d; /^\[/ !d; }' $AWS_CONFIG_FILE
+# but ^^^ will eat any commented out lines unlucky enough to be within the range
+# similar for credentials file just without the keyword 'profile'
+# to print JUST the profile (and any blank or embedded comments
+# sed -n '/^\[profile deployer/,/^\[/ { /^\[/ !p; }' or
+# sed '/^\[profile deployer/,/^\[/ !d' | sed '$d'
 
 
 function iam.session-load() {
@@ -274,26 +286,30 @@ function iam.session-write() {
 
 # alt: iam.assume-role
 function iam.session() {
-  #NOTE! boto3 refuses 'get-session-token' if 'role_arn' defined
+  #NOTE! boto3 refuses 'get-session-token' if 'role_arn' defined in Profile
   #ref: https://docs.aws.amazon.com/STS/latest/APIReference/API_GetSessionToken.html
-
+# mimic aws.profile RESET by unsetting the 3(4) vars that are ephemeral
+#FIXME, if session is expired, have to drop the 3 variables or else it tries to renew
+#with expired creds, which obviously won't work.
+#FIXME when called with  invoke as AWS_PROFILE=x $0
 
   local -i duration write=0 use_mfa=1 token_len=6
-  local role mfa cache
+  local role mfa
   local token=  # MUST be string, Bash strips leading ZEROs, printf treats as Octal
   local cache_dir="$HOME/.aws/cli/cache"
   [ -d "$cache_dir" ] || mkdir -p "$cache_dir"
 
   local OPTIND opt
-  while getopts ':Cc:Lr:t:X:' opt; do
+  while getopts ':CLr:t:X:' opt; do
     case "$opt" in
-      c)    for f in {,"$cache_dir"/}"$OPTARG"; do
-              [ -s "$f" ] && { cache=$f; break; }
-            done
-            iam.session-load "${cache:-$OPTARG}"
-            ;;
+#      c)    local cache
+#            for f in {,"$cache_dir"/}"$OPTARG"; do
+#              [ -s "$f" ] && { cache=$f; break; }
+#            done
+#            iam.session-load "${cache:-$OPTARG}"
+#            ;;
       C|L)  find "$cache_dir" -maxdepth 1 -type f -mtime +1 -exec rm {} \; 2>/dev/null
-            #XXX useful?
+            #FIXME, 
             local -ir now=`date '+%s'`
             for f in "$cache_dir"/*; do
               [ -f "$f" ] || continue
@@ -301,7 +317,7 @@ function iam.session() {
               local expires=`date --date $(__JQR '.Credentials.Expiration' "$f") '+%s'`
 #FIXME large number safe? use $((expr)) instead?
               [ ${expires:-0} -ge ${now:?} ] || { rm -f "$f"; continue; }
-#FIXME emit filename
+#FIXME emit filename 'input_filename', or just printf() it.
               [ "$opt" = 'L' ] && __JQR '.AssumedRoleUser.Arn' "$f"
             done
             return
@@ -333,8 +349,6 @@ EOF
       token=$1
     elif [[ $1 =~ ${__aws_regex['role']} ]]; then
       role=$1
-    elif [[ ${1,,} =~ ${__aws_regex['region']} ]]; then
-      region=$1
     else
       log.error "unknown argument ($1)"
       return 2
@@ -366,6 +380,12 @@ EOF
     #BUG!
     # per https://github.com/aws/aws-cli/issues/1985 implicit MFA ignored
     # also no prompt for missing Token, whereas 'assume-role' checks
+#FIXME use --query 'MFADevices[*].SerialNumber' instead? returns array
+#maybe we DO want '-S' in aws.profile() to force iam.session? Is there OPSEC reasons
+#to prefer session creds over perm even in the absence of MFA?
+#if we have MFA in account should we just assume to use it? or only force issue if aws.profile
+#detects that serial_number is defined in PROFILE?
+
     [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
         while read -t 20 -ep "MFA ($mfa) token:  " ${token_len:+'-N' $token_len} || return; do
           [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
@@ -375,11 +395,32 @@ EOF
 #FIXME use AWS_CONFIG_FILE middle like in __prompt_aws()
   local output=`mktemp --quiet -p "$cache_dir" "${FUNCNAME}_${AWS_PROFILE:-default}.XXXXXXX"`
 #  trap "rm -f $output" RETURN
-  > "$output" \
+#FIXME do NOT scribble in cli_cache. we don't want this stuff persisted except in obvious CLI files
   __AWS "${cmd[@]}" \
       ${mfa:+'--serial-number' "$mfa"} \
       ${token:+'--token-code' "$token"} \
-      ${duration:+'--duration-seconds' "$duration"} && iam.session-load "$output"
+      ${duration:+'--duration-seconds' "$duration"} | tee "$output" && iam.session-load "$output"
+
+#TODO create a derivative profile with new creds. instead of creating a cache file just
+# run a series of 'aws configure set' to create the ephemeral, and save the creds.
+# see https://github.com/YevheniiPokhvalii/generate-aws-tokens
+#
+#  aws configure --profile <_mfa_000> set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+#  aws configure --profile _mfa_000 set aws_session_token "$AWS_SESSION_TOKEN" (ends up in AWS_CONFIG_FILE
+# ditto aws_session_expire
+# 
+
+
+# get-caller-ident only rerturns uid, name and ARN but nothing specific to the profile.
+#ref: https://github.com/aws/aws-cli/issues/6980
+#name the 
+#cache file appropriately if possible. see what assume-role does. Point being it should be
+#possible to switch back and forth from with-MFA profile back to base (or another) and then
+#pop back in, assuming the temp creds haven't expired. If they have, then re-auth or force
+#user to re-invoke iam.session.
+#aws.profile --list should show temporary derivitive profile(s), with perhaps '--clean|clear_cache'
+#
+
 }
 
 
