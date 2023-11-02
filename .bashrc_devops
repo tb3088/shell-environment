@@ -11,8 +11,6 @@ function __GIT() {
   ${DEBUG:+runv GIT_TRACE=2} git ${NOOP:+'--no-commit' '--no-ff'} "$@"
 }
 
-set -o allexport
-
 function __prompt.git() {
   [ -n "$GIT_PROMPT" ] || return 0
 
@@ -70,6 +68,7 @@ function __prompt.git() {
 
 function git.current() { git branch | awk '$1 == "*" { print $2; exit; }'; }
 
+
 function git.bulk_add() {
   [ $# -gt 0 ] || set -- M A D R
   while (( $# )); do
@@ -77,6 +76,7 @@ function git.bulk_add() {
    shift
   done
 }
+
 
 function git.mirror() {
   local BRANCH interactive
@@ -125,7 +125,6 @@ function git.mirror() {
   __GIT push "$dest" --tags
 }
 
-set +o allexport
 #--- END git ---
 }
 
