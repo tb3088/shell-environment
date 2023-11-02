@@ -130,7 +130,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
             while (( $# )); do
               [ -d "${1:?parameter}" -o -f "$1" ] || {
                   rc=1
-                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
+                  [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
                   break
                 }
               shift
@@ -145,7 +145,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
               if  [ -n "$bin" ]; then
                 [ -n "${VERBOSE}" ] && echo "$bin"
               else
-                [ -n "${VERBOSE}" ] && log.error "command not found ($1)"
+                [ -n "${VERBOSE}" ] && log "command not found ($1)"
                 break
               fi
               shift
@@ -159,7 +159,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
               if [ -n "$fn" ]; then
                 [ -n "${VERBOSE}" ] && whereis_function "$1"
               else
-                [ -n "${VERBOSE}" ] && log.error "function not found ($1)"
+                [ -n "${VERBOSE}" ] && log "function not found ($1)"
                 break
               fi
               shift
@@ -181,13 +181,13 @@ function __is_type() {  #WARN! selective short-circuit on first error
     [ ${_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag=F || flag=
 
     whatami=`declare -p${flag} "$1" | awk '{ print $2; }' 2>/dev/null` || {
-        [ -n "${VERBOSE}${DEBUG}" ] && log.error "${keyword:-item} not found ($1)"
+        [ -n "${VERBOSE}" ] && log "${keyword:-item} not found ($1)"
         return 1
       }
     whatami=${whatami#-}
 
     [[ "$whatami" =~ ${__types[$keyword]} ]] || {
-        [ -n "${VERBOSE}${DEBUG}" ] && log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"
+        [ -n "${VERBOSE}" ] && log "type mismatch ($1: ${__types[$whatami]} != $keyword)"
         return 1
       }
     shift
@@ -252,7 +252,7 @@ function __is_markup() {
   # fancy-pants I/O redirection above will SIGPIPE (128+13) on no error
   #ref: https://unix.stackexchange.com/a/254747, signal(7)
   [ $? -eq 0 -o $? -eq 141 ] || {
-      [ -n "${VERBOSE}${DEBUG}" ] && log.error "invalid input" "$1"
+      [ -n "${VERBOSE}" ] && log.error "invalid input" "$1"
       return 1
     }
 }
@@ -336,12 +336,16 @@ function copy_function() {
     # ignore badly-formed arguments
     [ -n "$target" ] || continue
 
+    #log.* may not be defined as yet
     if is_function "$target"; then
       if [ ${overwrite:-0} -eq 1 ]; then
-        is_readonly "$target" && { log.debug "ERROR\tread-only function ($target)"; return 1; }
-        log.debug "NOTICE\toverwriting function ($target)"
+        is_readonly "$target" && {
+            [ -n "$VERBOSE" ] && log "ERROR\toverwrite read-only function ($target)"
+            return 1
+          }
+        [ -n "$VERBOSE" ] && log "NOTICE\toverwriting function ($target)"
       else
-        log.debug "WARN\tfunction exits ($target)"
+        [ -n "$VERBOSE" ] && log "WARN\tfunction exits ($target)"
         continue
       fi
     fi
@@ -938,7 +942,7 @@ copy_function log.notice log.warn
 
 # more efficient
 if is_exec pv; then
-  is_function cat || function cat() { pv -q "$@"; }
+  function cat() { pv -q "$@"; }
 fi
 
 
