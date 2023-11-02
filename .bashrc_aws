@@ -24,6 +24,7 @@ export AWS_SESSION_DURATION=$((3600 * 8))
 
 alias aws='__AWS'
 alias aws.clearenv='aws.profile RESET'
+alias aws-shell='__AWS --cli-auto-prompt'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
 # TODO DELETE=1 ec2.connect -i <instnace>
 

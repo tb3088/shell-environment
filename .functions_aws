@@ -141,27 +141,27 @@ function __AWS() {
   # bail out EC2
   if [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ] &&
       grep -q --invert-match -e '--region' - -- <<< "$*" &&
-	  is_ec2; then
+      is_ec2; then
     local region=`ec2.metadata region || "${cmd[@]}" configure get region`
-    [ -z "$region" ] && {
-	    region=${__aws_defaults['region']}
-	    log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
+    [ -n "$region" ] || {
+        region=${__aws_defaults['region']}
+        log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
       }
-	cmd+=( '--region' "${region:?}" )
+    cmd+=( '--region' "${region:?}" )
   fi
 
   case "$1" in
     # known N/A
-    configure)	# 'text' appears hard-coded, explicit json|yaml|text doesn't work
-            #cmd+=( '--output' text )
-            # may need | tr -d '\r'
+    configure)  # 'text' appears hard-coded, explicit '--output' ineffectual
+            :   # may need | tr -d '\r'
             ;;
     #FIXME [ -n "${FUNCNAME[1]}" ] to force json?
     # format specified in AWS_CONFIG_FILE. Text doesn't work in progromatic invocation.
     *)      grep -q -e '--output' - -- <<< "$*" || cmd+=( '--output' ${OUTPUT:-json} )
-			cmd+=( 
+            cmd+=(
                 '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
-                '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}} )
+                '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
+              )
             ;;&
     # limited support
     ec2)    cmd+=( ${NOOP:+ '--dry-run'} ) ;;&
@@ -483,6 +483,8 @@ function aws.get() {
                   __JQR '.Parameters[] | .Name, .Value'
 
 #TODO return Bash associative array '[key]=value' to minimize caller parsing
+# ... | case $format in a), A) *) invokes JQR accordingly. If we can common-ize so it's just a function caller
+# like json_to_array which is fed a standardized format of [ { "key": "kval", "value": "vval" }, ]
 #                __JQR '.Parameters[] | "[\(.Name)]=\'\(.Value)\'"'
             fi
             ;;
