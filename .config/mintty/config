@@ -5,7 +5,7 @@ Rows=44
 ScrollbackLines=3000
 Term=xterm-256color
 Locale=en_US
-Charset=UTF-8
+Charset=ISO-8859-1
 FontHeight=12
 CopyAsRTF=no
 RightClickAction=paste
@@ -13,3 +13,4 @@ MiddleClickAction=extend
 
 # Color Schemes - https://github.com/iamthad/base16-mintty
 # extended from https://github.com/chriskempson/base16
+StatusLine=no
