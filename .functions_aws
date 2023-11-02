@@ -24,8 +24,8 @@ declare -Ar __aws_defaults=(
     ['region']='us-east-1'
     ['config']="$HOME/.aws/config"
     ['credentials']="$HOME/.aws/credentials"
-    ['readTimeout']=25
-    ['connectTimeout']=7
+    ['readTimeout']=30
+    ['connectTimeout']=17
   )
 
 declare -Ar __aws_session=(
@@ -154,6 +154,7 @@ function __AWS() {
     # known N/A
     configure)	# 'text' appears hard-coded, explicit json|yaml|text doesn't work
             #cmd+=( '--output' text )
+            # may need | tr -d '\r'
             ;;
     #FIXME [ -n "${FUNCNAME[1]}" ] to force json?
     # format specified in AWS_CONFIG_FILE. Text doesn't work in progromatic invocation.
@@ -180,7 +181,7 @@ function __AWS() {
   esac
 
   # strip DOS line-endings. pipe breaks prompts for missing items (eg. MFA token)
-  ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d '\r'
+  ${DEBUG:+ runv} "${cmd[@]}" "$@"
 }
 
 

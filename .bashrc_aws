@@ -131,12 +131,14 @@ EOF
 
   : ${profile=${1-'prompt'}}
 
-  # 'blank' argument or match current short-circuits further processing
-  [ "$profile" = "$AWS_PROFILE" -o \( -z "$profile" -a -n "$AWS_PROFILE" \) ] && {
-      aws.region "$2"; return
-    }
+  # 'blank' argument or match current, short-circuits further processing
+  if [ -z "$profile" ]; then
+    [ -n "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  else
+    [ "$profile" = "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  fi
 
-  if [ "${profile:-prompt}" = 'prompt' ]; then
+  if [ "$profile" = 'prompt' ]; then
 # put this in __aws_regex, along with bit from __prompt_aws for CONFIG_FILE path elements
 #    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
 #    local -a list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
@@ -178,11 +180,12 @@ EOF
     unset AWS_{,SECRET_}ACCESS_KEY{_ID,} ${!AWS_SESSION_*}
   fi
 
-  [ "$profile" != 'default' ] || unset profile
-  export AWS_PROFILE=$profile
-  _default="$_region" aws.region "$2" || return
+  [ "$profile" = 'default' ] || AWS_PROFILE=$profile
+  _default="$_region" aws.region "$2" || log.warn "$? from aws.region()"
 
+  export ${!AWS_*}
   aws.addPath
+
   #do NOT call iam.session
 }
 
