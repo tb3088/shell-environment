@@ -24,7 +24,6 @@ export AWS_SESSION_DURATION=$((3600 * 8))
 
 alias aws='__AWS'
 alias aws.clearenv='aws.profile RESET'
-alias aws-shell='__AWS --cli-auto-prompt'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
 # TODO DELETE=1 ec2.connect -i <instnace>
 
@@ -297,7 +296,7 @@ function iam.session() {
 #with expired creds, which obviously won't work.
 #FIXME when called with  invoke as AWS_PROFILE=x $0
 
-  local -i duration write=0 use_mfa=1 token_len=6
+  local -i duration write=0
   local role mfa
   local token=  # MUST be string, Bash strips leading ZEROs, printf treats as Octal
   local cache_dir="$HOME/.aws/cli/cache"
@@ -313,7 +312,7 @@ function iam.session() {
 #            iam.session-load "${cache:-$OPTARG}"
 #            ;;
       C|L)  find "$cache_dir" -maxdepth 1 -type f -mtime +1 -exec rm {} \; 2>/dev/null
-            #FIXME, 
+            #FIXME,
             local -ir now=`date '+%s'`
             for f in "$cache_dir"/*; do
               [ -f "$f" ] || continue
@@ -390,20 +389,21 @@ EOF
 #if we have MFA in account should we just assume to use it? or only force issue if aws.profile
 #detects that serial_number is defined in PROFILE?
 
-    [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
-        while read -t 20 -ep "MFA ($mfa) token:  " ${token_len:+'-N' $token_len} || return; do
-          [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
-        done
+    : ${mfa:=`__AWS configure get mfa_serial`}
+#    [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-0} = 0 ] &&
+#        while read -t 20 -ep "MFA ($mfa) token:  " -N 6 || return; do
+#          [[ $REPLY =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
+#        done
   fi
 
 #FIXME use AWS_CONFIG_FILE middle like in __prompt_aws()
-  local output=`mktemp --quiet -p "$cache_dir" "${FUNCNAME}_${AWS_PROFILE:-default}.XXXXXXX"`
-#  trap "rm -f $output" RETURN
+  local ofile=`mktemp --quiet -p "$cache_dir"`
+#  trap "rm -f $ofile" RETURN
 #FIXME do NOT scribble in cli_cache. we don't want this stuff persisted except in obvious CLI files
   __AWS "${cmd[@]}" \
       ${mfa:+'--serial-number' "$mfa"} \
       ${token:+'--token-code' "$token"} \
-      ${duration:+'--duration-seconds' "$duration"} | tee "$output" && iam.session-load "$output"
+      ${duration:+'--duration-seconds' "$duration"} | tee "$ofile" && iam.session-load "$ofile"
 
 #TODO create a derivative profile with new creds. instead of creating a cache file just
 # run a series of 'aws configure set' to create the ephemeral, and save the creds.
@@ -412,12 +412,12 @@ EOF
 #  aws configure --profile <_mfa_000> set aws_access_key_id "$AWS_ACCESS_KEY_ID"
 #  aws configure --profile _mfa_000 set aws_session_token "$AWS_SESSION_TOKEN" (ends up in AWS_CONFIG_FILE
 # ditto aws_session_expire
-# 
+#
 
 
 # get-caller-ident only rerturns uid, name and ARN but nothing specific to the profile.
 #ref: https://github.com/aws/aws-cli/issues/6980
-#name the 
+#name the
 #cache file appropriately if possible. see what assume-role does. Point being it should be
 #possible to switch back and forth from with-MFA profile back to base (or another) and then
 #pop back in, assuming the temp creds haven't expired. If they have, then re-auth or force
