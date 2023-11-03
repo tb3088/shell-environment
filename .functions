@@ -227,7 +227,7 @@ function is_windows() {
 
 
 function __is_markup() {
-  : ${cmd:?}		#WARN not safe
+  : ${cmd:?}        #WARN not safe
   local -i rc
 
   { # selective mutism
@@ -380,26 +380,25 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local flags=() QUOTE quote opt= exist=
-  local -i abs= escape OPTIND
+  local flags=() QUOTE quote
+  # do NOT default quote character
+  [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
 
-  # do NOT default a quote character
-  [ -n "${QUOTE+X}" ] && quote=$QUOTE
+  local -i abs escape OPTIND
 #TODO intercept long options
-  while getopts ':eEq:t:admw' opt; do
+  while getopts ':aeEq:t:' opt; do
     case "$opt" in
       a)    abs=1 ;;
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
       q)    quote=$OPTARG; escape=0 ;;
       t)    flags+=( '--type' "$OPTARG" )
-            [ "$OPTARG" = 'unix' ] || abs=1
             ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       # pass-thru unhandled args
       \?)   flags+=( "-${OPTARG:-$opt}" ) ;;
-      #h)
+      #h|*)
     esac
   done
   shift $((OPTIND - 1))
@@ -411,8 +410,8 @@ function convert_path() {
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
 
-    [ ${abs:-0} -eq 1 ] && p=`__READLINK -m "$p"`
-    is_windows && p=`cygpath "${flags[@]}" -- "$p"`
+    [ ${abs:-0} -eq 1 ] && p=$(__READLINK -m "$p")
+    is_windows && p=$(cygpath "${flags[@]:--a}" -- "$p")
 
 #TODO? leverage string.quote
     [ ${escape:-1} -eq 1 ] && printf '%q\n' "$p" || echo "${quote}$p${quote}"
@@ -487,7 +486,7 @@ function addPath() {
   fi
 
   case "$k" in
-    PATH)   delim=':'; flags+=( '-aE' ) ;;
+    PATH)   delim=':'; flags+=( '-a' '-E' '-p' ) ;;
   esac
   : ${delim:=${PATHSEP:-\:}}
 
