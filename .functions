@@ -411,7 +411,7 @@ function convert_path() {
     local p="${1//\\ / }"
 
     [ ${abs:-0} -eq 1 ] && p=$(__READLINK -m "$p")
-    is_windows && p=$(cygpath "${flags[@]:--a}" -- "$p")
+    is_windows && p=$(cygpath -a "${flags[@]}" -- "$p")
 
 #TODO? leverage string.quote
     [ ${escape:-1} -eq 1 ] && printf '%q\n' "$p" || echo "${quote}$p${quote}"
@@ -486,7 +486,7 @@ function addPath() {
   fi
 
   case "$k" in
-    PATH)   delim=':'; flags+=( '-a' '-E' '-p' ) ;;
+    PATH)   delim=':'; flags+=( '-E' '-p' ) ;;
   esac
   : ${delim:=${PATHSEP:-\:}}
 
