@@ -1,4 +1,6 @@
-# $Id$
+#----- header -----
+[ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+#------------------
 
 return 0    #disabled
 
