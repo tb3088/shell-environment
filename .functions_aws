@@ -116,8 +116,8 @@ function __AWS() {
         log.warn "path mismatch" "AWS_CONFIG_FILE: $conf" "AWS_SHARED_CREDENTIALS_FILE: $creds"
 
     is_windows "${__aws_bin}" &&
-        cmd+=( 'env' AWS_CONFIG_FILE=`convert_path -E -w "$conf"`
-               AWS_SHARED_CREDENTIALS_FILE=`convert_path -E -w "$creds"` ) ||
+        cmd+=( 'env' AWS_CONFIG_FILE=`convert_path -E -a -w "$conf"`
+               AWS_SHARED_CREDENTIALS_FILE=`convert_path -E -a -w "$creds"` ) ||
         cmd+=( 'env' AWS_CONFIG_FILE="$conf" AWS_SHARED_CREDENTIALS_FILE="$creds" )
 
   else
@@ -186,7 +186,7 @@ function __AWS() {
     local -a args=()
     while (( $# )); do
       [[ "$1" =~ ^file:// ]] &&
-          args+=( 'file://'$(convert_path -E -w "${1#file://}") ) ||
+          args+=( 'file://'$(convert_path -E -a -w "${1#file://}") ) ||
           args+=( "$1" )
       shift
     done
