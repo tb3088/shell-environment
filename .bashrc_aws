@@ -1,17 +1,26 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
-#------------------
 
 is_windows && AWSCLI=Amazon/AWSCLIV2
-
 source ${BASH_SOURCE%_*}_3rdparty aws
+unset AWSCLI
 is_exec aws || return 0
-
+#------------------
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
-  [ -f "$f" ] || continue
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
+
+addPath /usr/local/ec2-ami-tools*/**/bin
+
+# SSM Session-Manager
+# ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+#
+# Windows CLI detects location from registry, else put on PATH
+
+# just use 'aws shell' instead
+link=`is_exec -v aws_completer` && complete -C "`printf '%q' "$link"`" aws
+unset link
 
 # session credentials expire in 8h
 export AWS_SESSION_DURATION=$((3600 * 8))
@@ -20,17 +29,6 @@ alias aws='__AWS'
 alias aws.clearenv='aws.profile RESET'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
 # TODO DELETE=1 ec2.connect -i <instnace>
-
-addPath /usr/local/ec2-ami-tools*/**/bin
-
-# SSM Session-Manager
-# ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
-is_exec session-manager-plugin || {
-    is_windows && addPath "$PROGRAMFILES"/Amazon/SessionManagerPlugin/bin
-    # Linux installs to /usr/local/bin
-  }
-
-link=`is_exec -v aws_completer` && complete -C "$link" aws
 
 
 function __prompt.aws() {
@@ -43,7 +41,7 @@ function __prompt.aws() {
 #FIXME don't use math, print to common format and simple compare?
   if [ "$AWS_SESSION_EXPIRE" ]; then
     local -i remain=$(( (`date --date="$AWS_SESSION_EXPIRE" '+%s'` - `date '+%s'`) / 60 ))
-    [ $remain -gt 0 ] && echo -ne "  (${remain}m)" || echo -ne "  (${BRED}expired${RS})"
+    [ $remain -gt 0 ] && echo -ne "  (${remain} min)" || echo -ne "  (${BRED}expired${RS})"
   fi
 }
 
