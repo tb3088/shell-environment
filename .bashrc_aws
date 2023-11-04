@@ -1,11 +1,5 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
-
-# prevent multiple-inclusion
-__link=`readlink -f "$BASH_SOURCE"`
-declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
-__tag=1
 #------------------
 
 is_windows && AWSCLI=Amazon/AWSCLIV2
@@ -83,16 +77,21 @@ EOF
   # except AWS_*REGION can't be left blank since it's ambiguous to user.
   [[ "$region" = "${AWS_DEFAULT_REGION:-_unset}" ||
      ( -z "${region}" && -n "${AWS_REGION}${AWS_DEFAULT_REGION}" ) ]] && return
+
   # force value if possible
   : ${region:=${_default-`__AWS configure get region`}}
 
   if [ "${region:-prompt}" = 'prompt' ]; then
     echo
-    with_keys=1 array.print __aws_regions | column
-    echo
-    read -t 15 -ep "Choose REGION:  " -i "${region:-$list}" || return
-
-    [[ ${REPLY:0:1} =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
+    PS3=`echo -ne "\nChoose REGION:  "`
+	select region in "${__aws_regions[@]}"; do
+	  [ -n "${region:=$REPLY}" ] && break
+	done
+#    with_keys=1 array.print __aws_regions | column
+#    echo
+#    read -t 15 -ep "Choose REGION:  " -i "${region:-$list}" || return
+#
+#    [[ ${REPLY:0:1} =~ [0-9] ]] && region=${__aws_regions[$REPLY]} || region=$REPLY
   fi
 
   # validity check; TODO is_member()
@@ -109,15 +108,16 @@ EOF
 function aws.profile() {
   [ "${1^^}" = 'RESET' ] && { aws.rmPath; unset ${!AWS_*}; return 0; }
 
-  local profile
+  local profile invoke_session
   local OPTIND opt
-  while getopts ':LPp:h' opt; do
+  while getopts ':LPp:Sh' opt; do
     case "$opt" in
       L)    __AWS configure list-profiles | column
             return
             ;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
+      S)    invoke_session=1 ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   log.error "unsupported (-$OPTARG)" ;&
@@ -138,24 +138,30 @@ EOF
     [ "$profile" = "$AWS_PROFILE" ] && { aws.region "$2"; return; }
   fi
 
-  if [ "$profile" = 'prompt' ]; then
 # put this in __aws_regex, along with bit from __prompt_aws for CONFIG_FILE path elements
 #    local pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
 #    local -a list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
+
+  if [ "$profile" = 'prompt' ]; then
     local -a list=( `__AWS configure list-profiles` )
+    #alt:
+    # pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
+    # list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
 
-    if [ ${#list[@]} -gt 1 ]; then
+    if [ ${#list[@]} -ge 1 ]; then
       echo
-      with_keys=1 array.print list | column
-      echo
-      read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
+      PS3=`echo -ne "\nChoose PROFILE:  "`
+	  select region in "${__aws_regions[@]}"; do
+	    [ -n "${region:=$REPLY}" ] && break
+	  done
 
-      [[ ${REPLY:0:1} =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
-
-    elif [ ${#list[@]} -eq 1 ]; then
-      profile=$list
+#      with_keys=1 array.print list | column
+#      echo
+#      read -t 15 -ep "Choose PROFILE:  " -i "$list" || return
+#
+#      [[ ${REPLY:0:1} =~ [0-9] ]] && profile=${list[$REPLY]} || profile=$REPLY
     else
-      log.notice "no profile(s) found"
+      log.warn "no profile(s) found ($AWS_CONFIG_FILE)"
       unset profile
     fi
   fi
@@ -180,13 +186,13 @@ EOF
     unset AWS_{,SECRET_}ACCESS_KEY{_ID,} ${!AWS_SESSION_*}
   fi
 
-  [ "$profile" = 'default' ] || AWS_PROFILE=$profile
-  _default="$_region" aws.region "$2" || log.warn "$? from aws.region()"
+  [ "$profile" = 'default' ] && unset AWS_PROFILE || AWS_PROFILE=$profile
+  _default=$_region aws.region "$2" || log.notice "RC=$? during aws.region()"
 
   export ${!AWS_*}
   aws.addPath
 
-  #do NOT call iam.session
+  if [ ${invoke_session:-0} -eq 1 ]; then iam.session; fi
 }
 
 
