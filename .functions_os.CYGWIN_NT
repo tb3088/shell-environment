@@ -4,7 +4,8 @@ readonly PATHSEP
 # intercept CYGWIN behavior which is Junctions
 function ln() {
   local flag destdir=
-  local OPTIND opt
+  local -i OPTIND
+  local opt OPTARG
 
   while getopts ':hjst:' opt; do
     case "$opt" in
@@ -21,7 +22,7 @@ function ln() {
       \?)   #Usage
     esac
   done
-  shift $((OPTIND-1))
+  shift $((OPTIND - 1))
 
   # safety check
   [ $# -le 2 -o -n "$destdir" ] || { log.error "more than 2 args requires '-t'"; return 2; }
@@ -49,7 +50,8 @@ function sudo() {
   local who cmd line env shell flags preserve=
   #FIXME local -A env
   #FIXME local -a flags and cmd?
-  local OPTIND opt      # important!!
+  local -i OPTIND
+  local opt OPTARG
 
   while getopts ':ieEu:X' opt 2>/dev/null; do
     case "$opt" in
@@ -67,7 +69,7 @@ function sudo() {
       \?)   flags+=" -$OPTARG"
     esac
   done
-  shift $((OPTIND-1))
+  shift $((OPTIND - 1))
 
   : ${who:?missing argument \'-u USER\'}
   line=`getent passwd $who || \grep -s "^${who}:" /etc/passwd` || {

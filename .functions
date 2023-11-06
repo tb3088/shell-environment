@@ -8,8 +8,8 @@ function is_interactive() {
 }
 
 is_interactive || { shopt -u failglob; shopt -s nullglob; }
-set -o pipefail
 shopt -s lastpipe
+set -o pipefail
 
 #NOTE 'command' is unsuitable since returns aliases and functions
 function __WHICH() { \which --skip-alias --skip-functions "$@"; }
@@ -109,12 +109,13 @@ function __is_type() {  #WARN! selective short-circuit on first error
       ['u']='upper'       ['upper']='u'
     )
 
-  local OPTIND opt
+  local -i OPTIND
+  local opt OPTARG
   while getopts ':vd' opt; do
     case "$opt" in
       d)    local DEBUG=1 ;;
       v)    local VERBOSE=1 ;;
-      \?|*) # ignore
+     \?|*)  # silently consume
     esac
   done
   shift $((OPTIND - 1))
@@ -385,7 +386,7 @@ function convert_path() {
   [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
 
   local -i abs escape OPTIND
-#TODO intercept long options
+  local opt OPTARG
   while getopts ':aeEq:t:' opt; do
     case "$opt" in
       a)    abs=1 ;;
@@ -395,9 +396,9 @@ function convert_path() {
       t)    flags+=( '--type' "$OPTARG" )
             ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      :)    log.error "missing argument (-${OPTARG})"; return 2 ;;
       # pass-thru unhandled args
-      \?)   flags+=( "-${OPTARG:-$opt}" ) ;;
+     \?)    [ "$OPTARG" = '-' ] && { ((OPTIND++)); break; } || flags+=( "-${OPTARG}" ) ;;
       #h|*)
     esac
   done
@@ -410,8 +411,8 @@ function convert_path() {
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
 
-    [ ${abs:-0} -eq 1 ] && p=$(__READLINK -m "$p")
-    is_windows && p=$(cygpath -a "${flags[@]}" -- "$p")
+    [ ${abs:-0} -eq 1 ] && p=`__READLINK -m "$p"`
+    is_windows && p=`cygpath -a "${flags[@]}" -- "$p"`
 
 #TODO? leverage string.quote
     [ ${escape:-1} -eq 1 ] && printf '%q\n' "$p" || echo "${quote}$p${quote}"
@@ -549,12 +550,13 @@ function rmPath() {
 
 #TODO? if QUOTE=1 use printf '%q'
 function string.join() {
-  local flags= DELIM delim QUOTE quote ESCAPE escape
+  local DELIM delim QUOTE quote ESCAPE escape
   [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
   [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
   [ -n "${ESCAPE+X}" ] && : ${quote=$ESCAPE}
 
-  local OPTIND= opt=
+  local -i OPTIND
+  local opt flags OPTARG
   while getopts ':d:e:lq:uz' opt; do
     case "$opt" in
       d)    delim=$OPTARG ;;
@@ -564,8 +566,8 @@ function string.join() {
       u)    flags+=u ;;     # to_upper
       z)    flags+=z ;;     # remove blanks
 
-      :)    log.error "missing argument to '-$OPTARG'"; return 2 ;;
-      \?)   log.error "unknown option '-$OPTARG'" ;&
+      :)    log.error "missing argument (-${OPTARG})"; return 2 ;;
+     \?)    [ "$OPTARG" = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <str> [<str> ...]
   -l        to lower case
@@ -623,11 +625,14 @@ function bool_to_i() {
 # Usage: [-u] <value|VAR_NAME> ...
   local opt to_bool
   local -i OPTIND _unset=0
-
+  local opt OPTARG
   while getopts ':u' opt; do
     case "$opt" in
       u)    _unset=1 ;;
-      \?)   log.error "unknown option '-$OPTARG'" ;&
+     \?)    [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+      h|*)  >&2 cat <<_EOF
+Usage: $FUNCNAME ...
+_EOF
     esac
   done
   shift $((OPTIND - 1))
@@ -813,7 +818,7 @@ function min() {
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 #FIXME use getopts
-    [[ $1 = -[a-zA-Z] ]] && flag+=($1) || break
+    [[ $1 = -[a-zA-Z] ]] && flag+=( "$1" ) || break
     shift
   done
   local IFS=$'\n'

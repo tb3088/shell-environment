@@ -144,7 +144,7 @@ function log() {
     shift
   else
     # inside recursion from <level>() or log_<LEVEL>()
-    level=`__log_lookup "${FUNCNAME[1]}"` && : $((offset++))
+    level=`__log_lookup "${FUNCNAME[1]}"` && ((offset++))
   fi
 
   mask=`__log_lookup ${mask:-$LOG_MASK}`

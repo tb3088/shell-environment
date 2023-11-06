@@ -8,7 +8,6 @@ ${ABORT:+ set -eE}
 ${CONTINUE:+ set +e}
 
 #---------------
-# temporary settings
 # don't search PATH for target of 'source'
 shopt -u sourcepath
 shopt -s nullglob

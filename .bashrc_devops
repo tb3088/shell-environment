@@ -93,7 +93,7 @@ function git.mirror() {
       \?)   log.error "invalid option (-$OPTARG)" ; return 2 ;;
     esac
   done
-  shift $((OPTIND-1))
+  shift $((OPTIND - 1))
 
   #TODO spit out 'git remotes' and prompt for src and dst with read()
   local src=${1:?source} dest=${2:?dest}; shift 2

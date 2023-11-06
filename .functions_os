@@ -177,7 +177,8 @@ function os.tree() {
   local filter= type= reverse= flags=()
   local -a cmd=( \find )    #alt: \ls -R -1 --quoting-style=shell
 
-  local OPTIND opt
+  local -i OPTIND
+  local opt OPTARG
   while getopts ':hdlL:P:x' opt 2>/dev/null; do
     case "$opt" in
       d)    flags+=( '-type' d ) ;;
