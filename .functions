@@ -3,13 +3,11 @@
 [[ "$BASH_VERSION" =~ 5|4.[2-4] ]] || { >&2 echo -e 'ERROR\tbash ~> 4.2 required'; exit 126; }
 #------------------
 
-function is_interactive() {
-  [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]
-}
-
-is_interactive || { shopt -u failglob; shopt -s nullglob; }
-shopt -s lastpipe
 set -o pipefail
+shopt -s extglob
+#pedant, ref: http://mywiki.wooledge.org/glob#nullglob
+shopt -u nullglob
+
 
 #NOTE 'command' is unsuitable since returns aliases and functions
 function __WHICH() { \which --skip-alias --skip-functions "$@"; }
@@ -64,12 +62,15 @@ function __JQ_merge() { \jq --slurp 'reduce .[] as $item ({}; . * $item)'; }
 
 function __CURL() { \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar} "$@"; }
 
+
 # override 'exit on error' program flow
 function _continue() { [ -n "$CONTINUE" ]; }
+
 
 function pause() {
   [ $# -eq 0 ] && { read -p 'Press [ENTER] to continue ...'; } || read -p "$*"
 }
+
 
 function confirm() {
   read -n 1 -t 15 -p 'Are you sure (y/N)? '
@@ -109,8 +110,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
       ['u']='upper'       ['upper']='u'
     )
 
-  local -i OPTIND
-  local opt OPTARG
+  local -i OPTIND; local opt OPTARG
   while getopts ':vd' opt; do
     case "$opt" in
       d)    local DEBUG=1 ;;
@@ -202,6 +202,11 @@ done
 function is_number() {
   printf '%d' "$@" &>/dev/null
   #alt: grep -qE '^0x[0-9a-f]+$|[0-9]+$' - -- <<< "$@"
+}
+
+
+function is_interactive() {
+  [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]
 }
 
 
@@ -381,12 +386,14 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local flags=() QUOTE quote
+  local QUOTE quote
   # do NOT default quote character
   [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
 
-  local -i abs escape OPTIND
-  local opt OPTARG
+  local -i abs=0 escape=1
+  local flags=()
+
+  local -i OPTIND; local opt OPTARG
   while getopts ':aeEq:t:' opt; do
     case "$opt" in
       a)    abs=1 ;;
@@ -411,11 +418,11 @@ function convert_path() {
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
 
-    [ ${abs:-0} -eq 1 ] && p=`__READLINK -m "$p"`
+    [ $abs -eq 1 ] && p=`__READLINK -m "$p"`
     is_windows && p=`cygpath -a "${flags[@]}" -- "$p"`
 
 #TODO? leverage string.quote
-    [ ${escape:-1} -eq 1 ] && printf '%q\n' "$p" || echo "${quote}$p${quote}"
+    [ $escape -eq 1 ] && printf '%q\n' "$p" || echo "${quote}$p${quote}"
     shift
   done
 }
@@ -463,10 +470,11 @@ function addPath() {
 #TODO use string.join() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <VARNAME> $1 $2`
 
-  local PREPEND delim= opt= k= flags=()
-  local -i prepend= OPTIND
+  local PREPEND delim= k flags=()
+  local -i prepend=
   [ "${PREPEND:-0}" = 1 ] && prepend=1
 
+  local -i OPTIND; local opt OPTARG
 #  while getopts ':fk:' opt; do
 #    case "$opt" in
 #      f)
@@ -478,7 +486,6 @@ function addPath() {
 #  done
 #  shift $((OPTIND - 1))
 
-  # treat nullglob as benign
   [ $# -ge 1 ] || return 0
 
   # short-cut to 'PATH' mode
@@ -555,8 +562,9 @@ function string.join() {
   [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
   [ -n "${ESCAPE+X}" ] && : ${quote=$ESCAPE}
 
-  local -i OPTIND
-  local opt flags OPTARG
+  local flags
+
+  local -i OPTIND; local opt OPTARG
   while getopts ':d:e:lq:uz' opt; do
     case "$opt" in
       d)    delim=$OPTARG ;;
@@ -624,8 +632,9 @@ function join_quote() { QUOTE=\' string.join "$@"; }
 function bool_to_i() {
 # Usage: [-u] <value|VAR_NAME> ...
   local opt to_bool
-  local -i OPTIND _unset=0
-  local opt OPTARG
+  local -i _unset=0
+
+  local -i OPTIND; local opt OPTARG
   while getopts ':u' opt; do
     case "$opt" in
       u)    _unset=1 ;;
