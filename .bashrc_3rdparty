@@ -25,48 +25,43 @@ function add_program() {
   is_exec "${1:?}" && return
 
   local m=${__3rdparty_map[$1]}
-  [ -n "$m" ] || { log.error "software unsupported ($1)"; return; }
+  [ -n "$m" ] || { log.error "unsupported software package ($1)"; return; }
 
   if [ "${m:0:1}" = '/' ]; then
-    for p in "$m"{/bin,}; do
-      [ -x "$p/$1" ] && { addPath "$p"; log.info "added to PATH ($1)"; break; }
+    for p in "$m"/{bin,}; do
+      [ -x "$p/$1" ] && { addPath "$p"; break; }
     done
     return
-  fi 
+  fi
 
   #TODO https://unix.stackexchange.com/questions/406216/check-for-bash-options
-  local pbin=$(
-      shopt -s nullglob extglob globstar
+  local pbin
+  pbin=$(
       shopt -u failglob
+      shopt -s globstar
 
       # process embedded glob patterns
       for v in `eval echo "$m"`; do
         # WARN '/**/' can be VERY slow
-        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}/${v}*{/bin,}; do
+        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}/${v}*/**/{bin,}; do
           [ -x "$p/$1" ] && { echo "$p"; break 2; }
         done
       done
     )
 
-  if [ -n "$pbin" ]; then
-    addPath "$pbin"
-    log.info "added to PATH ($1)"
-    return
-  fi
-
-  log.notice "software not found ($k)"
+  [ -n "$pbin" ] && addPath "$pbin" || log.notice "software package not found ($1)"
 }
 
 
-s=`__READLINK -e "$BASH_SOURCE"`
-k="${BASH_SOURCE#*.bashrc_}"
-[ "${s#*.bashrc_}" = "$k" ] || add_program "$k"
+j=`__READLINK -e "$BASH_SOURCE"`
+k=${BASH_SOURCE#*.bashrc_}
+[ "${j#*.bashrc_}" = "$k" ] || add_program "$k"
+unset j k
 
 # multiple arguments supported, but not recommend
 while (( $# )); do
   [ -n "$1" ] || { shift; continue; }
-
-  add_program "$1" 
+  add_program "$1"
   shift
 done
 
