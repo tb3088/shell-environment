@@ -11,8 +11,6 @@
 source ~/.functions
 is_function log runv || { >&2 echo -e "ERROR\tmissing essential functions (log, runv)"; exit 1; }
 
-shopt -s nullglob extglob
-
 
 #TODO? use recursion
 function genlist() {
