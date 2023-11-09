@@ -120,68 +120,62 @@ function __is_type() {  #WARN! selective short-circuit on first error
   done
   shift $((OPTIND - 1))
 
-  local keyword=${FUNCNAME[1]#is_}
-  local -i rc=
-
   # read STDIN (pipe) if no args
   (( $# )) || set -- $( < /dev/stdin )
 
+  local keyword=${FUNCNAME[1]#is_}
+  local -i rc=
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              [ -d "${1:?parameter}" -o -f "$1" ] || {
-                  rc=1
+			  if [[ "$keyword" =~ dir ]]; then [ -d "${1:?parameter}" ]
+              else [ -f "${1:?}" ]; fi || {
                   [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
-                  break
+                  return 1
                 }
               shift
             done
-            return $rc
+			return 0
             ;;
-
 #    command)    #WARN allows alias and functions
     exec*)  local bin
             while (( $# )); do
-              bin=`__WHICH "${1:?parameter}" 2>/dev/null` || rc=1
-              if  [ -n "$bin" ]; then
-                [ -n "${VERBOSE}" ] && echo "$bin"
-              else
-                [ -n "${VERBOSE}" ] && log "command not found ($1)"
-                break
-              fi
+              bin=`__WHICH "${1:?parameter}" 2>/dev/null` || {
+			      [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
+				  return 1
+				}
+              [ -n "${VERBOSE}" ] && echo "$bin"
               shift
             done
-            return $rc
+            return 0
             ;;
-
     func*)  local fn
             while (( $# )); do
-              fn=`declare -F "${1:?parameter}"` || rc=1
-              if [ -n "$fn" ]; then
-                [ -n "${VERBOSE}" ] && whereis_function "$1"
-              else
-                [ -n "${VERBOSE}" ] && log "function not found ($1)"
-                break
-              fi
+              fn=`declare -F "${1:?parameter}"` || {
+			      [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
+				  return 1
+				}
+
+              [ -n "${VERBOSE}" ] && whereis_function "$1"
               shift
             done
-            return $rc
+            return 0
             ;;
-
-    read*)  local -i _readonly=1
+    read*)  local -i check_readonly=1
             ;;
-    *)      [ -n "${__types[$keyword]}" ] || { log.error "unsupported type ($keyword)"; return 2; }
+    *)      [ -n "${__types[$keyword]}" ] || {
+                log.error "unsupported type ($keyword)"
+				return 2
+			  }
   esac
 
   local whatami flag _type
   while (( $# )); do
-    [ -n "$1" ] || { shift; continue; }
-
     # suss out functions during 'readonly'
-    _type=`type -t "$1"`
-    [ ${_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag=F || flag=
+    _type=`type -t "${1:?parameter}"`
+    [ ${check_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag='-F' || flag=
 
-    whatami=`declare -p${flag} "$1" | awk '{ print $2; }' 2>/dev/null` || {
+    whatami=`declare -p $flag "$1" | awk '{ print $2; }' 2>/dev/null` || {
         [ -n "${VERBOSE}" ] && log "${keyword:-item} not found ($1)"
         return 1
       }
@@ -193,6 +187,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
       }
     shift
   done
+  return 0
 }
 # data-type wrappers
 for f in array dir{,ectory} exec{,utable} file hash integer string function readonly; do
