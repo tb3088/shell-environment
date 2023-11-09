@@ -1,16 +1,20 @@
-PATHSEP=';'
-readonly PATHSEP
+#NOTE
+# these Unix-like environments use ':' in PATH, CLASSPATH etc. but but
+# windows-native binaries like Go, Python require ';' so add entries to
+# addPath()
+#
+#PATHSEP=';'
+#readonly PATHSEP
 
 # intercept CYGWIN behavior which is Junctions
 function ln() {
   local flag destdir=
-  local -i OPTIND
-  local opt OPTARG
 
-  while getopts ':hjst:' opt; do
+  local -i OPTIND; local opt OPTARG
+  while getopts ':hJst:' opt; do
     case "$opt" in
-      h)    flag='/h' ;;
-      j)    flag='/j' ;;
+      h)    flag='/H' ;;
+      J)    flag='/J' ;;
       s)    unset flag ;;
       t)    [ -d "${destdir:=$OPTARG}" ] || {
                 log.error "directory not found ($OPTARG)"
@@ -24,24 +28,30 @@ function ln() {
   done
   shift $((OPTIND - 1))
 
-  # safety check
-  [ $# -le 2 -o -n "$destdir" ] || { log.error "more than 2 args requires '-t'"; return 2; }
+  # allows trailing directory like real 'ln' but $# >2 else dangling link
+  if [ $# -gt 2 ]; then
+    [ -n "$destdir" -o -d "${!#}" ] || {
+        log.error "$# > 2 requires '-t' or directory as last parameter"
+        return 2
+      }
 
-  if [ -n "$destdir" ]; then
-    ( cd "$destdir"
-      while (( $# )); do
-        ${flag:+ flag="$flag"} $FUNCNAME "$1"
-        shift
-      done
-    )
-    return
+    [ -n "$destdir" ] || { destdir=${!#}; set -- "${@:1:$#-1}"; }
   fi
 
-  [ -d "${1:?target}" ] && flag='/d'
-  local link="${2:-${1##*/}}"
+  local -r _flag=$flag      # save
 
-  # mklink is retarded - must be in CWD of link
-  ( cd `dirname "$link"`; mklink $flag `basename "$link"` "${1//\//\\}" )
+  while (( $# )); do
+    flag=$_flag             # restore
+    local target=$1 link=$2
+
+    [ -d "${target:?}" ] && flag='/D'
+    [ -n "$destdir" ] && { unset link; shift; } || shift 2
+
+    # mklink is retarded - CWD must be `dirname link`
+    ( cd "${destdir:-`dirname $link`}"
+      ${DEBUG:+ runv} mklink $flag `basename "${link:-$target}"` `cygpath -w "$target"`
+    )
+  done
 }
 
 
