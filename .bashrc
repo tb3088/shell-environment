@@ -7,23 +7,24 @@ ulimit -S -c 0
 ${ABORT:+ set -eE}
 ${CONTINUE:+ set +e}
 
-#---------------
-
 # ref: https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
 # don't search PATH for target of 'source'
 shopt -u sourcepath
 
+#---------------
 for f in "$HOME"/.functions{,.local,_logging}; do
   [ -f "$f" ] || continue
+
   source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, aborting.\n"; return; }
 done
 
-addPath -"$HOME"/{,.local/}bin
+addPath -k PATH -"$HOME"/{,.local/}bin
 
 case $- in
   # a bit redundant since whole point of .bashrc is 'interactive' use...
   *i*)  for f in "$HOME"/{.bashrc{.local,_{os,*}},.aliases{,.local},.dircolors}; do
           [ -f "$f" ] || continue
+
           grep -E -q '.swp$|.bak$|~$' <<< "$f" && continue
           source "$f" || { log.error "RC=$? during $f, aborting."; return; }
         done
@@ -45,7 +46,8 @@ case $- in
 
         # programmable completion enhancements
         # Any completions you add in ~/.bash_completion are sourced last.
-        for f in {,/usr/local}/etc}/{,profile.d/}bash_completion{,.sh,.d/*} "$HOME"/.bash_completion{,.d/*}; do
+        for f in {,/usr/local}/etc}/{,profile.d/}bash_completion{,.sh,.d/*}\
+            "$HOME"/.bash_completion{,.d/*}; do
           [ -f "$f" ] || continue
           source "$f" || log.error "RC=$? during $f"
         done
@@ -60,6 +62,9 @@ case $- in
   *c*)  SSH_AGENT=
 esac
 #---------------
+
+# just in case
+shopt -u nullglob
 
 
 # use VI mode on command-line (else emacs)
