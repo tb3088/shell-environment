@@ -8,13 +8,13 @@ runtime bundle/vim-pathogen/autoload/pathogen.vim
 
 set nocompatible | filetype indent plugin on | syntax enable
 
-colorscheme default
-" highlight Normal ctermfg=lightgray ctermbg=black
-highlight Comment ctermfg=lightblue guifg=gray
-" highlight LineNr ctermfg=gray guifg=gray
-highlight LineNr ctermfg=blue guifg=gray
-" highlight String 
-" highlight Constant 
+" industry and torte also good
+colorscheme murphy
+" highlight Normal ctermfg=lightgrey ctermbg=black
+highlight Function ctermfg=Green
+" highlight Comment ctermfg=Pink
+highlight LineNr ctermfg=Brown
+highlight ColorColumn ctermbg=DarkGray
 
 " Use the highlight group to expose unwanted/bad whitespace
 highlight BadWhitespace ctermbg=red guibg=red
@@ -24,13 +24,12 @@ au BufRead,BufNewFile *.py,*.pyw match BadWhitespace /^\t\+/
 " Make trailing whitespace be flagged as bad.
 au BufRead,BufNewFile *.py,*.pyw,*.c,*.h,*.yml,*.yaml,*.json,*.pp match BadWhitespace /\s\+$/
 
-au BufRead,BufNewFile *.py,*.pyw,*.c,*.h,*.pp set textwidth=78
 au BufRead,BufNewFile *.py,*.pyw,*.tf set expandtab
 au BufRead,BufNewFile *.yml,*.yaml,*.json set expandtab shiftwidth=2
 " prevent insertion of '*' at the beginning of every line in a comment
 au BufRead,BufNewFile *.c,*.h set formatoptions-=c formatoptions-=o formatoptions-=r
-" Ruby/Puppet - set expandtab tabstop=2 shiftwidth=2 softtabstop=2
-"au BufRead,BufNewFile *.ru,*.pp,*eml set filetype=ruby
+au BufNewFile,BufRead .bashrc*,.functions* set filetype=bash textwidth=85
+au BufNewFile,BufRead .bashrc*,.functions* match BadWhitespace /\s\+$/
 
 set modeline
 set noim
@@ -45,6 +44,8 @@ set matchtime=3
 set showmatch
 set noswapfile
 set wrap linebreak
+set colorcolumn=-3
+" set cursorline
 
 " only on windows gVim
 set guifont=Liberation_Mono:h9:cANSI
@@ -62,3 +63,4 @@ endif
 "ref: https://vim.fandom.com/wiki/Mapping_keys_in_Vim_-_Tutorial_(Part_1)
 " use F5 to grep for word under cursor in CWD
 nnoremap <F5> :grep <C-R><C-W> *<CR>
+
