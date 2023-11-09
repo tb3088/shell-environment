@@ -419,6 +419,8 @@ function convert_path() {
     local p="${1//\\ / }"
 
     [ $abs -eq 1 ] && p=`__READLINK -m "$p"`
+
+    # '-a' when relative expands AND unrolls symlinks. otherwise just formatting
     is_windows && p=`cygpath -a "${flags[@]}" -- "$p"`
 
 #TODO? leverage string.quote
@@ -469,52 +471,59 @@ function addPath() {
 
 #TODO use string.join() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <VARNAME> $1 $2`
+  local PREPEND; local -i prepend=
+  [ -n "${PREPEND+X}" ] && prepend=1
 
-  local PREPEND delim= k flags=()
-  local -i prepend=
-  [ "${PREPEND:-0}" = 1 ] && prepend=1
+  local k= ; local -n kval
 
   local -i OPTIND; local opt OPTARG
-#  while getopts ':fk:' opt; do
-#    case "$opt" in
-#      f)
-#      k)    k=$OPTARG ;;
-#      v)    local VERBOSE=1 ;;
-#      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-#      \?)   log.warn "unsupported option (-$OPTARG)"
-#    esac
-#  done
-#  shift $((OPTIND - 1))
+  while getopts ':k:P' opt; do
+    case "$opt" in
+      k)    k=$OPTARG ;;
+      P)    prepend=1 ;;
 
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      # short-hand prepend notation
+     \?)    [ "$OPTARG" = '/' ] && break ||
+                log.warn "unsupported option (-$OPTARG)"
+            ;&
+      h|*)  cat <<_EOF
+Usage: $FUNCNAME -k VAR path...
+_EOF
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
   [ $# -ge 1 ] || return 0
 
-  # short-cut to 'PATH' mode
-  if [ -z "$k" ]; then
-    [ $# -eq 1 -o "${1:0:1}" = '/' -o "${1:0:1}" = '-' ] && k='PATH' || { k=$1; shift; }
-  fi
+  local flags=() delim
+  case "${k:=$1}" in
+    # path with short-hand for prepend
+    ?(-|.)/*) k=PATH ;&
 
-  case "$k" in
-    PATH)   delim=':'; flags+=( '-E' '-p' ) ;;
+    # '-a' to forcibly unroll symlinks so only single match
+    # Cygwin uses ':' in PATH instead of PATHSEP
+    PATH)   delim=':'; flags+=( '-E' '-p' '-a' ) ;;
+
+    #GOPATH, RUBYPATH etc.
   esac
+  kval=$k || return
+
   : ${delim:=${PATHSEP:-\:}}
 
-  local -ir __prepend=$prepend
-  local -n kval=$k
-  local v
-
+  local -ir __prepend=$prepend  #save
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
-    prepend=$__prepend   # reset to saved state
+    prepend=$__prepend          #restore
 
     # leading '-' means prepend
-    [ "${1:0:1}" = '-' ] && { prepend=1; v=${1:1}; } || v=$1
-
-    v=`convert_path "${flags[@]}" "$v"`
-    is_dir "$v" || return
+    [ "${1:0:1}" = '-' ] && prepend=1
+    v=`convert_path "${flags[@]}" "${1#-}"`
+    is_dir "$v" || { shift; continue; }
 
     if ! DELIM=$delim string.contains "$kval" "$v"; then
       [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
-      log.debug "add element ($k, $v)"
+      log.debug "add element to $k ($v)"
     fi
     shift
   done
@@ -537,7 +546,7 @@ function rmPath() {
   # expand for consistent match
   set -- `__READLINK -m "$@"`
 
-  local -n kval=$k
+  local -n kval; kval=$k
   kval=$( IFS=$delim
       read -ra items <<< "$kval"
       while (( $# )); do
@@ -631,14 +640,14 @@ function join_quote() { QUOTE=\' string.join "$@"; }
 
 function bool_to_i() {
 # Usage: [-u] <value|VAR_NAME> ...
-  local opt to_bool
-  local -i _unset=0
-
+  local -i to_bool=0 unset=0
   local -i OPTIND; local opt OPTARG
-  while getopts ':u' opt; do
+  while getopts ':r' opt; do
     case "$opt" in
-      u)    _unset=1 ;;
-     \?)    [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+#      u)    unset=1 ;;
+      r)    to_bool=1 ;;
+
+     \?)    log.error "unsupported (-${OPTARG})" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME ...
 _EOF
@@ -646,27 +655,23 @@ _EOF
   done
   shift $((OPTIND - 1))
 
-  local -i rc
-  while (( $# )); do
-    case ${1,,} in
-      0|false)  [ -n "${to_bool+X}" ] && echo 'false' || echo 0; false ;;
-      1|true)   [ -n "${to_bool+X}" ] && echo 'true' || echo 1; true ;;
+  case "${1,,}" in
+    0|'false') [ $to_bool -eq 1 ] && echo 'false' || echo 0; false ;;
+    1|'true')  [ $to_bool -eq 1 ] && echo 'true'  || echo 1; true ;;
 
-      [a-z]*)   if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
-                  local -n vref=$1
-                  vref=`$FUNCNAME "$vref"` || { [ ${_unset} -eq 1 ] && unset vref; }
-                else
-                  local v=$1
-                  eval $v=`$FUNCNAME "${!v}"` || { [ ${_unset} -eq 1 ] && unset $v; }
-                fi
-    esac
-    rc=$?
-    shift
-  done
-  return $rc       #NOTE only last entry if $#>1
+#      # assign truthiness to named variable, if false optionally unset it
+#      [a-z]*)   if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
+#                  local -n vref; vref=$1 || return
+#                  vref=`$FUNCNAME "$vref"`
+#                else
+#                  local v=${1^^}
+#                  $FUNCNAME ${!v}
+#                fi
+#               [ ${unset} -eq 1 ] && unset $1
+  esac
 }
 
-function i_to_bool() { to_bool=1 bool_to_i "$@"; }
+function to_bool() { bool_to_i -r "$1"; }
 
 
 #function __GETOPT() {
