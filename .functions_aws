@@ -145,6 +145,12 @@ function __AWS() {
     edit)   cmd=${EDITOR:-vi} ;&
     # assumes operation against either of AWS_CONFIG_FILE or AWS_SHARED_CREDENTIALS_FILE
     file|echo)
+            local -n file
+            case "${2^^}" in
+              ?(AWS_)CONFIG?(_FILE))        file=AWS_CONFIG_FILE ;;
+              *CRED*)       file=AWS_SHARED_CREDENTIALS_FILE ;;
+
+            esac
             local -n file=${2:-AWS_CONFIG_FILE}
             ${cmd:-$1} "$file"
             return
@@ -197,10 +203,11 @@ function __AWS() {
   #  OpenSSH ProxyCommand pipe, sts prompting for MFA Token
   if grep -q -e 'ssm start-session' - -- <<< "$*" || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
-  elif grep -q -Ee 'sts (assume-role|get-session-token)' - -- <<< "$*"; then
-    exec 3>&1
-    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 3>&- | tr -d '\r'
-    exec 3>&-
+#  elif grep --quiet --extended-regexp -e 'sts (assume-role|get-session-token)' - -- <<< "$*"; then
+#    exec 3>&1
+#was >&3 3>&- | tr -d '\r'
+#    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
+#    exec 3>&-
   else
     ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d '\r'
   fi
@@ -292,7 +299,7 @@ function aws.describe() {
   local -i single=0 sort_keys=0
   local -a filter=() query=() post=()
 
-  local OPTIND opt
+  local -i OPTIND; local opt OPTARG
   while getopts ':1at:q:sh' opt; do
     case "$opt" in
       1)    single=1 ;;
@@ -300,10 +307,9 @@ function aws.describe() {
       s)    sort_keys=1 ;;
       t)    filter+=( "$OPTARG" ) ;;
 
-      :)    log.error "missing argument (-$OPTARG)"
-            return 2 ;;
-      \?|*) log.error "unknown option (-$OPTARG)" ;&
-      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
   done
@@ -548,16 +554,15 @@ function aws.format_tags() {
     )
   local delim= format= keyword=
 
-  local OPTIND opt
-  while getopts ':f:h' opt; do
+  local -i OPTIND; local opt OPTARG
+  while getopts ':f:' opt; do
     case "$opt" in
       f)    keyword=$OPTARG; break
             ;;
-      :)    log.error "missing argument (-$OPTARG)"
-            return 2
-            ;;
-      \?|*) log.error "unknown option (-$OPTARG)" ;&
-      h)    >&2 echo "Usage: $FUNCNAME ... TODO"
+
+      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+      \?)   [ "$OPTARG" = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
   done
@@ -683,9 +688,9 @@ function asg.scale-zero() {
 
 #TODO aws.set asg.capacity
 function asg.set-capacity() {
-  local -i min desired max OPTIND
-  local OPTARG opt
+  local -i min desired max
 
+  local -i OPTIND; local opt OPTARG
   while getopts ':d:m:M:h' opt; do
     case "$opt" in
       d)    desired=$OPTARG ;;
@@ -693,7 +698,7 @@ function asg.set-capacity() {
       m)    min=$OPTARG ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   log.error "unsupported (-$OPTARG)" ;&
+      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
@@ -720,9 +725,10 @@ function asg.set-capacity() {
 #TODO really should be aws.get or aws.describe | aws.printf -a/-A <field> [<2nd_field>]
 #FIXME this function doesn't actually DO anything yet!!!
 function aws.list() {
-  local -i sort= OPTIND
-  local OPTARG opt format keyword= field=
+  local -i sort=0
+  local format keyword
 
+  local -i OPTIND; local opt OPTARG
   while getopts ':aAf:hS' opt; do    # no ^':' so pass args to aws.describe()
     case "$opt" in
       a)    format='array'  ;;
@@ -731,7 +737,7 @@ function aws.list() {
       S)    sort=1          ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return ;;
-      \?)   log.error "unsupported (-$OPTARG)" ;&
+      \?)   [ $OPTARG = '-' ] && break || log.error "unsupported (-${OPTARG})" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
@@ -739,6 +745,7 @@ function aws.list() {
   shift $((OPTIND - 1))
 
   keyword=${1:?keyword}; shift
+  local field
 #FIXME describe() returns ARRAY without '-S' flag
   case "$keyword" in
     autoscaling-group?(s))
@@ -749,6 +756,7 @@ function aws.list() {
     *)      log.error "unsupported keyword ($keyword)"; return
   esac
 
+  : ${field:?}
 #TODO if name=0  cmd[1]=__JQ --arg field "$field" '.[$field], ""'
 #TODO if sort=1  can JQ sort?
 
@@ -767,7 +775,7 @@ function aws.list() {
                 __JQ --slurp 'add'
             ;;
     # not reached
-    *)      log.error "unsupported format ($opt)"; return 2
+    *)      log.error "unsupported format ($format)"; return 2
   esac
 
   #TODO generic execution - $cmd1 | $cmd2 | $cmd3
