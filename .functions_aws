@@ -28,6 +28,7 @@ declare -Ar __aws_defaults=(
     ['connectTimeout']=17
   )
 
+#json: .Credentials
 declare -Ar __aws_session=(
     ['AccessKeyId']='aws_access_key_id'
     ['SecretAccessKey']='aws_secret_access_key'
@@ -35,9 +36,15 @@ declare -Ar __aws_session=(
     ['Expiration']='aws_session_expire'
   )
 
+#json: .AssumedRoleUser
+declare -Ar __aws_role=(
+    ['AssumedRoleId']='role_session_name'
+    ['Arn']='role_arn'
+  )
+
 declare -Ar __aws_regex=(
     ['token']='^[0-9]{6,}'
-    ['role']='^arn:aws:iam::[0-9]{12}:role/'
+    ['role_arn']='^arn:aws:iam::[0-9]{12}:role/'
     ['region']='^[a-z]{2}-[a-z]+-[0-9]'
     ['profile']='^[a-zA-Z]+'
   )
@@ -125,34 +132,23 @@ function __AWS() {
   fi
 
   cmd+=( "$__aws_bin" )
-  [ ${DEBUG:-0} -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
-
-  # bail out EC2
-  if is_ec2 && [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ] &&
-      grep -q --invert-match -e '--region' - -- <<< "$*"
-  then
-    local region=`ec2.metadata region || "${cmd[@]}" configure get region`
-    [ -n "$region" ] || {
-        region=${__aws_defaults['region']}
-        log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
-      }
-    cmd+=( '--region' "${region:?}" )
-  fi
 
   # special handling of certain commands
+  local sop
   case "$1" in
-    # mimic ssh-wrapper
-    edit)   cmd=${EDITOR:-vi} ;&
+    # Special OP mimics ssh-wrapper
+    edit)   sop=${EDITOR:-vi} ;&
     # assumes operation against either of AWS_CONFIG_FILE or AWS_SHARED_CREDENTIALS_FILE
-    file|echo)
-            local -n file
+    file|echo|cat)
+            local file=${2:-AWS_CONFIG_FILE}
             case "${2^^}" in
-              ?(AWS_)CONFIG?(_FILE))        file=AWS_CONFIG_FILE ;;
-              *CRED*)       file=AWS_SHARED_CREDENTIALS_FILE ;;
-
+              ?(AWS_)CONFIG?(_FILE))
+                        file=AWS_CONFIG_FILE
+                        ;;
+              *CRED*)   file=AWS_SHARED_CREDENTIALS_FILE ;;
             esac
-            local -n file=${2:-AWS_CONFIG_FILE}
-            ${cmd:-$1} "$file"
+
+            ${sop:-$1} "${!file}"
             return
             ;;
 
@@ -160,6 +156,7 @@ function __AWS() {
     shell)  "${cmd[@]}" --cli-auto-prompt; return ;;
 
     configure)  # format='text' appears hard-coded; explicit '--output' ineffectual
+#TODO delete-profile, drop-creds
             :
             ;;
 
@@ -187,28 +184,42 @@ function __AWS() {
             ;;
   esac
 
-  # crude search for 'file://' arguments
-  if is_windows "${__aws_bin}"; then
-    local -a args=()
-    while (( $# )); do
-      [[ "$1" =~ ^file:// ]] &&
-          args+=( 'file://'$(convert_path -E -a -w "${1#file://}") ) ||
-          args+=( "$1" )
-      shift
-    done
-    set -- "${args[@]}"
+  # bail out EC2
+  if is_ec2 && [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ] &&
+      grep -q --invert-match -e '--region' - -- <<< "$*"
+  then
+    local region=`ec2.metadata region || "${cmd[@]}" configure get region`
+    [ -n "$region" ] || {
+        region=${__aws_defaults['region']}
+        log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
+      }
+    cmd+=( '--region' "${region:?}" )
   fi
 
   #WARN! ugly-ass hack to strip DOS line-endings, but not when
   #  OpenSSH ProxyCommand pipe, sts prompting for MFA Token
   if grep -q -e 'ssm start-session' - -- <<< "$*" || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
+
 #  elif grep --quiet --extended-regexp -e 'sts (assume-role|get-session-token)' - -- <<< "$*"; then
 #    exec 3>&1
 #was >&3 3>&- | tr -d '\r'
 #    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
 #    exec 3>&-
   else
+    # crude search for 'file://' arguments
+    if is_windows "${__aws_bin}"; then
+      local -a args=()
+      while (( $# )); do
+        [[ "$1" =~ ^file:// ]] &&
+            args+=( 'file://'$(convert_path -E -a -w "${1#file://}") ) ||
+            args+=( "$1" )
+        shift
+      done
+      set -- "${args[@]}"
+    fi
+
+    [ ${DEBUG:-0} -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
     ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d '\r'
   fi
 }
