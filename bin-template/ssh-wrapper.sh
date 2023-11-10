@@ -301,7 +301,7 @@ SEARCH_DIRS=( "$CLOUD_PREFIX" "$BASEDIR" "$HOME/.ssh" )
 D1='/'
 D2=( '/' '.' )
 
-${DEBUG:+ runv} _ssh "$@"
+_ssh "$@"
 
 
 # vim: expandtab:ts=4:sw=4
