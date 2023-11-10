@@ -112,7 +112,7 @@ function git.mirror() {
   echo
   for br in ${@:-`__GIT branch --list --remote "$src/${BRANCH:-*}"`}; do
     if [ ${interactive:-0} -eq 1 ]; then
-      read -t 8 -n 1 -p "Copy '$br' [y/N]: " || return
+      read -t 8 -n 1 -p "Copy '$br' (y/N):  " || return
       [ -z "${REPLY}" ] || echo
       [ "${REPLY^^}" = 'Y' ] || continue
     else
