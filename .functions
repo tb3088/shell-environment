@@ -84,11 +84,12 @@ function runv() {
   local indent=`printf '%.0s+' {1..$SHLVL}`
   >&2 printf '%s %s\n' "$indent" "$*"
 
-  # set <blank> is insufficient
+  # set to <blank> is insufficient
   ${NOOP:+return 0}
 
-  local command=${1/eval/${2//\`/}}
-  local outf=`mktemp -t "${command##*/}-XXXXX"`
+  caller 1
+  local command=${FUNCNAME[1]:-$1}      #alt? caller ${FUNCNAME[1]
+  local outf=`mktemp -t "${command##*/}-XXXXXXXX"`
   "$@" > >( tee "$outf" ) 2> >( tee "${outf}.err" >&2 )
 }
 # likely to be invoked in subshell
@@ -128,22 +129,22 @@ function __is_type() {  #WARN! selective short-circuit on first error
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-			  if [[ "$keyword" =~ dir ]]; then [ -d "${1:?parameter}" ]
+              if [[ "$keyword" =~ dir ]]; then [ -d "${1:?parameter}" ]
               else [ -f "${1:?}" ]; fi || {
                   [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
                   return 1
                 }
               shift
             done
-			return 0
+            return 0
             ;;
-#    command)    #WARN allows alias and functions
     exec*)  local bin
             while (( $# )); do
+              #WARN 'command' returns matches on alias and functions
               bin=`__WHICH "${1:?parameter}" 2>/dev/null` || {
-			      [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
-				  return 1
-				}
+                  [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
+                  return 1
+                }
               [ -n "${VERBOSE}" ] && echo "$bin"
               shift
             done
@@ -152,9 +153,9 @@ function __is_type() {  #WARN! selective short-circuit on first error
     func*)  local fn
             while (( $# )); do
               fn=`declare -F "${1:?parameter}"` || {
-			      [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
-				  return 1
-				}
+                  [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
+                  return 1
+                }
 
               [ -n "${VERBOSE}" ] && whereis_function "$1"
               shift
@@ -165,8 +166,8 @@ function __is_type() {  #WARN! selective short-circuit on first error
             ;;
     *)      [ -n "${__types[$keyword]}" ] || {
                 log.error "unsupported type ($keyword)"
-				return 2
-			  }
+                return 2
+              }
   esac
 
   local whatami flag _type
@@ -633,6 +634,10 @@ function join_string() { log.warn "deprecated. use 'string.join()'"; string.join
 function join_quote() { QUOTE=\' string.join "$@"; }
 
 
+function to_upper() { if (( $# )); then printf '%s\n' "${@^^}"; else tr '[:lower:]' '[:upper:]'; fi; }
+function to_lower() { if (( $# )); then printf '%s\n' "${@,,}"; else tr '[:upper:]' '[:lower:]'; fi; }
+
+
 function bool_to_i() {
 # Usage: [-u] <value|VAR_NAME> ...
   local -i to_bool=0 unset=0
@@ -918,28 +923,28 @@ function log() {
 function log.none() { return; }
 
 function log.debug() {
-  local rc=$?
+  local -i rc=$?
 
   [ -n "$DEBUG" ] && log "$@"
   return ${RC:-$rc}
 }
 
 function log.info() {
-  local rc=$?
+  local -i rc=$?
 
   [ -n "${VERBOSE}${DEBUG}" ] && log "$@"
   return ${RC:-$rc}
 }
 
 function log.notice() {
-  local rc=$?
+  local -i rc=$?
 
   log "$@"
   return ${RC:-$rc}
 }
 
 function log.error() {
-  local rc=$?
+  local -i rc=$?
 
   log "$@"
   if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
