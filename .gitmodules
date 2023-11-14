@@ -1,53 +1,66 @@
 [submodule ".vim/bundle/vim-pathogen"]
 	path = .vim/bundle/vim-pathogen
 	url = https://github.com/tpope/vim-pathogen.git
-	active = false
+	active = true
 	ignore = all
+#	branch = v2.4-22-gac4dd94
 [submodule ".vim/bundle/syntastic"]
 	path = .vim/bundle/syntastic
 	url = https://github.com/vim-syntastic/syntastic.git
-	active = false
+	active = true
 	ignore = all
+#	branch = 3.10.0
 [submodule ".vim/bundle/tabular"]
 	path = .vim/bundle/tabular
 	url = https://github.com/godlygeek/tabular
-	active = false
+	active = true
 	ignore = all
+#	branch = 1.0.0-5
 [submodule ".vim/bundle/tagbar"]
 	path = .vim/bundle/tagbar
 	url = https://github.com/majutsushi/tagbar.git
-	active = false
+	active = true
 	ignore = all
+#	branch = v3.1.1-5-g5d6990e
 [submodule ".vim/bundle/tlib_vim"]
 	path = .vim/bundle/tlib_vim
 	url = https://github.com/tomtom/tlib_vim.git
-	active = false
+	active = true
 	ignore = all
+#	branch = 1.28-2-gd3bdad7
 [submodule ".vim/bundle/vim-addon-mw-utils"]
 	path = .vim/bundle/vim-addon-mw-utils
 	url = https://github.com/MarcWeber/vim-addon-mw-utils.git
-	active = false
+	active = true
 	ignore = all
+#	branch = heads/master
 [submodule ".vim/bundle/vim-puppet"]
 	path = .vim/bundle/vim-puppet
 	url = https://github.com/rodjek/vim-puppet.git
-	active = false
+	active = true
 	ignore = all
+#	branch = heads/master
 [submodule ".vim/bundle/vim-ruby"]
 	path = .vim/bundle/vim-ruby
 	url = https://github.com/vim-ruby/vim-ruby.git
-	active = false
+	active = true
 	ignore = all
+#	branch = stable-20220329-11-gf06f069
 [submodule ".vim/bundle/vim-sensible"]
 	path = .vim/bundle/vim-sensible
 	url = https://github.com/tpope/vim-sensible.git
-	active = false
+	active = true
 	ignore = all
+#	branch = v2.0
 [submodule ".vim/bundle/vim-snippets"]
 	path = .vim/bundle/vim-snippets
 	url = https://github.com/honza/vim-snippets.git
-	active = false
+	active = true
 	ignore = all
+#	branch = 1.0.0-1602-gb039190
 [submodule ".vim/bundle/vim-airline"]
 	path = .vim/bundle/vim-airline
 	url = https://github.com/vim-airline/vim-airline
+	active = true
+	ignore = all
+#	branch = v0.11-597-g3b9e149
