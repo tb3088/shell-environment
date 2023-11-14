@@ -55,14 +55,14 @@ function aws.printenv() { for v in ${!AWS_*}; do printf '%q=%q\n' "$v" "${!v}"; 
 function aws.region() {
   local _default region                 # supplied by aws.profile()
   local OPTIND opt
-  while getopts ':Pr:h' opt; do
+  while getopts 'Pr:h' opt; do
     case "$opt" in
       P)    region='prompt' ;;
       r)    region=$OPTARG ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-    # consume '--'
-     \?)    [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+#      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+#    # consume '--'
+#     \?)    [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
       h|*)  >&2 cat <<EOF
 Usage: $FUNCNAME ... TODO
 EOF
@@ -128,24 +128,22 @@ function aws.profile() {
   # hacktastic shortcuts
   case "$1" in
     RESET)  aws.rmPath; unset ${!AWS_*}; return ;;
+    DELETE) log.error "not implemented"; return ;;
+    LIST)   __AWS configure list-profiles | column; return ;;
   esac
-
 
   local profile
   local OPTIND opt
-  while getopts ':DLPp:Sh' opt; do
+  while getopts 'DlPp:h' opt; do
     case "$opt" in
-      D)    #delete the profile
-            ;;
-      L)    __AWS configure list-profiles | column
-            return
-            ;;
+      D)    $FUNCNAME DELETE; return ;;
+      l)    $FUNCNAME LIST; return ;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-    # consume '--'
-      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+#      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
+#    # consume '--'
+#      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
       h|*)  >&2 cat <<EOF
 Usage: $FUNCNAME [profile] [region]
 EOF
@@ -276,7 +274,7 @@ function iam.session-load() {
 # may need to use Arn instead otherwise it'll be a session_id
 #            __JQR '.AssumedRoleUser.AssumedRoleId' <<< "$input" | log.info
             ;;
-    text)   log.error "AWS CLI is seriously broken" ;&
+    text)   log.error "AWS CLI output is utterly useless" ;&
 #504   read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
 #505       __AWS sts assume-role --output text --role-arn "${ROLE_ARN:?}" \
 #506           --role-session-name "${session_name}" \
@@ -378,14 +376,13 @@ function iam.session() {
 #           ;;
   esac
 
-
-  local -i duration subshell
+  local -i duration subshell=0
   local role mfa
   local token=  # MUST be string, Bash strips leading ZEROs, printf treats as Octal
   local cache_dir="$HOME/.aws/cli/cache"
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':r:St:x:' opt; do
+  while getopts 'r:St:x:' opt; do
     case "$opt" in
 #      c)    local cache
 #            for f in {,"$cache_dir"/}"$OPTARG"; do
@@ -393,8 +390,8 @@ function iam.session() {
 #            done
 #            iam.session-load "${cache:-$OPTARG}"
 #            ;;
-      S)    subshell=1 ;;
       r)    role=$OPTARG ;;
+      S)    subshell=1 ;;
       t)    [[ "$OPTARG" =~ ${__aws_regex['token']} ]] || {
                 log.error "invalid TOTP Token format ($OPTARG)"
                 return 1
@@ -421,7 +418,7 @@ EOF
         ${token:+'--token-code' "$token"} \
         ${duration:+'--duration-seconds' "$duration"}
 
-    # 'ExpiredToken' with limited retry
+    # 'ExpiredToken' with one-shot retry
     if [ $? -eq 254 ]; then
       [ ${loop:-0} -lt 1 ] || return 254    # prevent infinite loop
 
@@ -435,24 +432,28 @@ EOF
 
   #ref: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html
   if [ -n "${role:=`__AWS configure get role_arn`}" ]; then
-    cmd+=( assume-role '--role-arn' "$role" )
-
     local session_name
     session_name=`__AWS configure get role_session_name` || $( printf \
         'SN%.15s@%.12s.%d,%s' \
         "${role##*:role*/}" "${AWS_PROFILE:-default}" $$ `date '+%T'`
       )
-    session_name=${session_name//[^a-zA-Z0-9@=.,-]}
 
-    cmd+=( '--role-session-name' "${session_name//[^a-zA-Z0-9@=.,-]}" )
+    # sanitize illegal chars
+    cmd+=( assume-role '--role-arn' "$role" '--role-session-name' "${session_name//[^a-zA-Z0-9@=.,-]}" )
 
-    __doit | log.info || return $PIPESTATUS
+    if __doit | log.info; then
+      :
+ #TODO how do we extract session_expire from cache file?
 #   AWS_ROLE_ARN=$role
 #   AWS_ROLE_SESSION_NAME=$session_name
+#  export ${!AWS_*}
+    fi
+    return $PIPESTATUS
+  fi
 
+#----- ELSE -----
   #ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/sts/get-session-token.html#options
-  else
-    cmd+=( get-session-token )
+  cmd+=( get-session-token )
 
     # Technically 'get-session-token' works fine without an MFA, but a
     # 'ForceMFA'-style IAM policy likely in effect, rendering such credentials void.
@@ -465,33 +466,36 @@ EOF
     # list=( `__AWS iam list-mfa-devices | __JQR '.MFADevices[].SerialNumber'` )
     # list=( `IFS=$'\n'; echo "${list[*]}" | sort --unique` )
 
-    [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-X} = X ] &&
-        while read -t 20 -ep "${mfa#*iam::}) TOTP token:  " -N 6; do
-          [[ "${REPLY:-X}" =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
-        done
+  [ -n "${mfa:=`__AWS configure get mfa_serial`}" -a ${token:-X} = X ] &&
+      while read -t 20 -ep "${mfa#*iam::}) TOTP token:  " -N 6; do
+        [[ "${REPLY:-X}" =~ ${__aws_regex['token']} ]] && { token=$REPLY; break; }
+      done
 
-    # also improperly ignores 'source_profile'
-    local source_profile=`__AWS configure get source_profile`
-    [ -n "$source_profile" ] &&
-        for k in `values __aws_session | grep access_key`; do
-          local -n kref=${k^^}
-          kref=`__AWS --profile "$source_profile" configure get "$k"` || {
-              log.error "item not found ($k)" "file: $AWS_CONFIG_FILE" "profile: $source_profile"
-              return
-            }
-        done
+  # also improperly ignores 'source_profile'
+  local source_profile
+  [ -n "${source_profile:=`__AWS configure get source_profile`}" ] &&
+      for k in `values __aws_session | grep access_key`; do
+        local -n kref=${k^^}
+        kref=`__AWS --profile "$source_profile" configure get "$k"` || {
+            log.error "item not found ($k)" "file: $AWS_CONFIG_FILE" "profile: $source_profile"
+            return
+          }
+      done
 
-    local ofile
-    ofile=`mktemp "${AWS_PROFILE:-default}.XXXXX"` || return
-    trap "rm -f $ofile" RETURN
-XXX
-if [ ${subshell:-0} -eq 1 ]; then $SHELL; return 0; fi
-set AWS_PROFILE to tmp string
-    __doit | tee "${ofile:?}" | log.info || return $PIPESTATUS
+  local ofile
+  ofile=`mktemp "${AWS_PROFILE:-default}.XXXXX"` || return
+  trap "rm -f $ofile" RETURN
 
-    && iam.session-load  "$ofile"
-  fi
+  __doit | tee "${ofile:?}" | log.info || return $PIPESTATUS
 
+  [ ${subshell:-0} -eq 1 ] && (
+      set -a
+      iam.session-load "$ofile" && AWS_PROFILE=${ofile##*/} && "$SHELL"
+      return
+    )
+
+  iam.session-load "$ofile" || return
+  AWS_PROFILE=${ofile##*/}
   export ${!AWS_*}
 }
 
