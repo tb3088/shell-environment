@@ -4,16 +4,25 @@
 " system-wide VIMRC can interfere
 filetype off
 runtime bundle/vim-pathogen/autoload/pathogen.vim
-" execute pathogen#infect()
+execute pathogen#infect()
 
-set nocompatible | filetype indent plugin on | syntax enable
+set nocompatible | filetype plugin indent on | syntax enable
 
-" industry and torte also good
-colorscheme murphy
+" if $COLORSCHEME != ""
+"   let base16colorspace=256
+"   exec 'colorscheme '.$COLORSCHEME
+" endif
+
+" set termguicolors
+set background=dark
+" murphy industry and torte also good
+colorscheme PaperColor
 " highlight Normal ctermfg=lightgrey ctermbg=black
-highlight Function ctermfg=Green
+" highlight Function ctermfg=Green
 " highlight Comment ctermfg=Pink
-highlight LineNr ctermfg=Brown
+" highlight LineNr ctermfg=Brown
+highlight CursorLine cterm=NONE gui=NONE
+highlight CursorLineNr ctermfg=Brown cterm=bold gui=bold
 highlight ColorColumn ctermbg=DarkGray
 
 " Use the highlight group to expose unwanted/bad whitespace
@@ -45,7 +54,17 @@ set showmatch
 set noswapfile
 set wrap linebreak
 set colorcolumn=-3
-" set cursorline
+set cursorlineopt=number
+set cursorline
+
+" Syntastic
+set statusline+=%#warningmsg#
+set statusline+=%{SyntasticStatuslineFlag()}
+set statusline+=%*
+let g:syntastic_always_populate_loc_list = 1
+let g:syntastic_auto_loc_list = 1
+let g:syntastic_check_on_open = 1
+let g:syntastic_check_on_wq = 0
 
 " only on windows gVim
 set guifont=Liberation_Mono:h9:cANSI
@@ -54,11 +73,6 @@ set guioptions=egmrLt
 " squelch gratuitous noise
 set noerrorbells visualbell t_vb=
 autocmd GUIEnter * set visualbell t_vb=
-
-if $COLORSCHEME != ""
-  let base16colorspace=256
-  exec 'colorscheme '.$COLORSCHEME
-endif
 
 "ref: https://vim.fandom.com/wiki/Mapping_keys_in_Vim_-_Tutorial_(Part_1)
 " use F5 to grep for word under cursor in CWD
