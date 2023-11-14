@@ -46,13 +46,13 @@ readonly -f pidof
 
 
 # Example of a semi-smart search, but probably best to define in .aliases.local
-# or better yet put $LOCALAPPDATA on $PATH and symlink to actual.
-which 'notepad++' &>/dev/null || {
-    bin='Notepad++/notepad++.exe'
-    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
-      [ -x "${!dir}/$bin" ] && { alias npp="run $(convert_path -e "${!dir}/$bin")"; break; }
-    done
-  }
+# or better yet put $LOCALAPPDATA on $PATH and symlink to actual in bin/.
+#which 'XXX' &>/dev/null || {
+#    bin='XXX.exe'
+#    for dir in USERPROFILE LOCALAPPDATA PROGRAMFILES; do
+#      [ -x "${!dir}/$bin" ] && { alias xxx="run $(convert_path -e "${!dir}/$bin")"; break; }
+#    done
+#  }
 
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do

@@ -49,7 +49,7 @@ function ln() {
 
     # mklink is retarded - CWD must be `dirname link`
     ( cd "${destdir:-`dirname $link`}"
-      ${DEBUG:+ runv} mklink $flag `basename "${link:-$target}"` `cygpath -w "$target"`
+      ${DEBUG:+ runv} mklink $flag "$(basename "${link:-$target}")" "$(cygpath -w "$target")"
     )
   done
 }
