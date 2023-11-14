@@ -9,16 +9,16 @@
 	url = https://github.com/vim-syntastic/syntastic.git
 	active = true
 	ignore = all
-#	branch = 3.10.0
+#	branch = heads/master 8d5e37c
 [submodule ".vim/bundle/tabular"]
 	path = .vim/bundle/tabular
 	url = https://github.com/godlygeek/tabular
 	active = true
 	ignore = all
-#	branch = 1.0.0-5
+#	branch = heads/master 339091a
 [submodule ".vim/bundle/tagbar"]
 	path = .vim/bundle/tagbar
-	url = https://github.com/majutsushi/tagbar.git
+	url = https://github.com/preservim/tagbar.git
 	active = true
 	ignore = all
 #	branch = v3.1.1-5-g5d6990e
