@@ -140,12 +140,11 @@ function __AWS() {
     edit)   sop=${EDITOR:-vi} ;&
     # assumes operation against either of AWS_CONFIG_FILE or AWS_SHARED_CREDENTIALS_FILE
     file|echo|cat)
-            local file=${2:-AWS_CONFIG_FILE}
-            case "${2^^}" in
+            local -u file=${2:-AWS_CONFIG_FILE}
+            case "$file" in
               ?(AWS_)CONFIG?(_FILE))
-                        file=AWS_CONFIG_FILE
-                        ;;
-              *CRED*)   file=AWS_SHARED_CREDENTIALS_FILE ;;
+                        file=AWS_CONFIG_FILE ;;
+              *CRED*)   file=AWS_SHARED_CREDENTIALS_FILE
             esac
 
             ${sop:-$1} "${!file}"
@@ -161,7 +160,7 @@ function __AWS() {
             ;;
 
     #WARN format='text' is hazardous & unpredictable in programatic invocation
-    *)      grep -q -e '--output' - -- <<< "$*" || cmd+=( '--output' ${OUTPUT:-json} )
+    *)      grep --quiet -e '--output' - -- <<< "$*" || cmd+=( '--output' ${OUTPUT:-json} )
             cmd+=(
                 '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
                 '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
@@ -185,20 +184,20 @@ function __AWS() {
   esac
 
   # bail out EC2
-  if is_ec2 && [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ] &&
-      grep -q --invert-match -e '--region' - -- <<< "$*"
-  then
-    local region=`ec2.metadata region || "${cmd[@]}" configure get region`
-    [ -n "$region" ] || {
-        region=${__aws_defaults['region']}
-        log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
-      }
-    cmd+=( '--region' "${region:?}" )
+  if is_ec2 && [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ]; then
+    grep --quiet -e '--region' - -- <<< "$*" || {
+        local region=`ec2.metadata region || "${cmd[@]}" configure get region`
+        [ -n "$region" ] || {
+            region=${__aws_defaults['region']}
+            log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
+          }
+        cmd+=( '--region' "${region:?}" )
+    }
   fi
 
   #WARN! ugly-ass hack to strip DOS line-endings, but not when
   #  OpenSSH ProxyCommand pipe, sts prompting for MFA Token
-  if grep -q -e 'ssm start-session' - -- <<< "$*" || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
+  if grep --quiet -e 'ssm start-session' - -- <<< "$*" || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
 
 #  elif grep --quiet --extended-regexp -e 'sts (assume-role|get-session-token)' - -- <<< "$*"; then
@@ -211,9 +210,9 @@ function __AWS() {
     if is_windows "${__aws_bin}"; then
       local -a args=()
       while (( $# )); do
-        [[ "$1" =~ ^file:// ]] &&
-            args+=( 'file://'$(convert_path -E -a -w "${1#file://}") ) ||
-            args+=( "$1" )
+        [[ "$1" =~ ^file:// ]] && {
+            args+=( 'file://'$(convert_path -E -a -w "${1#file://}") )
+          } || args+=( "$1" )
         shift
       done
       set -- "${args[@]}"
@@ -462,7 +461,7 @@ function aws.describe() {
   if [ -n "$query" ]; then
     cmd+=( '--query' "${query[@]}" )
     unset field
-  elif grep -qe '--query' - -- <<< "$*"; then
+  elif grep --quiet -e '--query' - -- <<< "$*"; then
     unset field
   fi
 
@@ -614,7 +613,6 @@ function aws.format_tags() {
       [ ${json:=1} -eq 1 ] || { log.error "illegal intermixing of (non-)JSON" "$1"; return; }
 
       tags=( '--cli-input-json' "$1" )  #XXX need re-encoding with to_json or @sh?
-#XXX huh?
       printf '%q\n' "${tags[*]}"    #alt: local IFS=$'\n'; echo ... NOTE semi-colon!
       return
     fi
@@ -653,11 +651,11 @@ function aws.set() {
     # ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/ec2/create-tags.html
     # Usage: item[,item]... <tags>
     ec2.tag?(s))
-            [ ${DELETE:-0} -eq 1 ] && cmd=( delete-tags ) || cmd=( create-tags )
+            [ ${DELETE:-0} -eq 1 ] && cmd=( ec2 delete-tags ) || cmd=( ec2 create-tags )
             local -a tags=( `aws.format_tags "${@:2}"` )
             #local IFS=,; for i in $1; do xxx; note non-quoted
-            FIXME
-            __AWS ec2 "${cmd[@]}" --resources ${1//,/ } ${tags:+'--tags'} "${tags[@]}"
+# FIXME
+            __AWS "${cmd[@]}" --resources ${1//,/ } ${tags:+'--tags'} "${tags[@]}"
             ;;
 
     ssm.parameter)  #TODO getopt for 'force'
@@ -779,7 +777,7 @@ function aws.list() {
 
     # FIXME? if TAB, 'while IFS=$'\t' read -t key val
     # otherwise, read key && read val
-    A|hash) __JQR --arg field "$field" '"[\(.[$field])]=\(.Tags | from_entries | .Name | @sh)"'
+    A|hash) __JQR --arg field "$field" '["\(.[$field])"]="\(.Tags | from_entries | .Name | @sh)"'
             ;;
 
     json)   __JQ --arg field "$field" '{ (.[$field]): (.Tags | from_entries | .Name // "") }' |
