@@ -427,6 +427,21 @@ function convert_path() {
 #TODO
 #function convert_path=os.filepath.print
 
+# analog to string.contains - allows grep BRE
+function is_member() {
+#TODO getopts?
+  [ -n "$1" ] || return
+
+  for i in "${@:2}"; do
+    [ -n "$i" ] || continue
+
+    grep --quiet --word-regexp -e "$1" <<< "$i" && return
+    # nameref to possible array
+	local -n ni=$i
+	grep --quiet --line-regexp -e "$1" < <( IFS=$'\n'; echo "${ni[*]}" ) && return
+  done
+  return 1
+}
 
 #TODO handle Hash/Array,
 #FIXME leverage IFS="$delim" read <<< "$1"
@@ -437,7 +452,7 @@ function convert_path() {
 # otherwise have to feed it to AWK/SED for magic
 
 function string.contains() {
-#Usage: source pattern, but more intuitive? to do 'pattern' 'source'?
+#Usage: <source> <pattern>	but more intuitive? to do 'pattern' 'source'?
   local DELIM delim METHOD
   [ -n "${DELIM+X}" ] && delim=$DELIM
 #FIXME suggest IFS:0:1 but actually define '-x' for exact match (uses delim) or '-z' for fuzzy match?
@@ -449,7 +464,7 @@ function string.contains() {
 
   # empty string inside empty is valid
   case "$METHOD" in
-    grep)   grep -q "$sub" <<< "$source" ;;
+    grep)   grep --quiet "$sub" <<< "$source" ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
     *)      [[ "$source" == *$sub* ]]
