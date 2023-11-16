@@ -103,7 +103,7 @@ declare -Ar __aws_availability_zones=(
 
 
 function __AWS() {
-  local OUTPUT conf= creds=
+  local OUTPUT conf= creds= __AWS_NOPIPE
   local -a cmd=()
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
@@ -155,8 +155,13 @@ function __AWS() {
     shell)  "${cmd[@]}" --cli-auto-prompt; return ;;
 
     configure)  # format='text' appears hard-coded; explicit '--output' ineffectual
-#TODO delete-profile, drop-creds
-            :
+            case "$2" in
+			  delete-profile) ;&
+			  drop-creds) ;&
+			  get|set|list*)
+						: ;;
+			  *)		__AWS_NOPIPE=1
+			esac
             ;;
 
     #WARN format='text' is hazardous & unpredictable in programatic invocation
