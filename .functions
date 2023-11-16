@@ -129,8 +129,10 @@ function __is_type() {  #WARN! selective short-circuit on first error
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              if [[ "$keyword" =~ dir ]]; then [ -d "${1:?parameter}" ]
-              else [ -f "${1:?}" ]; fi || {
+              if [[ "$keyword" =~ dir ]]
+                then [ -d "${1:?parameter}" ]
+                else [ -f "${1:?}" ]
+              fi || {
                   [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
                   return 1
                 }
@@ -437,8 +439,8 @@ function is_member() {
 
     grep --quiet --word-regexp -e "$1" <<< "$i" && return
     # nameref to possible array
-	local -n ni=$i
-	grep --quiet --line-regexp -e "$1" < <( IFS=$'\n'; echo "${ni[*]}" ) && return
+    local -n ni=$i
+    grep --quiet --line-regexp -e "$1" < <( IFS=$'\n'; echo "${ni[*]}" ) && return
   done
   return 1
 }
@@ -452,7 +454,7 @@ function is_member() {
 # otherwise have to feed it to AWK/SED for magic
 
 function string.contains() {
-#Usage: <source> <pattern>	but more intuitive? to do 'pattern' 'source'?
+#Usage: <source> <pattern>  but more intuitive? to do 'pattern' 'source'?
   local DELIM delim METHOD
   [ -n "${DELIM+X}" ] && delim=$DELIM
 #FIXME suggest IFS:0:1 but actually define '-x' for exact match (uses delim) or '-z' for fuzzy match?
