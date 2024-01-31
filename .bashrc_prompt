@@ -11,6 +11,7 @@ __tag=1
 
 # ANSI color codes - https://www.shellhacks.com/bash-colors
 # PS1 requires wrapping in escaped brackets
+#declare -A PS_COLORS=( ...
 RS='\[\e[0m\]'    # reset
 HC='\[\e[1m\]'    # bold/hicolor
 UL='\[\e[4m\]'    # underline
@@ -33,6 +34,7 @@ BMAG='\[\e[45m\]' # background magenta
 BCYN='\[\e[46m\]' # background cyan
 BWHT='\[\e[47m\]' # background white
 
+# defaults
 PS_SCREEN='\[\033k\033\134\]'		# missing '\h', '%n', or '$1' after 33k?
 #alt: echo -ne "\ek<XXX>\e\\"
 PS_PREFIX="\n${FCYN}\u${RS}@${FGRN}\h${RS} ${FYEL}\w${RS}"
@@ -45,17 +47,16 @@ PS1="${PS_PREFIX}\n\! \$ "
 #PS1="\[\e]0;\w\a\]\n\[\e[32m\]\u@\h \[\e[33m\]\w\[\e[0m\]\n\!,\j \$ "
 #\[\033[36m\][\t]\[\033[32m\][\u@\h:\[\033[33m\]\w\[\033[32m\]]-> \[\033[0m\]
 
+declare -a __prompts=()
 
 function __prompt() {
-  local _RC=$?
-  #TODO _prompt=() and use IFS='<enter' to join elements
-  local _prompt=
+  local _RC=$? fn
 
   PS1="${PS_PREFIX}"
-  while read fn; do
-    [ "$fn" != "$FUNCNAME" ] || continue
+  for fn in "${__prompts[@]}"; do
+    [ -n "$fn" ] && declare -F "$fn" >/dev/null || continue
     PS1+=`$fn`
-  done < <( declare -F | awk '{ print $NF }' | grep "^${FUNCNAME}" )
+  done
 
   [ $EUID -eq 0 ] && PS1+="${BRED}"
   [ $_RC -eq 0 ] && unset _RC
