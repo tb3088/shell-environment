@@ -87,10 +87,14 @@ function runv() {
   # set to <blank> is insufficient
   ${NOOP:+return 0}
 
-  caller 1
-  local command=${FUNCNAME[1]:-$1}      #alt? caller ${FUNCNAME[1]
-  local outf=`mktemp -t "${command##*/}-XXXXXXXX"`
-  "$@" > >( tee "$outf" ) 2> >( tee "${outf}.err" >&2 )
+  if [ `to_int "$DEBUG"` -gt 1 -o `to_int "$TRACE"` -eq 1 ]; then
+    local command=${FUNCNAME[1]:-$1}
+    local outf=`mktemp -t "${command##*/}-XXXXXXXX"`
+    exec > >( tee "$outf" ) 2> >( tee "${outf}.err" >&2 )
+    >&2 caller 1
+  fi
+
+  "$@"
 }
 # likely to be invoked in subshell
 export -f runv
@@ -123,6 +127,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
 
   # read STDIN (pipe) if no args
   (( $# )) || set -- $( < /dev/stdin )
+  : ${1?parameter}
 
   local keyword=${FUNCNAME[1]#is_}
   local -i rc=
@@ -133,7 +138,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
                 then [ -d "${1:?parameter}" ]
                 else [ -f "${1:?}" ]
               fi || {
-                  [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
+                  [ -z "${VERBOSE}" ] || log.error "$keyword not found ($1)"
                   return 1
                 }
               shift
@@ -144,7 +149,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
             while (( $# )); do
               #WARN 'command' returns matches on alias and functions
               bin=`__WHICH "${1:?parameter}" 2>/dev/null` || {
-                  [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
+                  [ -z "${VERBOSE}" ] || log.error "$keyword not found ($1)"
                   return 1
                 }
               [ -n "${VERBOSE}" ] && echo "$bin"
@@ -155,10 +160,9 @@ function __is_type() {  #WARN! selective short-circuit on first error
     func*)  local fn
             while (( $# )); do
               fn=`declare -F "${1:?parameter}"` || {
-                  [ -n "${VERBOSE}" ] && log "$keyword not found ($1)"
+                  [ -z "${VERBOSE}" ] || log.error "$keyword not found ($1)"
                   return 1
                 }
-
               [ -n "${VERBOSE}" ] && whereis_function "$1"
               shift
             done
@@ -190,12 +194,14 @@ function __is_type() {  #WARN! selective short-circuit on first error
       }
     shift
   done
-  return 0
+  return
 }
 # data-type wrappers
 for f in array dir{,ectory} exec{,utable} file hash integer string function readonly; do
   eval function is_$f '{ __is_type "$@"; }'
 done
+export -f __is_type is_exec
+
 
 function is_number() {
   printf '%d' "$@" &>/dev/null
@@ -212,10 +218,7 @@ function is_interactive() {
 # Properly belongs in '.functions_os.cygwin' but required for various
 # scripts and helper functions. Leaving it here simplifies includes.
 function is_windows() {
-  if [ $# -eq 0 ]; then
-    [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
-    return
-  fi
+  [ $# -eq 0 ] && { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; }
 
   local bin
   # multi-arg supported, but not recommended
@@ -286,32 +289,33 @@ function define() {
 
 
 #TODO? extend to other types
-function whereis_function() {
-  ( shopt -s extdebug
-    declare -F ${1:?} | awk '{ printf("%-50s #%d\n", $3, $2); }'
-  )
-}
-
-
-# NOTE if "$file" sources other files, the answer is polluted.
-function list_functions() {
+function whereis_function() (
+  shopt -s extdebug
   while (( $# )); do
-    [ -f "$1" ] || { shift; continue; }
+    declare -F ${1:?}
+  done | awk '{ printf("%-25s\t%-50s #%d\n", $1, $3, $2); }'
+)
 
-    # use sub-shell to not contaminate current
-    ( source "$1"; $FUNCNAME )
+
+function list_functions() {
+  if [ $# -eq 0 ]; then
+    ( shopt -s extdebug; declare -F `compgen -A function` ) |
+        awk '{ printf("%-25s\t%-50s #%d\n", $1, $3, $2); }'
+	return
+  fi
+
+  while (( $# )); do
+    is_file -v "$1" || { shift; continue; }
+
+    env -i $SHELL --noprofile --norc -s <<- _EOF
+		source "$1" 2>/dev/null
+		shopt -s extdebug
+		compgen -A function | while read; do declare -F "\${REPLY}"; done
+_EOF
+
     shift
-  done
-
-  ( shopt -s extdebug
-    declare -F `compgen -A function` | awk '{ printf("%-25s%-50s #%d\n", $1, $3, $2); }'
-  )
+  done | awk '{ printf("%-25s\t%-50s #%d\n", $1, $3, $2); }'
 }
-# alt:
-# env -i /bin/bash --noprofile --norc <<_EOF
-#  source "$file" &>/dev/null
-#  compgen -A function    #alt: declare -F | cut -d' ' -f3
-#_EOF
 
 
 function copy_function() {
@@ -410,8 +414,7 @@ function convert_path() {
   shift $((OPTIND - 1))
 
   while (( $# )); do
-    # silently ignore empty param
-    [ -n "$1" ] || { shift; continue; }
+    [ -n "$1" ] || { log.error "empty argument"; echo; shift; continue; }
 
     # unescape whitespace to not double-escape
     local p="${1//\\ / }"
@@ -429,20 +432,23 @@ function convert_path() {
 #TODO
 #function convert_path=os.filepath.print
 
-# analog to string.contains - allows grep BRE
-function is_member() {
-#TODO getopts?
-  [ -n "$1" ] || return
 
-  for i in "${@:2}"; do
-    [ -n "$i" ] || continue
+#FIXME basically no different than string.contains with word match
+function array.is_member() {
+#Usage: <array|hash> value ...
+  local source=${1:?source}; shift
 
-    grep --quiet --word-regexp -e "$1" <<< "$i" && return
-    # nameref to possible array
-    local -n ni=$i
-    grep --quiet --line-regexp -e "$1" < <( IFS=$'\n'; echo "${ni[*]}" ) && return
+  local is_entity
+  declare -p "$source" &2>/dev/null || is_entity=0
+
+  for v in "$@"; do
+    if [ ${is_entity:-1} -eq 0 ]; then
+      grep --quiet --word-regexp -e "$v" <<< "$source"
+	else
+      local -n nref=$source
+      grep --quiet --line-regexp -e "$v" < <( IFS=$'\n'; echo "${nref[*]}" )
+    fi || return
   done
-  return 1
 }
 
 #TODO handle Hash/Array,
@@ -455,26 +461,48 @@ function is_member() {
 
 function string.contains() {
 #Usage: <source> <pattern>  but more intuitive? to do 'pattern' 'source'?
-  local DELIM delim METHOD
-  [ -n "${DELIM+X}" ] && delim=$DELIM
-#FIXME suggest IFS:0:1 but actually define '-x' for exact match (uses delim) or '-z' for fuzzy match?
-# '-i' for case insensitive
-  : ${delim=${PATHSEP:-\:}}
-#TODO? support STDIN
-  local -r source="${delim}${1:?source}${delim}"
-  local -r sub="${delim}${2:?pattern}${delim}"
+#TODO getopts 'd:ix' ,
+# which could example: (IFS=:; grep --quiet --word-regexp -e "string" <<< "one:string:two"; )
+  local DELIM delim op flags=()
+  [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
+#  : ${delim=${PATHSEP:-\:}}
+
+  local -i OPTIND; local opt OPTARG
+  while getopts ':d:io:vw' opt; do
+    case "$opt" in
+      d)    delim=$OPTARG ;;
+      o)    : ${op=$OPTARG} ;;
+      i|v|w) op=grep ;;&
+      i)    flags+=( '--ignore-case' ) ;;
+      v)    flags+=( '--invert-match' ) ;;
+      w)    flags+=( '--word-regexp' ) ;;
+
+      :)    log.error "missing argument (-${OPTARG})"; return 2 ;;
+     \?)
+      #h|*)
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  local source=${1:?source}
+  local sub=${2:?pattern}
+
+  if [ ${#delim} -eq 1 ]; then
+    local IFS=$delim
+  else
+    source="${delim}${1:?source}${delim}"
+    sub="${delim}${2:?pattern}${delim}"
+  fi
 
   # empty string inside empty is valid
-  case "$METHOD" in
-    grep)   grep --quiet "$sub" <<< "$source" ;;
+  case "$op" in
+    grep)   grep --quiet "${flags[@]}" "$sub" <<< "$source" ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
     *)      [[ "$source" == *$sub* ]]
             #alt: [ -z "${sub##*${source}*}" ] && is_matched
   esac
 }
-# backwards compat
-function contains() { log.warn "deprecated - use 'string.contains()'"; string.contains "$@"; }
 
 
 #do NOT move to 'os'
@@ -507,7 +535,7 @@ _EOF
     esac
   done
   shift $((OPTIND - 1))
-  [ $# -ge 1 ] || return 0
+  : ${1:?}
 
   local flags=() delim
   case "${k:=$1}" in
@@ -534,6 +562,7 @@ _EOF
     v=`convert_path "${flags[@]}" "${1#-}"`
     is_dir "$v" || { shift; continue; }
 
+#TODO set IFS=$delim instead or use explicit arg
     if ! DELIM=$delim string.contains "$kval" "$v"; then
       [ $prepend -eq 1 ] && kval="$v${delim}${kval}" || kval+="${delim}$v"
       log.debug "add element to $k ($v)"
@@ -655,9 +684,10 @@ function to_upper() { if (( $# )); then printf '%s\n' "${@^^}"; else tr '[:lower
 function to_lower() { if (( $# )); then printf '%s\n' "${@,,}"; else tr '[:upper:]' '[:lower:]'; fi; }
 
 
-function bool_to_i() {
+function bool_to_int() {
 # Usage: [-u] <value|VAR_NAME> ...
   local -i to_bool=0 unset=0
+
   local -i OPTIND; local opt OPTARG
   while getopts ':r' opt; do
     case "$opt" in
@@ -671,10 +701,11 @@ _EOF
     esac
   done
   shift $((OPTIND - 1))
+  : ${1:?}
 
   case "${1,,}" in
-    0|'false') [ $to_bool -eq 1 ] && echo 'false' || echo 0; false ;;
-    1|'true')  [ $to_bool -eq 1 ] && echo 'true'  || echo 1; true ;;
+    0|'false') [ ${to_bool} -eq 1 ] && echo 'false' || echo 0; false ;;
+    1|'true')  [ ${to_bool} -eq 1 ] && echo 'true'  || echo 1; true ;;
 
 #      # assign truthiness to named variable, if false optionally unset it
 #      [a-z]*)   if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
@@ -688,8 +719,10 @@ _EOF
   esac
 }
 
-function to_bool() { bool_to_i -r "$1"; }
+function to_bool() { bool_to_int -r $1; }
 
+
+function to_int() { printf '%d ' "${@:?}"; }
 
 #function __GETOPT() {
 #https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash
@@ -726,15 +759,16 @@ function to_bool() { bool_to_i -r "$1"; }
 
 
 
-function version_to_i() (   #runs in sub-shell
+function version_to_int() (
   shopt -s nocaseglob
+  : ${1:?}
 
   # superficial input sanitation
   set -- "${@//-/.}"; set -- "${@//[^0-9]/}"
 
   while (( $# )); do    #deliberate un-quoted
-    printf '%.3d' ${1//./ }; echo
-    shift
+    printf '%.3d' ${1//./ }
+    echo; shift
   done
 )
 
@@ -860,37 +894,53 @@ function max() { min -r "$@"; }
 
 # Array or Hash
 #TODO bash 4.2.46 doesn't support 'nref', use 'eval ${$1}'
-#  bash 4.4 has "${!nref[@]@Q}"
+#  bash 4.4 has "${!nref[@]@Q}" but that puts single-quotes around each element
+#
+
+#
 #if [[ "$BASH_VERSION" =~ 5|4.4 ]]; then
-#  function values() { local -n nref=${1:?}; printf '%s\n' "${nref[@]@Q}"; }
-function keys()   { local -n nref=${1:?}; printf '%q\n' "${!nref[@]}"; }
-function values() { local -n nref=${1:?}; printf '%q\n' "${nref[@]}"; }
-function value()  { local -n nref=${1:?}; printf '%q' "${nref[${2:?element}]}"; }
+#NOTE values NOT quoted for whitespace, use LF to compensate
+function keys()   { local -n nref=${1:?array}; local IFS=$'\n'; echo "${!nref[*]}"; }
+function values() { local -n nref=${1:?array}; local IFS=$'\n'; echo "${nref[*]}"; }
+#NOTE using '%q' adds quotes if empty which breaks [ -n "`value ...`" ]
+function value()  { local -n nref=${1:?array}; printf '%s' "${nref[${2:?element}]}"; }
+#fi
 
 function array.print() {
   local format
   local -i with_keys
-  local -A __formats=(
-      ['with_keys']='%s: %s\n'
-      ['default']='%s\n'
-    )
+  local -A __formats=( ['with_keys']='%s\t%s\n' ['default']='%s\n' )
 
-#FIXME define 'to_hash' 'to_array' and use '%q' to properly escape specials
-#TODO deprecate in favor of something smarter?
-#TODO getopts -k for with_keys
+  local -i OPTIND; local opt OPTARG
+  while getopts ':kQ' opt; do
+    case "$opt" in
+      k)    with_keys=1 ;;
+      Q)    __formats=( ['with_keys']='%q\t%q\n' ['default']='%q\n' ) ;;
+
+     \?)    log.error "unsupported (-${OPTARG})" ;&
+      h|*)  >&2 cat <<_EOF
+Usage: $FUNCNAME ...
+_EOF
+    esac
+  done
+  shift $((OPTIND - 1))
+  : ${1:?array}
+
   if [ ${with_keys:-0} -eq 1 ]; then
-    : ${format:=${__formats['with_keys']}}
-    for k in `keys $1`; do
-      printf "$format" "$k" "`value $1 $k`"
-    done
-  else
-    : ${format:=${__formats['default']}}
-    printf "$format" "`values $1`"
+    while read; do
+      printf "${format:-${__formats['with_keys']}}" "$REPLY" "$(value $1 "$REPLY")"
+    done < <( keys $1 )
+	return
   fi
+
+  while read; do
+    printf "${format:-${__formats['default']}}" "$REPLY"
+  done < <( values $1 )
 }
 
-function hash.print() { with_keys=1 array.print "$@"; }
+function hash.print() { array.print -k "$@"; }
 
+#TODO define 'to_hash' 'to_array'
 #TODO array functions; push, pop, delete, replace, truncate
 #TODO array.append|.add|.insert, prune|delete, length, equal, is_empty, clear, dedup, index_of|key,
 
