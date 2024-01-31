@@ -1,5 +1,5 @@
 #NOTE
-# these Unix-like environments use ':' in PATH, CLASSPATH etc. but but
+# these Unix-like environments use ':' in PATH, CLASSPATH etc. but
 # windows-native binaries like Go, Python require ';' so add entries to
 # addPath()
 #
@@ -55,6 +55,8 @@ function ln() {
 }
 
 
+#https://www.authlite.com/kb/allow-runas-but-block-interactive-logon
+#https://helpdeskgeek.com/free-tools-review/5-windows-alternatives-linux-sudo-command/
 is_exec sudo ||
 function sudo() {
   local who cmd line env shell flags preserve=
@@ -82,7 +84,7 @@ function sudo() {
   shift $((OPTIND - 1))
 
   : ${who:?missing argument \'-u USER\'}
-  line=`getent passwd $who || \grep -s "^${who}:" /etc/passwd` || {
+  line=`getent passwd $who || grep --no-messages "^${who}:" /etc/passwd` || {
         log.error "unknown USER ($who)"
         return
     }
