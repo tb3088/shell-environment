@@ -304,4 +304,17 @@ D2=( '/' '.' )
 _ssh "$@"
 
 
+#TODO VerifyHostKeyDNS=yes to query 'IN SSHFP' record, 
+# check/add fingerprint: ssh-keyscan <hostname> | ssh-keygen [-E md5] -lf -
+# scrape SSM parameter store for same
+#ref: https://github.com/kepi/ssh-fingerprints
+# VisualHostKey yes for pics, ssh-keygen -lv <pub_key_file> for visual art
+# from just fingerprint requires 3rd party
+#ref: 
+#  https://github.com/atoponce/keyart
+#  https://github.com/openssh/openssh-portable/blob/f703757234a5c585553e72bba279b255a272750a/sshkey.c#L1005-L1100
+#  https://dev.to/krofdrakula/improving-security-by-drawing-identicons-for-ssh-keys-24mc
+#  https://stackoverflow.com/questions/30082230/a-command-to-display-a-a-keys-randomart-image-from-a-fingerprint
+
+
 # vim: expandtab:ts=4:sw=4
