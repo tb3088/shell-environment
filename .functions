@@ -114,31 +114,32 @@ function __is_type() {  #WARN! selective short-circuit on first error
       ['r']='readonly'    ['readonly']='r'
       ['u']='upper'       ['upper']='u'
     )
+  local keyword=${FUNCNAME[1]#is_}
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':vd' opt; do
+  while getopts 'dsv' opt; do
     case "$opt" in
       d)    local DEBUG=1 ;;
       v)    local VERBOSE=1 ;;
-     \?|*)  # silently consume
+	  s)	local use_stdin=1 ;;
+#     \?|*)  #silently ignore
     esac
   done
   shift $((OPTIND - 1))
 
   # read STDIN (pipe) if no args
-  (( $# )) || set -- $( < /dev/stdin )
-  : ${1?parameter}
+  [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
 
-  local keyword=${FUNCNAME[1]#is_}
-  local -i rc=
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
+              [ -n "$1" ] || { shift; continue; }
+
               if [[ "$keyword" =~ dir ]]
-                then [ -d "${1:?parameter}" ]
-                else [ -f "${1:?}" ]
+                then [ -d "$1" ]
+                else [ -f "$1" ]
               fi || {
-                  [ -z "${VERBOSE}" ] || log.error "$keyword not found ($1)"
+                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
                   return 1
                 }
               shift
@@ -147,9 +148,11 @@ function __is_type() {  #WARN! selective short-circuit on first error
             ;;
     exec*)  local bin
             while (( $# )); do
+              [ -n "$1" ] || { shift; continue; }
+
               #WARN 'command' returns matches on alias and functions
-              bin=`__WHICH "${1:?parameter}" 2>/dev/null` || {
-                  [ -z "${VERBOSE}" ] || log.error "$keyword not found ($1)"
+              bin=$( __WHICH "$1" 2>/dev/null ) || {
+                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
                   return 1
                 }
               [ -n "${VERBOSE}" ] && echo "$bin"
@@ -157,10 +160,11 @@ function __is_type() {  #WARN! selective short-circuit on first error
             done
             return 0
             ;;
-    func*)  local fn
-            while (( $# )); do
-              fn=`declare -F "${1:?parameter}"` || {
-                  [ -z "${VERBOSE}" ] || log.error "$keyword not found ($1)"
+    func*)  while (( $# )); do
+              [ -n "$1" ] || { shift; continue; }
+
+              declare -F "$1" 2>/dev/null || {
+                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
                   return 1
                 }
               [ -n "${VERBOSE}" ] && whereis_function "$1"
@@ -178,29 +182,32 @@ function __is_type() {  #WARN! selective short-circuit on first error
 
   local whatami flag _type
   while (( $# )); do
-    # suss out functions during 'readonly'
-    _type=`type -t "${1:?parameter}"`
-    [ ${check_readonly:-0} -eq 1 -a "${_type:-unknown}" = 'function' ] && flag='-F' || flag=
+    [ -n "$1" ] || { shift; continue; }
 
-    whatami=`declare -p $flag "$1" | awk '{ print $2; }' 2>/dev/null` || {
-        [ -n "${VERBOSE}" ] && log "${keyword:-item} not found ($1)"
+    flag=
+    # suss out functions during 'readonly'
+    _type=$( type -t "$1" )
+    [ ${check_readonly:-0} -eq 1 ] && [ "${_type:-unknown}" = 'function' ] && flag='-F'
+
+    whatami=$( declare -p $flag "$1" 2>/dev/null | awk '{ print $2; }' ) || {
+        [ -n "${VERBOSE}" ] && log.error "type detection failed ($1)"
         return 1
       }
     whatami=${whatami#-}
 
     [[ "$whatami" =~ ${__types[$keyword]} ]] || {
-        [ -n "${VERBOSE}" ] && log "type mismatch ($1: ${__types[$whatami]} != $keyword)"
+        [ -n "${VERBOSE}" ] && log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"
         return 1
       }
     shift
   done
-  return
 }
+export -f __is_type
 # data-type wrappers
-for f in array dir{,ectory} exec{,utable} file hash integer string function readonly; do
+for f in array dir{,ectory} exec{,utable} file hash integer string function readonly nref; do
   eval function is_$f '{ __is_type "$@"; }'
+  export -f is_$f
 done
-export -f __is_type is_exec
 
 
 function is_number() {
@@ -218,7 +225,7 @@ function is_interactive() {
 # Properly belongs in '.functions_os.cygwin' but required for various
 # scripts and helper functions. Leaving it here simplifies includes.
 function is_windows() {
-  [ $# -eq 0 ] && { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; }
+  if [ $# -eq 0 ]; then [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; return; fi
 
   local bin
   # multi-arg supported, but not recommended
@@ -226,53 +233,53 @@ function is_windows() {
     [ -n "$1" ] || { shift; continue; }
 
     # check file or path
-    bin=`is_exec -v "$1" || __READLINK -m "$1"` || return
-    [[ "$bin" =~ ^/cygdrive ]] || file "$bin" | grep -q 'for MS Windows' || return
+    bin=$( is_exec -v "$1" || __READLINK -m "$1") || return
+    [[ "$bin" =~ ^/cygdrive || file "$bin" ]] | grep -q 'for MS Windows' || return
     shift
   done
 }
 
 
 function __is_markup() {
-  : ${cmd:?}        #WARN not safe
+  : ${cmd:?detection command}		# magic injection
   local -i rc
 
-  { # selective mutism
+{ # logging wrapper
   if [ $# -eq 0 ]; then
     "${cmd[@]}"
   else
     while (( $# )); do
-      if [[ -f "$1" || "${1:0:1}" =~ \.|/ ]]; then
+      if [ -f "$1" ] || [[ "${1:0:1}" =~ \.|/ ]]; then
         "${cmd[@]}" < "$1"
       elif [ -n "$1" ]; then
         "${cmd[@]}" <<< "$1"
       else
         false
       fi || { rc=$?; break; }
+
       shift
     done
   fi
-
-  [ ${rc-$?} -eq 0 ]
-  } 2>&1 >/dev/null | log.debug
+  : ${rc=$?}
+} 2>&1 >/dev/null | log.debug
 
   # fancy-pants I/O redirection above will SIGPIPE (128+13) on no error
   #ref: https://unix.stackexchange.com/a/254747, signal(7)
-  [ $? -eq 0 -o $? -eq 141 ] || {
+  [ $rc -eq 0 -o $? -eq 141 ] || {
       [ -n "${VERBOSE}" ] && log.error "invalid input" "$1"
       return 1
     }
 }
 
-#WARN accepts both JSON and YAML
+#NOTE 'yaml' module accepts both JSON and self
 function is_yaml() {
-  local -a cmd=( python -c 'import yaml, sys; yaml.safe_load(sys.stdin)' )
-  __is_markup "$@"
+  cmd=( python '-c' 'import yaml, sys; yaml.safe_load(sys.stdin)' ) \
+      __is_markup "$@"
 }
 
 function is_json() {
-  local -a cmd=( python -c 'import json, sys; json.load(sys.stdin)' )
-  __is_markup "$@"
+  cmd=( python '-c' 'import json, sys; json.load(sys.stdin)' ) \
+      __is_markup "$@"
 }
 
 
@@ -305,7 +312,7 @@ function list_functions() {
   fi
 
   while (( $# )); do
-    is_file -v "$1" || { shift; continue; }
+    is_file "$1" || { shift; continue; }
 
     env -i $SHELL --noprofile --norc -s <<- _EOF
 		source "$1" 2>/dev/null
@@ -435,20 +442,17 @@ function convert_path() {
 
 #FIXME basically no different than string.contains with word match
 function array.is_member() {
-#Usage: <array|hash> value ...
-  local source=${1:?source}; shift
-
-  local is_entity
-  declare -p "$source" &2>/dev/null || is_entity=0
-
-  for v in "$@"; do
-    if [ ${is_entity:-1} -eq 0 ]; then
-      grep --quiet --word-regexp -e "$v" <<< "$source"
-	else
-      local -n nref=$source
-      grep --quiet --line-regexp -e "$v" < <( IFS=$'\n'; echo "${nref[*]}" )
-    fi || return
-  done
+#Usage: <array|hash> value(s) ...
+  if is_nref "${1:?array}"; then
+    local -n source=$1
+    for v in "${@:2}"; do
+      grep --quiet --line-regexp -e "$v" < <( IFS=$'\n'; echo "${source[*]}" ) || return
+    done
+  else
+    for v in "${@:2}"; do
+      grep --quiet --word-regexp -e "$v" <<< "$1" || return
+    done
+  fi
 }
 
 #TODO handle Hash/Array,
