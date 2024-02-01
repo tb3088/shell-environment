@@ -115,21 +115,22 @@ function __is_type() {  #WARN! selective short-circuit on first error
       ['u']='upper'       ['upper']='u'
     )
   local keyword=${FUNCNAME[1]#is_}
+  local -i use_stdin
 
   local -i OPTIND; local opt OPTARG
   while getopts 'dSv' opt; do
     case "$opt" in
       d)    local DEBUG=1 ;;
       v)    local VERBOSE=1 ;;
-	  S)	local use_stdin=1 ;;
+	  S)	use_stdin=1 ;;
 #     \?|*)  #silently ignore
     esac
   done
   shift $((OPTIND - 1))
 
   # read STDIN (pipe) if no args
-  [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
-  : ${:?item}
+  (( $# )) || [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
+  : ${1:?item}
 
   case "${keyword:?}" in
     dir*|file)
@@ -164,7 +165,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
     func*)  while (( $# )); do
               [ -n "$1" ] || { shift; continue; }
 
-              declare -F "$1" 2>/dev/null || {
+              declare -F "$1" &>/dev/null || {
                   [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
                   return 1
                 }
@@ -233,7 +234,7 @@ function is_windows() {
 
     # check file or path
     bin=$( is_exec -v "$1" || __READLINK -m "$1") || return
-    [[ "$bin" =~ ^/cygdrive || file "$bin" ]] | grep -q 'for MS Windows' || return
+    [[ "$bin" =~ ^/cygdrive ]] || file "$bin" | grep -q 'for MS Windows' || return
     shift
   done
 }
@@ -277,6 +278,7 @@ function is_yaml() {
 }
 
 function is_json() {
+  #alt: jq --exit-status . <file|string>
   cmd=( python '-c' 'import json, sys; json.load(sys.stdin)' ) \
       __is_markup "$@"
 }
@@ -318,7 +320,6 @@ function list_functions() {
 		shopt -s extdebug
 		compgen -A function | while read; do declare -F "\${REPLY}"; done
 _EOF
-
     shift
   done | awk '{ printf("%-25s\t%-50s #%d\n", $1, $3, $2); }'
 }
