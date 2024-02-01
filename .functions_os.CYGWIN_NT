@@ -69,7 +69,7 @@ function sudo() {
     case "$opt" in
       i)    initial=1; unset preserve
 	    ;;
-      e)    cmd=`VERBOSE=1; is_exec ${EDITOR:-vi}` || {
+      e)    cmd=$( VERBOSE=1 is_exec ${EDITOR:-vi} ) || {
                 log.error "invalid EDITOR (${EDITOR:-vi})"
                 return
               }

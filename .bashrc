@@ -56,7 +56,7 @@ case $- in
         : ${PAGER:='less -RF'}
         export EDITOR PAGER
 
-        # wait till very end
+        #WARN! nullglob=on, failglob=off has DANGEROUS side-effects!
         shopt -s failglob
         ;;
   *c*)  SSH_AGENT=
