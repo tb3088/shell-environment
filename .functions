@@ -117,11 +117,11 @@ function __is_type() {  #WARN! selective short-circuit on first error
   local keyword=${FUNCNAME[1]#is_}
 
   local -i OPTIND; local opt OPTARG
-  while getopts 'dsv' opt; do
+  while getopts 'dSv' opt; do
     case "$opt" in
       d)    local DEBUG=1 ;;
       v)    local VERBOSE=1 ;;
-	  s)	local use_stdin=1 ;;
+	  S)	local use_stdin=1 ;;
 #     \?|*)  #silently ignore
     esac
   done
@@ -129,6 +129,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
 
   # read STDIN (pipe) if no args
   [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
+  : ${:?item}
 
   case "${keyword:?}" in
     dir*|file)
@@ -174,10 +175,8 @@ function __is_type() {  #WARN! selective short-circuit on first error
             ;;
     read*)  local -i check_readonly=1
             ;;
-    *)      [ -n "${__types[$keyword]}" ] || {
-                log.error "unsupported type ($keyword)"
-                return 2
-              }
+    *)      [ -n "${__types[$keyword]}" ] ||
+                { log.error "unsupported type ($keyword)"; return 2; }
   esac
 
   local whatami flag _type
@@ -464,12 +463,11 @@ function array.is_member() {
 # otherwise have to feed it to AWK/SED for magic
 
 function string.contains() {
-#Usage: <source> <pattern>  but more intuitive? to do 'pattern' 'source'?
+#Usage: <source> <pattern>... 
 #TODO getopts 'd:ix' ,
 # which could example: (IFS=:; grep --quiet --word-regexp -e "string" <<< "one:string:two"; )
   local DELIM delim op flags=()
   [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
-#  : ${delim=${PATHSEP:-\:}}
 
   local -i OPTIND; local opt OPTARG
   while getopts ':d:io:vw' opt; do
@@ -481,35 +479,44 @@ function string.contains() {
       v)    flags+=( '--invert-match' ) ;;
       w)    flags+=( '--word-regexp' ) ;;
 
-      :)    log.error "missing argument (-${OPTARG})"; return 2 ;;
-     \?)
-      #h|*)
+      :)    log.error "missing argument (-${OPTARG})" ;&
+     \?|*)  >&2 cat <<_EOF
+Usage: $FUNCNAME [ options ] <str> [<str> ...]
+  -d        xxx
+  -o        yyy
+...
+_EOF
     esac
   done
   shift $((OPTIND - 1))
 
-  local source=${1:?source}
-  local sub=${2:?pattern}
+  local source sub
+  [ ${#delim} -eq 1 ] &&
+      { local IFS=$delim; source=${1:?source}; } ||
+      source="${delim}${1:?source}${delim}"
+  shift
 
-  if [ ${#delim} -eq 1 ]; then
-    local IFS=$delim
-  else
-    source="${delim}${1:?source}${delim}"
-    sub="${delim}${2:?pattern}${delim}"
-  fi
+while (( $# )); do
+  # empty string is pointless but 'true'
+  [ -n "$1" ] || { shift; continue; }
 
-  # empty string inside empty is valid
+  [ ${#delim} -eq 1 ] && sub=${1:?pattern} || sub="${delim}${1:?pattern}${delim}"
+
   case "$op" in
-    grep)   grep --quiet "${flags[@]}" "$sub" <<< "$source" ;;
+    grep)   [ -n "$VERBOSE" ] || flags+=( '--quiet' )
+            grep "${flags[@]}" -e "$sub" - -- <<< "$source"
+            ;;
     pe)     [ "${source#*$sub}" != "$source" ] ;;
     regex)  [[ "$source" =~ $sub ]] ;;
     *)      [[ "$source" == *$sub* ]]
             #alt: [ -z "${sub##*${source}*}" ] && is_matched
-  esac
+  esac || return
+  shift
+done
 }
 
 
-#do NOT move to 'os'
+#NOTE do NOT move to 'os'
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
   # but does NOT sub-divide arguments!
@@ -532,7 +539,7 @@ function addPath() {
      \?)    [ "$OPTARG" = '/' ] && break ||
                 log.warn "unsupported option (-$OPTARG)"
             ;&
-      h|*)  cat <<_EOF
+      h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME -k VAR path...
 _EOF
             return 2
