@@ -5,8 +5,8 @@
 shopt -s extglob
 
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
-__aws_bin=`is_exec -v "aws${AWS_VERSION}"` || return
-__aws_api=`"$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }'`
+__aws_bin=$( is_exec -v "aws${AWS_VERSION}" ) || return
+__aws_api=$( "$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }')
 
 #TODO version_compare() w/ sort -g (--version-sort doesn't actually work)
 # echo -e '2.3.43\n2.3.7' | sort -t . -k 1,1 -k 2,2 -k 3,3
@@ -22,8 +22,8 @@ is_exec yq || log.warn "missing important command (yq)"
 # safety fall-back when neither AWS_DEFAULT_REGION or configuration defaults
 declare -Ar __aws_defaults=(
     ['region']='us-east-1'
-    ['config']="$HOME/.aws/config"
-    ['credentials']="$HOME/.aws/credentials"
+    ['config']='${HOME:-$USERPROFILE}/.aws/config'
+    ['credentials']='${HOME:-$USERPROFILE}/.aws/credentials'
     ['readTimeout']=30
     ['connectTimeout']=17
   )
@@ -103,69 +103,83 @@ declare -Ar __aws_availability_zones=(
 
 
 function __AWS() {
-  local OUTPUT conf= creds= __AWS_NOPIPE
+  local OUTPUT __AWS_NOPIPE
   local -a cmd=()
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    conf=`__READLINK -e "$AWS_CONFIG_FILE"` && [ -s "$conf" ] || {
+    [ -s "$AWS_CONFIG_FILE" ] || {
         log.error "file not found/invalid (AWS_CONFIG_FILE: $AWS_CONFIG_FILE)"
         return
       }
-
-    : ${AWS_SHARED_CREDENTIALS_FILE:=${conf%/*}/credentials}
-    creds=`__READLINK -e "$AWS_SHARED_CREDENTIALS_FILE"` && [ -s "$creds" ] || {
+    : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
+    [ -s "$AWS_SHARED_CREDENTIALS_FILE" ] || {
         log.notice "file not found/invalid (AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE)"
-        unset AWS_SHARED_CREDENTIALS_FILE creds
+        unset AWS_SHARED_CREDENTIALS_FILE
       }
 
-    # path mismatch?
-    [ -n "$creds" -a "${conf%/*}" != "${creds%/*}" ] &&
-        log.warn "path mismatch" "AWS_CONFIG_FILE: $conf" "AWS_SHARED_CREDENTIALS_FILE: $creds"
+    # path prefix mismatch?
+    if [ -n "$AWS_SHARED_CREDENTIALS_FILE" ]; then
+      [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] || log.warn \
+          "path prefix mismatch" "AWS_CONFIG_FILE: $AWS_CONFIG_FILE" \
+          "AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE"
+    fi
 
-    is_windows "${__aws_bin}" &&
-        cmd+=( 'env' AWS_CONFIG_FILE=`convert_path -E -a -w "$conf"`
-               AWS_SHARED_CREDENTIALS_FILE=`convert_path -E -a -w "$creds"` ) ||
-        cmd+=( 'env' AWS_CONFIG_FILE="$conf" AWS_SHARED_CREDENTIALS_FILE="$creds" )
-
+    # reduce path conversions with AWS_*_FILE_WINDOWS
+    if is_windows "${__aws_bin}"; then
+      cmd+=( 'env'
+          AWS_CONFIG_FILE=${AWS_CONFIG_FILE_WINDOWS:=`
+              convert_path -E -a -w "$AWS_CONFIG_FILE"`}
+          AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE_WINDOWS:=`
+              convert_path -E -a -w "$AWS_SHARED_CREDENTIALS_FILE"`}
+#          cmd.exe '/c'
+        )
+    fi
   else
-    unset AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
+    unset AWS_{CONFIG,SHARED_CREDENTIALS}_FILE{,_WINDOWS}
   fi
 
   cmd+=( "$__aws_bin" )
 
   # special handling of certain commands
   local sop
+  #WARN *seriously* brittle assumption that ignores possibility of '--XXX' options+args
+  #FIXME? use getopt to re-flow all options
   case "$1" in
     # Special OP mimics ssh-wrapper
     edit)   sop=${EDITOR:-vi} ;&
     # assumes operation against either of AWS_CONFIG_FILE or AWS_SHARED_CREDENTIALS_FILE
     file|echo|cat)
-            local -u file=${2:-AWS_CONFIG_FILE}
-            case "$file" in
+            local file=${2:-AWS_CONFIG_FILE}
+            case "${file^^}" in
               ?(AWS_)CONFIG?(_FILE))
-                        file=AWS_CONFIG_FILE ;;
-              *CRED*)   file=AWS_SHARED_CREDENTIALS_FILE
+					file=$AWS_CONFIG_FILE
+                    [ -n "$file" ] || eval file=${__aws_defaults['config']}
+					;;
+              ?(AWS_SHARED)CRED*?(_FILE))
+                    file=$AWS_SHARED_CREDENTIALS_FILE
+                    [ -n "$file" ] || eval file=${__aws_defaults['credentials']}
             esac
-
-            ${sop:-$1} "${!file}"
+            is_file -v "$file" && ${sop:-$1} "$file"
             return
             ;;
 
     # mimic aws-shell
-    shell)  "${cmd[@]}" --cli-auto-prompt; return ;;
+    shell)  "${cmd[@]}" --cli-auto-prompt; return
+            ;;
 
-    configure)  # format='text' appears hard-coded; explicit '--output' ineffectual
+    # format='text' appears hard-coded; explicit '--output' ineffectual
+    configure)
             case "$2" in
-			  delete-profile) ;&
-			  drop-creds) ;&
-			  get|set|list*)
-						: ;;
-			  *)		__AWS_NOPIPE=1
-			esac
+              delete-profile) ;&
+              drop-creds) ;&
+              get|set|list*)
+                        : ;;
+              *)        __AWS_NOPIPE=1
+            esac
             ;;
 
     #WARN format='text' is hazardous & unpredictable in programatic invocation
-    *)      grep --quiet -e '--output' - -- <<< "$*" || cmd+=( '--output' ${OUTPUT:-json} )
+    *)      string.contains -w "$*" '--output' || cmd+=( '--output' ${OUTPUT:-json} )
             cmd+=(
                 '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
                 '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
@@ -176,8 +190,7 @@ function __AWS() {
     s3)     cmd+=( ${NOOP:+'--dryrun'} ) ;;&
 
     # API v1 frequently ignores VPC endpoints (NOT exhaustive)
-    ec2|sts|dynamodb|sqs|ses|ssm|s3*)
-            :
+#    ec2|sts|dynamodb|sqs|ses|ssm|s3)
 #            local endpoint=`join_string -zd . "$1" "$AWS_DEFAULT_REGION" 'amazonaws.com'`
 #TODO? name resolution can be problematic and ping arguments inconsistent
 #            ( # DOS missing 'host', Linux missing 'bind-utils'
@@ -185,27 +198,26 @@ function __AWS() {
 #            ) &>/dev/null &&
 #                cmd+=( '--endpoint-url' "https://${endpoint}/" ) ||
 #                log.debug "name resolution failed ($endpoint)"
-            ;;
   esac
 
-  # bail out EC2
   if is_ec2 && [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ]; then
-    grep --quiet -e '--region' - -- <<< "$*" || {
-        local region=`ec2.metadata region || "${cmd[@]}" configure get region`
+    # bailout EC2
+    string.contains -w "$*" '--region' || {
+        local region=$( ec2.metadata region || "${cmd[@]}" configure get region )
         [ -n "$region" ] || {
             region=${__aws_defaults['region']}
             log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
           }
         cmd+=( '--region' "${region:?}" )
-    }
+      }
   fi
 
   #WARN! ugly-ass hack to strip DOS line-endings, but not when
-  #  OpenSSH ProxyCommand pipe, sts prompting for MFA Token
-  if grep --quiet -e 'ssm start-session' - -- <<< "$*" || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
+  #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
+  if string.contains -w "$*" 'ssm start-session'  || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
 
-#  elif grep --quiet --extended-regexp -e 'sts (assume-role|get-session-token)' - -- <<< "$*"; then
+#  elif string.contains --extended-regexp "$*" 'sts (assume-role|get-session-token)'
 #    exec 3>&1
 #was >&3 3>&- | tr -d '\r'
 #    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
@@ -216,7 +228,7 @@ function __AWS() {
       local -a args=()
       while (( $# )); do
         [[ "$1" =~ ^file:// ]] && {
-            args+=( 'file://'$(convert_path -E -a -w "${1#file://}") )
+            args+=( 'file://'$( convert_path -E -a -w "${1#file://}" ) )
           } || args+=( "$1" )
         shift
       done
@@ -521,7 +533,6 @@ function aws.get() {
             # or
             #   IFS=, read -a foo < <( echo "one,three" )
             #   IFS=, read -a foo <<< "one,two"
-
               __AWS ssm get-parameters --with-decryption --names "${@:?parameter(s)}" |
                   __JQR '.Parameters[] | .Name, .Value'
 
@@ -568,12 +579,13 @@ function aws.format_tags() {
       ['jKkVv']=
     )
   local delim= format= keyword=
+  local -i use_stdin
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':f:' opt; do
+  while getopts ':f:S' opt; do
     case "$opt" in
-      f)    keyword=$OPTARG; break
-            ;;
+      f)    keyword=$OPTARG; break ;;
+      S)    use_stdin=1 ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   [ "$OPTARG" = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
@@ -600,29 +612,31 @@ function aws.format_tags() {
   esac
 
   # read STDIN (pipe) if no args
-  (( $# )) || set -- $( < /dev/stdin )
+  (( $# )) || [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
+  : ${1?}
 
   local -a kv=()
-  local -i json
+  local -i is_json
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
     #TODO is_file "$1" detect JSON, or parse k=v
 #    if [ -f "$1" ]; then
-#       __JQ '.' "$1" &>/dev/null && : ${json:=1} ||
+#       __JQ '.' "$1" &>/dev/null && : ${is_json:=1} ||
 #       set -- $( < "$f" )
 #    fi
 
     # jq doesn't error on empty input, not even '4'
     if [ -n "$1" ] && __JQ '.' <<< "$1" &>/dev/null; then
-      [ ${json:=1} -eq 1 ] || { log.error "illegal intermixing of (non-)JSON" "$1"; return; }
+      [ ${is_json:=1} -eq 1 ] ||
+          { log.error "illegal intermixing of (non-)JSON" "$1"; return; }
 
       tags=( '--cli-input-json' "$1" )  #XXX need re-encoding with to_json or @sh?
       printf '%q\n' "${tags[*]}"    #alt: local IFS=$'\n'; echo ... NOTE semi-colon!
       return
     fi
 
-    #WARN does not handle embedded multi-line
+    #WARN! does NOT handle embedded multi-line
     kv=( `sed 's/[=,]/\n/g' <<< "$1"` )     #FIXME? assumes IFS=$'\n'
     if [[ ${kv[0]:-X} =~ [kK]ey$ && ${kv[2]:-X} =~ [vV]alue$ ]]; then
       tags+=( `printf "$format" "${kv[1]}" "${kv[3]}"` )
@@ -636,7 +650,7 @@ function aws.format_tags() {
 
   #TODO escape special chars like '[],' nee Key=\"[Group]\",Value=test or 'Key="[Group]",Value=test'
 
-  echo "${tags[@]}"     # use IFS?
+  printf '%s\n' "${tags[@]}"
   #alt: declare -p tags | sed -E 's/^declare \-. \+=//'; and consume with eval
   # or read() from multi-line or assign to array
 }
