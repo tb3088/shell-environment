@@ -129,7 +129,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
   shift $((OPTIND - 1))
 
   # read STDIN (pipe) if no args
-  (( $# )) || [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
+  (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
   : ${1:?item}
 
   case "${keyword:?}" in
