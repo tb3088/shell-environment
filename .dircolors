@@ -1,0 +1,30 @@
+#ref: https://askubuntu.com/questions/466198/how-do-i-change-the-color-for-directories-with-ls-in-the-console
+# suffux = style1[;style2];forground;background
+
+# styles
+#0   = default
+#1   = bold
+#4   = underlined
+#5   = flashing text (disabled on some terminals)
+#7   = reverse field (exchange foreground and background color)
+#8   = concealed (invisible)
+
+# colors (+10 for background)
+#30  = black
+#31  = red
+#32  = green
+#33  = orange
+#34  = blue
+#35  = purple
+#36  = cyan
+#37  = grey
+#90  = dark grey
+#91  = light red
+#92  = light green
+#93  = yellow
+#94  = light blue
+#95  = light purple
+#96  = turquoise
+#97  = white
+
+di=1;97

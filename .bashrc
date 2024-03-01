@@ -13,8 +13,7 @@ shopt -u sourcepath
 
 #---------------
 for f in "$HOME"/.functions{,.local,_logging}; do
-  [ -f "$f" ] || continue
-
+  [ -s "$f" ] || continue
   source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, aborting.\n"; return; }
 done
 
@@ -22,12 +21,14 @@ addPath -k PATH -"$HOME"/{,.local/}bin
 
 case $- in
   # a bit redundant since whole point of .bashrc is 'interactive' use...
-  *i*)  for f in "$HOME"/{.bashrc{.local,_{os,*}},.aliases{,.local},.dircolors}; do
-          [ -f "$f" ] || continue
+  *i*)  for f in .bashrc{.local,_{prompt,os,*}},.aliases{,.local}; do
+          [ -s "$f" ] || continue
 
-          grep -E -q '.swp$|.bak$|~$' <<< "$f" && continue
+          grep -q -E '.swp$|.bak$|~$' - -- <<< "$f" && continue
           source "$f" || { log.error "RC=$? during $f, aborting."; return; }
         done
+
+        eval "`dircolors -b - < <( cat .dir{,_}colors{,.local} )`"
 
 		shopt -s globstar dotglob
 
@@ -47,8 +48,8 @@ case $- in
         # programmable completion enhancements
         # Any completions you add in ~/.bash_completion are sourced last.
         for f in {,/usr/local}/etc}/{,profile.d/}bash_completion{,.sh,.d/*}\
-            "$HOME"/.bash_completion{,.d/*}; do
-          [ -f "$f" ] || continue
+            .bash_completion{,.d/*}; do
+          [ -s "$f" ] || continue
           source "$f" || log.error "RC=$? during $f"
         done
 

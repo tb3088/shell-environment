@@ -1,7 +1,5 @@
 umask 022
-
-export PATH MANPATH
-export LANG='en_US.utf8'
+export PATH MANPATH LANG='en_US.utf8'
 
 # kill WINDOWS' PATH inheritance, but MUST set in ControlPanel->System->Environment
 # see logic in /etc/profile via CYGWIN_NOWINPATH
@@ -29,16 +27,8 @@ fi
 #[ -f "$OPENSC_LIB" -a  -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB" 2>/dev/null
 
 
-for f in ${BASH_SOURCE}.local; do
-  [ -f "$f" ] || continue
-  source "$f"
-done
-
-# check interactive
-[[ $- == *i* ]] || return 0
-
-for f in "$HOME"/.bashrc ; do
-  [ -f "$f" ] || continue
+for f in ${BASH_SOURCE}.local "$HOME"/.bashrc; do
+  [ -s "$f" ] || continue
   source "$f"
 done
 
