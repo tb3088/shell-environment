@@ -22,7 +22,7 @@ declare -A __3rdparty_map=(
   )
 
 function add_program() {
-  is_exec "${1:?}" && return
+  is_exec -q "${1:?}" && return
 
   local m=${__3rdparty_map[$1]}
   [ -n "$m" ] || { log.error "unsupported software package ($1)"; return; }

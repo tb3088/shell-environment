@@ -89,3 +89,8 @@
 #   git stash pop; git reset HEAD   restore starting state
 #   git rebase -i HEAD~N	    where N is commits to re-order, (can we use hash.. instead?)
 #   git push <remote> [<hash>:<branch>] for full, or partial but contiguous
+
+# add files to earlier commit
+#  git add <overlooked files>
+#  git commit --fixup=<commit>
+#  git rebase --interactive --autosquash <commit>^

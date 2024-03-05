@@ -1,8 +1,14 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
+
+# prevent multiple-inclusion
+__link=`readlink -f "$BASH_SOURCE"`
+declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
+[ ${__tag:-0} -eq 1 ] || return 0
+__tag=1
 #------------------
 
-is_exec git && {
+if is_exec -q git; then
 #--- BEGIN git ---
 
 alias gsb='\git status --short --branch'
@@ -131,7 +137,7 @@ function git.mirror() {
 }
 
 #--- END git ---
-}
+fi
 
 # patterns to strip whitespace from code
 #sed -i 's/[ \t]\+$//'  dangling EOL
@@ -139,20 +145,21 @@ function git.mirror() {
 #sed -i 's| \{1,7\}\t|\t|g'  remove prepended spaces before tabs
 
 
-is_exec python && {
+is_exec -q python && {
 #TODO convert to function that can process args and fallback to STDIN
 alias yaml2json="python -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)'"
 alias json2yaml="python -c 'import sys, yaml, json; yaml.dump(json.load(sys.stdin), sys.stdout, indent=2)'"
 }
 
 
-is_exec yq && {     #ref: https://github.com/mikefarah/yq
+#ref: https://github.com/mikefarah/yq
+is_exec -q yq && {
 alias yaml2json='yq eval -j'
 alias json2yaml='yq eval -P'
 }
 
 
-is_exec docker && {
+is_exec -q docker && {
 alias docker.stats='docker ps -q | xargs  docker stats --no-stream'
 }
 
@@ -173,7 +180,6 @@ function csv2json() {
 
   __JQ --slurp 'map(.)' <<< "$output"
 }
-
 alias tsv2json="DELIM=$'\t' csv2json"
 
 

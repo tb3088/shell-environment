@@ -118,10 +118,11 @@ function __is_type() {  #WARN! selective short-circuit on first error
   local -i use_stdin
 
   local -i OPTIND; local opt OPTARG
-  while getopts 'dSv' opt; do
+  while getopts 'dqvS' opt; do
     case "$opt" in
       d)    local DEBUG=1 ;;
-      v)    local VERBOSE=1 ;;
+      q)    local QUIET=1 ;;
+      v)    local VERBOSE=1; unset QUIET ;;
 	  S)	use_stdin=1 ;;
 #     \?|*)  #silently ignore
     esac
@@ -131,23 +132,20 @@ function __is_type() {  #WARN! selective short-circuit on first error
   # read STDIN (pipe) if no args
   (( $# )) || {
       [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
-  : ${1:?item}
+  : ${1:?}
 
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
               [ -n "$1" ] || { shift; continue; }
 
-              if [[ "$keyword" =~ dir ]]
-                then [ -d "$1" ]
-                else [ -f "$1" ]
-              fi || {
-                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
-                  return 1
-                }
+              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]; else [ -f "$1" ]; fi || {
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
+
+              [ -n "${VERBOSE}" ] && echo "$1"
               shift
             done
-            return 0
+            return
             ;;
     exec*)  local bin
             while (( $# )); do
@@ -155,51 +153,46 @@ function __is_type() {  #WARN! selective short-circuit on first error
 
               #WARN 'command' returns matches on alias and functions
               bin=$( __WHICH "$1" 2>/dev/null ) || {
-                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
-                  return 1
-                }
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
+
               [ -n "${VERBOSE}" ] && echo "$bin"
               shift
             done
-            return 0
+            return
             ;;
     func*)  while (( $# )); do
               [ -n "$1" ] || { shift; continue; }
 
               declare -F "$1" &>/dev/null || {
-                  [ -n "${VERBOSE}" ] && log.error "$keyword not found ($1)"
-                  return 1
-                }
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
+
               [ -n "${VERBOSE}" ] && whereis_function "$1"
               shift
             done
-            return 0
+            return
             ;;
     read*)  local -i check_readonly=1
             ;;
-    *)      [ -n "${__types[$keyword]}" ] ||
-                { log.error "unsupported type ($keyword)"; return 2; }
+    *)      [ -n "${__types[$keyword]}" ] || {
+                log.error "unsupported type ($keyword)"; return 2; }
   esac
 
-  local whatami flag _type
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
-    flag=
+    local whatami flag= _type
     # suss out functions during 'readonly'
     _type=$( type -t "$1" )
     [ ${check_readonly:-0} -eq 1 ] && [ "${_type:-unknown}" = 'function' ] && flag='-F'
 
     whatami=$( declare -p $flag "$1" 2>/dev/null | awk '{ print $2; }' ) || {
-        [ -n "${VERBOSE}" ] && log.error "type detection failed ($1)"
-        return 1
-      }
+        log.error "type detection failed ($1)"; return; }
+
     whatami=${whatami#-}
 
     [[ "$whatami" =~ ${__types[$keyword]} ]] || {
-        [ -n "${VERBOSE}" ] && log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"
-        return 1
-      }
+        log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"; return; }
+
     shift
   done
 }
@@ -300,8 +293,9 @@ function define() {
 #TODO? extend to other types
 function whereis_function() (
   shopt -s extdebug
+
   while (( $# )); do
-    declare -F ${1:?}
+    declare -F "${1:?}"
     shift
   done | awk '{ printf("%-25s\t%-50s #%d\n", $1, $3, $2); }'
 )
@@ -314,7 +308,7 @@ function list_functions() (
     shopt -s extdebug; declare -F `compgen -A function`
   else
     while (( $# )); do
-      is_file "$1" || { shift; continue; }
+      [ -s "$1" ] || { shift; continue; }
 
       env -i $SHELL --noprofile --norc -s 2>/dev/null <<- _EOF
 		source "$1"
@@ -355,7 +349,7 @@ function copy_function() {
     [ -n "$target" ] || continue
 
     #log.* may not be defined as yet
-    if is_function "$target"; then
+    if declare -F "$target" &>/dev/null; then
       if [ ${overwrite:-0} -eq 1 ]; then
         is_readonly "$target" && {
             [ -n "$VERBOSE" ] && log "ERROR\toverwrite read-only function ($target)"
@@ -529,17 +523,18 @@ function addPath() {
 
 #TODO use string.join() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <VARNAME> $1 $2`
-  local PREPEND k; local -i prepend
-  [ -n "${PREPEND+X}" ] && : ${prepend=1}
+  local PREPEND k; local -i prepend use_stdin=0
+  [ -n "${PREPEND+X}" ] && prepend=1
 
   local -i OPTIND; local OPTARG opt
-  while getopts ':k:P' opt; do
+  while getopts ':k:PS' opt; do
     case "$opt" in
       k)    k=$OPTARG ;;
       P)    prepend=1 ;;
+      S)    use_stdin=1 ;;		#TODO
 
       :)    log.error "missing argument (-$OPTARG)" ;;&
-      # short-hand prepend notation
+            # short-hand prepend notation on absolute path
      \?)    [ "$OPTARG" = '/' ] && break ||
                 log.warn "unsupported option (-$OPTARG)"
             ;&
@@ -576,7 +571,7 @@ _EOF
     # leading '-' means prepend
     [ "${1:0:1}" = '-' ] && prepend=1
     v=`convert_path "${flags[@]}" "${1#-}"`
-    is_dir "$v" || { shift; continue; }
+    [ -d "$v" ] || { shift; continue; }
 
 #TODO set IFS=$delim instead or use explicit arg
     if ! string.contains -D "$delim" "$kval" "$v"; then
