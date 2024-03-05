@@ -53,14 +53,14 @@ alias rsync="\rsync --cvs-exclude --exclude='.git*'"
 alias check-url='\curl -L -s -o /dev/null -w "Connect: %{time_connect} TTFB: %{time_starttransfer} Total time: %{time_total} ReturnCode: %{http_code} Download Size: %{size_download} Speed: %{speed_download} \n"'
 
 # increasing order of preference
-is_exec curl && \
+is_exec -q curl && \
   alias myip='curl -sk https://checkip.amazonaws.com/'
 # alt: https://diagnostic.opendns.com/myip', https://ifconfig.me/ip, http://ipv4.icanhazip.com/
 
-is_exec nslookup && \
+is_exec -q nslookup && \
   alias myip='nslookup myip.opendns.com resolver1.opendns.com.'
 
-is_exec dig && \
+is_exec -q dig && \
   alias myip='dig +short myip.opendns.com @resolver1.opendns.com.'
 
 return 0

@@ -18,14 +18,15 @@ __aws_api=$( "$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[
 is_exec jq || { log.error "missing required command (jq)"; return 1; }
 is_exec yq || log.warn "missing important command (yq)"
 
-
-# safety fall-back when neither AWS_DEFAULT_REGION or configuration defaults
+# safety fall-back when neither AWS_[DEFAULT_]REGION
+[ -n "${HOME}${USERPROFILE}" ] || HOME=/
 declare -Ar __aws_defaults=(
     ['region']='us-east-1'
-    ['config']='${HOME:-$USERPROFILE}/.aws/config'
-    ['credentials']='${HOME:-$USERPROFILE}/.aws/credentials'
+    ['config']="${HOME:-`cygpath "$USERPROFILE"`}/.aws/config"
+    ['credentials']="${HOME:-`cygpath "$USERPROFILE"`}/.aws/credentials"
+    ['cache_dir']="${HOME:-`cygpath "$USERPROFILE"`}/.aws/cli/cache"
     ['readTimeout']=30
-    ['connectTimeout']=17
+    ['connectTimeout']=7
   )
 
 #json: .Credentials
@@ -43,7 +44,7 @@ declare -Ar __aws_role=(
   )
 
 declare -Ar __aws_regex=(
-    ['token']='^[0-9]{6,}'
+    ['token']='^[0-9]{6}'
     ['role_arn']='^arn:aws:iam::[0-9]{12}:role/'
     ['region']='^[a-z]{2}-[a-z]+-[0-9]'
     ['profile']='^[a-zA-Z]+'
@@ -131,7 +132,6 @@ function __AWS() {
               convert_path -E -a -w "$AWS_CONFIG_FILE"`}
           AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE_WINDOWS:=`
               convert_path -E -a -w "$AWS_SHARED_CREDENTIALS_FILE"`}
-#          cmd.exe '/c'
         )
     fi
   else
@@ -152,14 +152,12 @@ function __AWS() {
             local file=${2:-AWS_CONFIG_FILE}
             case "${file^^}" in
               ?(AWS_)CONFIG?(_FILE))
-					file=$AWS_CONFIG_FILE
-                    [ -n "$file" ] || eval file=${__aws_defaults['config']}
-					;;
+                        file=${AWS_CONFIG_FILE:-${__aws_defaults['config']}}
+                        ;;
               ?(AWS_SHARED)CRED*?(_FILE))
-                    file=$AWS_SHARED_CREDENTIALS_FILE
-                    [ -n "$file" ] || eval file=${__aws_defaults['credentials']}
+                        file=${AWS_SHARED_CREDENTIALS_FILE:-${__aws_defaults['credentials']}}
             esac
-            is_file -v "$file" && ${sop:-$1} "$file"
+            is_file -v "${file:?}" && ${sop:-$1} "$file"
             return
             ;;
 
@@ -168,14 +166,19 @@ function __AWS() {
             ;;
 
     # format='text' appears hard-coded; explicit '--output' ineffectual
-    configure)
+    config?(ure))
             case "$2" in
-              delete-profile) ;&
-              drop-creds) ;&
-              get|set|list*)
-                        : ;;
+              delete-profile)
+                        ;;
+              delete-creds)
+                        ;;
+              load-creds)
+                        ;;
+              get|set|list?(-profiles))
+                        ;&
               *)        __AWS_NOPIPE=1
             esac
+            set -- configure "${@:2}"
             ;;
 
     #WARN format='text' is hazardous & unpredictable in programatic invocation
@@ -478,7 +481,7 @@ function aws.describe() {
   if [ -n "$query" ]; then
     cmd+=( '--query' "${query[@]}" )
     unset field
-  elif grep --quiet -e '--query' - -- <<< "$*"; then
+  elif string.contains -w "$*" '--query'; then
     unset field
   fi
 
@@ -578,18 +581,20 @@ function aws.format_tags() {
       ['KkVv']='Key=%s,Value=%s'
       ['jKkVv']=
     )
-  local delim= format= keyword=
+  local delim= format keyword=
   local -i use_stdin
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':f:S' opt; do
+  while getopts ':k:S' opt; do
     case "$opt" in
-      f)    keyword=$OPTARG; break ;;
+      k)    keyword=$OPTARG; break ;;
       S)    use_stdin=1 ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
       \?)   [ "$OPTARG" = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
-      h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
+      h|*)  >&2 cat << EOF
+echo "Usage: $FUNCNAME ... TODO"
+EOF
             return 2
     esac
   done
@@ -612,8 +617,7 @@ function aws.format_tags() {
   esac
 
   # read STDIN (pipe) if no args
-  (( $# )) || [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
-  : ${1?}
+  (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
 
   local -a kv=()
   local -i is_json

@@ -73,7 +73,7 @@ _EOF
 
 #https://www.authlite.com/kb/allow-runas-but-block-interactive-logon
 #https://helpdeskgeek.com/free-tools-review/5-windows-alternatives-linux-sudo-command/
-is_exec sudo ||
+is_exec -q sudo ||
 function sudo() {
   local who cmd line env shell flags preserve=
   #FIXME local -A env
