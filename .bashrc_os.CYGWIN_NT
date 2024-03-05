@@ -4,7 +4,7 @@
 # prevent multiple-inclusion
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
+[ ${__tag:-0} -eq 0 ] || return 0
 __tag=1
 #------------------
 
@@ -26,24 +26,25 @@ _flavor=${_flavor#?*.}
 DELIM= string.contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
 
 # prevent fork-bomb if cmd.exe unavailable
-[ -n "${CYGWIN_NOWINPATH+X}" ] || { is_exec cmd.exe &&
+[ -n "${CYGWIN_NOWINPATH+X}" ] || { is_exec -q cmd.exe &&
     function command_not_found_handle() { cmd.exe /D /C "$@"; }
   }
 
 shopt -s nocaseglob
 
-if is_exec procps; then
+if is_exec -q procps; then
   alias ps='\procps -e ${PS_ARGS:- -o uid,pid,ppid,stime,etime,cmd}'
-  function pidof() {
-    \procps -eo pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
-  }
+  is_exec -q pidof ||
+      function pidof() {
+        \procps -eo pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+      }
 else
   alias ps='\ps -f'
-  function pidof() {
-    \ps -s | awk -v pat="$1" '$NF ~ pat { print $1 }'
-  }
+  is_exec -q pidof ||
+      function pidof() {
+        \ps -s | awk -v pat="$1" '$NF ~ pat { print $1 }'
+      }
 fi
-readonly -f pidof
 
 
 # Example of a semi-smart search, but probably best to define in .aliases.local

@@ -19,6 +19,10 @@ _flavor=${_flavor#?*.}
 [ `ps -p 1 -o comm= 2>/dev/null` != 'systemd' ]
 SYSTEMD=$?
 
+is_exec -q pidof ||
+function pidof() {
+  \ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
+}
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   [ -f "$f" ] || continue

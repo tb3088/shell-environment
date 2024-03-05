@@ -4,7 +4,7 @@
 # prevent multiple-inclusion
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
+[ ${__tag:-0} -eq 1 ] || return 0
 __tag=1
 #------------------
 
@@ -15,22 +15,16 @@ __tag=1
 
 : ${OSTYPE:=`uname | cut -d _ -f 1 | tr '[:upper:]' '[:lower:]'`}
 
-is_exec pidof ||
-function pidof() {
-  \ps -o pid,cmd | awk -v pat="$1" '$NF ~ pat { print $1 }'
-}
-
 __uname=`uname`  # alt: uname|sed -E 's/(-[0-9.]+)+$//'
 for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%-*}}; do
   [ -f "$f" ] || continue
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
+is_exec -q tree{,.com} || { declare -F os.tree && alias tree='os.tree'; }
 
-is_exec tree{,.com} || { declare -F os.tree && alias tree='os.tree'; }
-alias replace_file='os.file.replace'
-
-#TODO
+#declare -F os.file.replace && alias replace_file='os.file.replace'
 #os.detect
+
 
 # vim: expandtab:ts=4:sw=4
