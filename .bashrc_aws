@@ -549,6 +549,10 @@ EOF
   done
   shift $((OPTIND - 1))
 
+  local _shopt=$( shopt -p failglob nullglob )
+  shopt -u failglob
+  trap 'eval "$_shopt"' RETURN
+
   while read item; do
     [ -n "$item" ] || { shift; continue; }
 
@@ -573,7 +577,7 @@ EOF
 #        aws.profile) token=/${AWS_PROFILE:-default} ;;
 #		aws.region)  token=/$AWS_DEFAULT_REGION ;;
 #      esac
-	    set -- "${prefix}"/**/{*.ssh,bin,}/
+	    set -- "${prefix}"/**/{*.ssh,bin}/
       fi
 	  IFS=$'\n'; echo "$*" | sort -u
     )
