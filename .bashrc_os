@@ -4,7 +4,7 @@
 # prevent multiple-inclusion
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} -eq 1 ] || return 0
+[ ${__tag:-0} -eq 0 ] || return 0
 __tag=1
 #------------------
 
@@ -13,16 +13,17 @@ __tag=1
 # a sigle line in it with the link target, which when sourced'd tries to
 # execute the file, which is an error.
 
-: ${OSTYPE:=`uname | cut -d _ -f 1 | tr '[:upper:]' '[:lower:]'`}
+: ${OSTYPE:=`uname -o | cut -d _ -f 1 | tr '[:upper:]' '[:lower:]'`}
 
 __uname=`uname`  # alt: uname|sed -E 's/(-[0-9.]+)+$//'
 for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%-*}}; do
-  [ -f "$f" ] || continue
+  [ -s "$f" ] || continue
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
-is_exec -q tree{,.com} || { declare -F os.tree && alias tree='os.tree'; }
 
+#TODO activate .functions_os first
+#is_exec -q tree{,.com} || { is_function os.tree && alias tree='os.tree'; }
 #declare -F os.file.replace && alias replace_file='os.file.replace'
 #os.detect
 

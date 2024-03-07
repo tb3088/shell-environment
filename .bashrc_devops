@@ -4,22 +4,24 @@
 # prevent multiple-inclusion
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} -eq 1 ] || return 0
+[ ${__tag:-0} -eq 0 ] || return 0
 __tag=1
 #------------------
+
 
 if is_exec -q git; then
 #--- BEGIN git ---
 
 alias gsb='\git status --short --branch'
 alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
-alias git.diff_history='\git log -p --'
-# undo unhelpful whitespace changes
-#'\git diff --ignore-space-change --numstat | awk '$1 == 0 && $2 == 0 { print $NF }' | xargs git checkout HEAD --'
+#undo unhelpful whitespace changes
+#  git diff --ignore-space-change --numstat | awk '$1 == 0 && $2 == 0 { print $NF }' | xargs git checkout HEAD --
+
 
 function __GIT() {
-  ${DEBUG:+runv GIT_TRACE=2} git ${NOOP:+'--no-commit' '--no-ff'} "$@"
+  ${DEBUG:+runv GIT_TRACE=2} \git ${NOOP:+'--no-commit' '--no-ff'} "$@"
 }
+
 
 function __prompt.git() {
   [ -n "$GIT_PROMPT" ] || return 0
@@ -74,10 +76,9 @@ function __prompt.git() {
   _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
   echo -ne "\n${UL}Git:${RS} ${HC}$_branch${_upstream:+...$_upstream}${RS} ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}${RS}}"
 }
-__prompts+=( __prompt.git )
 
 
-function git.current() { git branch | awk '$1 == "*" { print $2; exit; }'; }
+function git.current() { __GIT branch | awk '$1 == "*" { print $2; exit; }'; }
 
 
 function git.bulk_add() {

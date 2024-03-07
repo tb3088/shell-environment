@@ -12,7 +12,7 @@ __tag=1
 # ignore if wrong OS
 _flavor=${BASH_SOURCE##*/}
 _flavor=${_flavor#?*.}
-[ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
+[[ "${OSTYPE:-`uname`}" =~ "${_flavor:-unknown}" ]] || return 0
 
 # CYGWIN variable
 #
@@ -26,9 +26,8 @@ _flavor=${_flavor#?*.}
 DELIM= string.contains "${CYGWIN:-X}" 'winsymlinks' || CYGWIN+=' winsymlinks:nativestrict'
 
 # prevent fork-bomb if cmd.exe unavailable
-[ -n "${CYGWIN_NOWINPATH+X}" ] || { is_exec -q cmd.exe &&
-    function command_not_found_handle() { cmd.exe /D /C "$@"; }
-  }
+[ -n "${CYGWIN_NOWINPATH+X}" ] || {
+    is_exec -q cmd.exe && function command_not_found_handle() { cmd.exe /D /C "$@"; }; }
 
 shopt -s nocaseglob
 
@@ -58,13 +57,9 @@ fi
 
 
 for f in "${BASH_SOURCE/bashrc/functions}"; do
-  [ -f "$f" ] || continue
+  [ -s "$f" ] || continue
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
-
-# compgen (aka autocomplete) on Ubuntu (nee WSL, but not Cygwin) used to
-# fail TAB-completion if nullglob=on. (Jan 2021: fixed?)
-#[[ `uname -r` =~ microsoft ]] && shopt -u nullglob
 
 
 # vim: expandtab:ts=4:sw=4

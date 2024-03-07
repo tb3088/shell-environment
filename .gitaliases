@@ -1,5 +1,6 @@
 #ref: https://github.com/gitalias/gitalias
 # do NOT use single-quotes around shell invocation, /bin/sh must be Bash
+# shell aliases defined in .bashrc_devops
 
 [alias]
   amend = commit --amend --message
@@ -31,10 +32,14 @@
   htopo = hist --topo-order
   # tip: git config --global format.pretty
   hist = log --graph --simplify-by-decoration
+  hf = lfile
+  hd = ldiff
 
   l = lo
+  last = log -1 HEAD
   lo = log --oneline
   lfile = lo --name-only
+  ldiff = log -p --
 
   # tip: 'hash..[branch] --reverse' gives nice series of diffs in chronological order
   lpatch = lo --patch
@@ -64,7 +69,6 @@
 # Misc
   whitespace = ! "git diff-tree --check $(git hash-object -t tree /dev/null) HEAD"
   findsha = ! "git branch -r --contains ${1:?commit}"
-  # see .bashrc_devops for alias to 'git.render' which strips diff markers for easy cut/paste
   render = ! git.render
 #  publish = ! "git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)"
 

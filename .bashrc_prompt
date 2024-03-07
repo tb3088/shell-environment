@@ -4,7 +4,7 @@
 # prevent multiple-inclusion
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
+[ ${__tag:-0} -eq 0 ] || return 0
 __tag=1
 #------------------
 
@@ -50,22 +50,24 @@ PS1="${PS_PREFIX}\n\! \$ "
 declare -a __prompts=()
 
 function __prompt() {
-  local _RC=$? fn
+  local RC=$? fn
 
-  PS1="${PS_PREFIX}"
-  for fn in "${__prompts[@]}"; do
-    [ -n "$fn" ] && declare -F "$fn" >/dev/null || continue
-    PS1+=`$fn`
-  done
+  PS1=${PS_PREFIX}
+  while read fn; do
+    PS1+="$( $fn )"
+  done < <(
+      declare -F | awk '{ print $NF; }' | grep '__prompt\.'
+      IFS=$'\n'; echo "${__prompts[*]}"
+    )
 
   [ $EUID -eq 0 ] && PS1+="${BRED}"
-  [ $_RC -eq 0 ] && unset _RC
-  PS1+="\n${INV}\A${RS} \!${_RC:+($_RC)}$RS \$ "
+  [ $RC -eq 0 ] && unset RC
+  PS1+="\n${INV}\A${RS} \!${RC:+($RC)}$RS \$ "
 }
-
+PROMPT_COMMAND=__prompt
 
 # Whenever displaying the prompt, write the previous line to disk
 #PROMPT_COMMAND="history -a"
-declare -F __prompt >/dev/null && PROMPT_COMMAND=__prompt
+
 
 # vim: expandtab:ts=8:sw=4
