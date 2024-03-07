@@ -14,21 +14,21 @@ shopt -u sourcepath
 #---------------
 for f in "$HOME"/.functions{,.local,_logging}; do
   [ -s "$f" ] || continue
-  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, aborting.\n"; return; }
+  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, aborting.\n"; return 1; }
 done
 
-addPath -P -k PATH "$HOME"/{,.local/}bin
+QUIET=1 addPath -P -k PATH "$HOME"/{,.local/}bin
 
 case $- in
   # a bit redundant since whole point of .bashrc is 'interactive' use...
   *i*)  for f in .bashrc{.local,_{prompt,os,*}} .aliases{,.local}; do
           [ -s "$f" ] || continue
-
           grep -q -E '.swp$|.bak$|~$' - -- <<< "$f" && continue
+
           source "$f" || { log.error "RC=$? during $f, aborting."; return; }
         done
 
-        eval "`dircolors -b - < <( cat .dir{,_}colors{,.local} 2>/dev/null )`" || true
+        eval "$( dircolors -b - < <( cat .dir{,_}colors{,.local} 2>/dev/null ) )" || true
         : ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
         : ${PAGER:='less -RF'}
         export EDITOR PAGER
