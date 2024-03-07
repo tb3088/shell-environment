@@ -1,11 +1,5 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
-
-# prevent multiple-inclusion
-__link=`readlink -f "$BASH_SOURCE"`
-declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
-__tag=1
 #------------------
 
 
@@ -13,8 +7,8 @@ __tag=1
 # Unix-like environments use ':' in PATH, CLASSPATH etc. but
 # windows-native binaries like Go, Python require ';' so use addPath()
 #
-#PATHSEP=';'
-#readonly PATHSEP
+PATHSEP=';'
+readonly PATHSEP
 
 # override CYGWIN default which uses non-portable Junctions
 function ln() {
@@ -23,18 +17,14 @@ function ln() {
   local -i OPTIND; local opt OPTARG
   while getopts ':hHJst:v' opt; do
     case "$opt" in
-      H)    flag='/H' ;;
-      J)    flag='/J' ;;
+      H|J)  flag="/$OPTARG" ;;
       s)    unset flag ;;
-      t)    [ -d "${destdir:=$OPTARG}" ] || {
-                log.error "directory not found ($OPTARG)"
-                return
-              }
-            ;;
+      t)    is_dir "${destdir:=$OPTARG}" || return ;;
       v)    local VERBOSE=1 ;;
 
-      :)    log.error "missing argument (-$OPTARG)" ;&
-      \?|*) >&2 cat <<_EOF
+      :)    log.error "missing argument (-$OPTARG)" ;;&
+     \?)    log.error "unsupported option (-${OPTARG})" ;&
+      h|*)  >&2 cat <<_EOF
       Usage: $FUNCNAME ...
 _EOF
             return 2
@@ -69,30 +59,28 @@ _EOF
 	shift
   done
 }
+readonly -f ln
 
 
 #https://www.authlite.com/kb/allow-runas-but-block-interactive-logon
 #https://helpdeskgeek.com/free-tools-review/5-windows-alternatives-linux-sudo-command/
 is_exec -q sudo ||
-function sudo() {
-  local who cmd line env shell flags preserve=
-  #FIXME local -A env
-  local -a flags=() cmd=()
+function sudo() (
+  local who cmd preserve
+  local -a flags=()
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':ieEu:X' opt 2>/dev/null; do
+  while getopts ':hieEu:X' opt; do
     case "$opt" in
-      i)    initial=1; unset preserve
-            ;;
-      e)    cmd=$( VERBOSE=1 is_exec ${EDITOR:-vi} ) || {
-                log.error "invalid EDITOR (${EDITOR:-vi})"; return; } ;;
-      E)    preserve='' ;;
+      i)    unset preserve ;;
+      e)    cmd=$( VERBOSE=1 is_exec ${EDITOR:-vi} ) || return ;;
+      E)    preserve= ;;
       u)    who=$OPTARG ;;
       X)    exec=1 ;;
 
-      \?)   flags+=( "-$OPTARG" ) ;;
-      :)    log.error "missing argument (-$OPTARG)" ;&
-      *)    >&2 cat <<_EOF
+      :)    log.error "missing argument (-$OPTARG)" ;;&
+     \?)    flags+=( "-$OPTARG" ) ;;
+      h|*)  >&2 cat <<_EOF
       Usage: $FUNCNAME ...
 _EOF
             return 2
@@ -101,26 +89,27 @@ _EOF
   shift $((OPTIND - 1))
 
   : ${who:?missing argument \'-u USER\'}
+  set -e
+
+  local line
   line=$( getent passwd $who || grep --no-messages "^${who}:" /etc/passwd ) || {
       log.error "unknown USER ($who)"; return; }
 
-  env=`awk -F: '{ printf("USER=%s USERNAME=%s HOME=%s UID=%s", $1, $1, $(NF-1), $3) }' <<< "$line"`
+  local -a _env=( `awk -F: '{ printf("USER=%s USERNAME=%s HOME=%s UID=%s", $1, $1, $(NF-1), $3) }' <<< "$line"` )
   # preserve certain values regardless
   for e in USERPROFILE ALLUSERSPROFILE TERM; do
-    [ -n "${!e}" ] && env+=" $e='${!e}'"
+    [ -n "${!e}" ] && _env+=( "$e=\'${!e}\'" )
   done
 
-  shell=${line##*:}
-  [ -n "${shell:=$SHELL}" -a -x "$shell" ] || {
-        log.error "invalid SHELL ($shell)"
-        return
-    }
+  local shell=${line##*:}
+  is_exec "${shell:=$SHELL}"
 
-  ${DEBUG:+ runv} ${exec:+ exec} env ${preserve- -i} $env ${cmd:-$shell ${initial:+ -l}} "${flags[@]}" "$@"
+  ${DEBUG:+ runv} ${exec:+exec} env ${preserve-'-i'} "${_env[@]}" ${cmd:-$shell} "${flags[@]}" "$@"
+
   #TODO elvated shell:
   # powershell start-process powershell -verb runas
   # powershell -Command "Start-Process cmd -ArgumentList '/K cd /D %CD%' -Verb RunAs"
-}
+)
 readonly -f sudo
 
 
