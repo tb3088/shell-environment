@@ -129,69 +129,61 @@ function __is_type() {  #WARN! selective short-circuit on first error
   shift $((OPTIND - 1))
 
   # read STDIN (pipe) if no args
-  (( $# )) || {
-      [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
-  : ${1:?}
+  [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
+  (( $# )) || return
 
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
+              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]
+              else [ -f "$1" ]
+			  fi || { [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
 
-              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]; else [ -f "$1" ]; fi || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
-
-              [ -n "${VERBOSE}" ] && echo "$1"
+              eval ${VERBOSE:+echo $1}
               shift
             done
             return
             ;;
     exec*)  local bin
             while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-
               #WARN 'command' returns matches on alias and functions
               bin=$( __WHICH "$1" 2>/dev/null ) || {
                   [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
 
-              [ -n "${VERBOSE}" ] && echo "$bin"
+              eval ${VERBOSE:+echo $bin}
               shift
             done
             return
             ;;
     func*)  while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-
               declare -F "$1" &>/dev/null || {
                   [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
 
-              [ -n "${VERBOSE}" ] && whereis_function "$1"
+              eval ${VERBOSE:+whereis_function $1}
               shift
             done
             return
             ;;
-    read*)  local -i check_readonly=1
-            ;;
+    read*)  local -i _readonly=1 ;;
+
     *)      [ -n "${__types[$keyword]}" ] || {
                 log.error "unsupported type ($keyword)"; return 2; }
   esac
 
+  local whatami flag= _type
   while (( $# )); do
-    [ -n "$1" ] || { shift; continue; }
-
-    local whatami flag= _type
     # suss out functions during 'readonly'
-    _type=$( type -t "$1" )
-    [ ${check_readonly:-0} -eq 1 ] && [ "${_type:-unknown}" = 'function' ] && flag='-F'
+    _type=$( type -t "$1" ) || return
+    [ "${_type:-unknown}" = 'function' ] && flag='-F'
 
     whatami=$( declare -p $flag "$1" 2>/dev/null | awk '{ print $2; }' ) || {
         log.error "type detection failed ($1)"; return; }
 
-    whatami=${whatami#-}
+    if [ ${_readonly:-0} -eq 1 ]; then whatami=${whatami//[^r]/}
+	else whatami=${whatami//[r-]/}; fi
 
-    [[ "$whatami" =~ ${__types[$keyword]} ]] || {
-        log.error "type mismatch ($1: ${__types[$whatami]} != $keyword)"; return; }
-
+    [[ "${whatami#-}" =~ ${__types[$keyword]} ]] || {
+        log.error "type mismatch ($1: ${__types[${whatami#-}]} != $keyword)"; return; }
     shift
   done
 }
@@ -204,7 +196,7 @@ done
 
 
 #alt: grep -qE '^0x[0-9a-f]+$|[0-9]+$' - -- <<< "$@"
-function is_number() { printf '%d' "$@" &>/dev/null; }
+function is_number() { to_int $1 &>/dev/null; }
 
 function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]; }
 
@@ -425,7 +417,7 @@ _EOF
 
     [ $abs -eq 1 ] && p=`readlink -m "$p"`
 
-    # force '-a' to expand AND unroll symlinks
+    # '-a' expand+unroll symlinks ONLY if relative
     is_windows && p=`cygpath -a "${flags[@]}" -- "$p"`
 
 #TODO? leverage string.quote
