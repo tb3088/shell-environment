@@ -2,8 +2,8 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 #------------------
 
-####  WARNING   WARNING   WARNING   ###
-# long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
+####  WARNING   WARNING   WARNING  ####
+# long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' shell pattern
 
 shopt -s extglob
 
@@ -179,7 +179,6 @@ function __AWS() {
             set -- configure "${@:2}"
             ;;
 
-    ?(-)-*) log.error "options ONLY at end"; return 2;;
     #WARN format='text' is hazardous & unpredictable in programatic invocation
     *)      string.contains -w "$*" '--output' || cmd+=( '--output' ${OUTPUT:-json} )
             cmd+=(

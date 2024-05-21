@@ -44,7 +44,8 @@ alias aws.clearenv='aws.profile RESET'
 function __prompt.aws() {
   [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}${AWS_SESSION_TOKEN}" ] || return 0
 
-  local _config=$( sed -E "s|^$HOME/(.aws/)?||; s|/config$||" <<< "$AWS_CONFIG_FILE" )
+  local _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config#.aws/}; _config=${_config%/config};
+  #alt: $( sed -E "s|^$HOME/(.aws/)?||; s|/config$||" <<< "$AWS_CONFIG_FILE" )
 
   echo -ne "\n${UL}AWS:${RS} ${FMAG}${_config:---} ${HC}${AWS_PROFILE:---}${RS} / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}${RS}"
 
@@ -62,10 +63,11 @@ function aws.printenv() { local v; for v in ${!AWS_*}; do printf '%s=%q\n' "$v" 
 
 
 function aws.region() {
-  local region _default		# supplied by aws.profile()
+  local region _default
   local -i OPTIND; local OPTARG opt long_opts=()
-  while getopts 'Pr:h' opt; do
+  while getopts 'dPr:h' opt; do
     case "$opt" in
+      d)    _default=$OPTARG ;;
       P)    region='prompt' ;;
       r)    region=$OPTARG ;;
 
@@ -82,22 +84,20 @@ EOF
 
   : ${region=${1-'prompt'}}
 
-  # 'blank' argument or match current short-circuits further processing
+  # 'blank' argument or match current, short-circuits further processing
   # except AWS_*REGION can't be left blank since it's non-intuitive
-#  [ -z "$region" -a -n "${AWS_REGION}${AWS_DEFAULT_REGION}" -o\
-#      "${region:-_blank_}" = "$AWS_DEFAULT_REGION" ] && return
-  [ -z "$region" -a -n "${AWS_DEFAULT_REGION}" ] && return
-  [ "${region:-_blank_}" = "$AWS_DEFAULT_REGION" ] && return
+  [ -z "$region" -a -n "$AWS_DEFAULT_REGION" ] && return
+  [ "$region" = "${AWS_DEFAULT_REGION:-_null_}" ] && return
 
-  # force value if possible
-  : ${region:=${_default-`__AWS configure get region`}}
+  # force new value
+  : ${region:=${_default:-`__AWS configure get region`}}
 
   if [ "${region:-prompt}" = 'prompt' ]; then
     PS3=`echo -ne "\nChoose REGION:  "`
     select region in "${__aws_regions[@]}"; do
       [ -n "$region" ] && break
       # examine REPLY for textual format
-      [ -n "$REPLY" ] && array.is_member __aws_regions "$REPLY" && break
+      if [ -n "$REPLY" ]; then array.is_member __aws_regions "$REPLY" && break; fi
     done
   fi
 
@@ -107,9 +107,7 @@ EOF
 
 
 function aws.creds-load() {
-
-: #XXX
-
+  return 2
 }
 
 
@@ -130,15 +128,14 @@ function aws.profile() {
   # hacktastic shortcuts
   case "$1" in
     RESET)  aws.rmPath; unset ${!AWS_*}; return ;;
-    DELETE) log.error "not implemented"; return ;;
+#TODO DELETE=1 $FUNCNAME -p <value>
     LIST)   __AWS configure list-profiles | column; return ;;
   esac
 
   local profile
   local -i OPTIND; local OPTARG opt
-  while getopts 'DlPp:h' opt; do
+  while getopts 'lPp:h' opt; do
     case "$opt" in
-      D)    $FUNCNAME DELETE; return ;;
       l)    $FUNCNAME LIST; return ;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
@@ -157,22 +154,21 @@ EOF
   : ${profile=${1-'prompt'}}
 
   # 'blank' argument or match current, short-circuits further processing
-  [ -z "$profile" -a -n "$AWS_PROFILE" ] ||
-      [ "${profile:-_blank_}" = "${AWS_PROFILE:-default}" ] &&
-      { aws.region "$2"; return; }
+  [ -z "$profile" -a -n "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  [ "$profile" = "$AWS_PROFILE" ] && { aws.region "$2"; return; }
 
-  if [ "$profile" = 'prompt' ]; then
+  if [ "${profile:-'prompt'}" = 'prompt' ]; then
     local -a list=( `__AWS configure list-profiles` )
     #alt:
     # pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
-    # list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
+    # list=( `awk -- "$pattern" "$conf" "$creds" | sort -u` )
 
     if [ ${#list[@]} -ge 1 ]; then
       PS3=$( echo -ne "\nChoose PROFILE:  " )
       select profile in "${list[@]}"; do
         [ -n "$profile" ] && break
         # examine REPLY for textual format
-        [ -n "$REPLY" ] && array.is_member list "$REPLY" && break
+        if [ -n "$REPLY" ]; then array.is_member list "$REPLY" && break; fi
       done
     else
       log.warn "no profile(s) found ($AWS_CONFIG_FILE)"
@@ -189,17 +185,16 @@ EOF
   # $? == 1 simply means no explicit declaration
   local region
   region=$( __AWS ${profile:+ '--profile' "$profile"} configure get region )
-  [ $? -eq 255 ] || [[ "${region:-X}" =~ ProfileNotFound ]] && return 255
+  if [ $? -eq 255 ] || [[ "${region:-X}" =~ ProfileNotFound ]]; then return 255; fi
 
-  if [ "$profile" != "$AWS_PROFILE" ]; then
-    # cleanup previous environment
+  # cleanup previous environment
+  if [ "$profile" != "${AWS_PROFILE:-default}" ]; then
     aws.rmPath
-    iam.session DROP || true
+#TODO    iam.session DROP || true
   fi
 
-  [ "$profile" = 'default' ] && unset AWS_PROFILE || AWS_PROFILE=$profile
-  _default=$region aws.region "$2"
-#  || log.notice "RC=$? during aws.region()"
+  if [ "$profile" = 'default' ]; then unset AWS_PROFILE; else AWS_PROFILE=$profile; fi
+  aws.region -d "$region" "$2"
 
   export ${!AWS_*}
   aws.addPath
@@ -549,38 +544,43 @@ EOF
   done
   shift $((OPTIND - 1))
 
-  local _shopt=$( shopt -p failglob nullglob )
-  shopt -u failglob
+  local _shopt=`shopt -p failglob nullglob`
   trap 'eval "$_shopt"' RETURN
+  shopt -u failglob
 
   while read item; do
     [ -n "$item" ] || { shift; continue; }
 
     if [ ${DELETE:-0} -eq 1 ]; then
-      [[ "$item" =~ .ssh/?$ ]] &&
-          ${DEBUG:+ runv} ssh-add -d ${VERBOSE:+'-v'} "${item%/}"/*.pub 2>/dev/null
+      [[ "$item" =~ .ssh/?$ ]] &&	#BUG! errors emit stdout, but ONLY for '-d'
+          ${DEBUG:+ runv} ssh-add -d ${VERBOSE:+'-v'} "${item%/}"/*.pub
       [[ "$item" =~ /bin/?$ ]] && rmPath "${item%/}"
     else
-      #WARN! use 'IdentitiesOnly yes' in ssh_config else AuthFailure from too many attempts
+      #NOTE use 'IdentitiesOnly yes' in ssh_config, else AuthFailure from many attempts
       [[ "$item" =~ .ssh/?$ ]] && [ ${load_sshkeys:-0} -eq 1 ] &&
           ${DEBUG:+ runv} ssh-add ${VERBOSE:+'-v'} "${item%/}"/{id_*,*.pem} 2>/dev/null
 	  [[ "$item" =~ /bin/?$ ]] && addPath -P "${flags[@]}" "${item%/}"
     fi
   done < <(
-      if (( $# )); then :
-      #elif [ ${use_stdin:-0} -eq 1 ]; then set -- $( < /dev/stdin )
+      if (( $# )); then
+        :
+#      elif [ ${use_stdin:-0} -eq 1 ]; then set -- $( < /dev/stdin )
       else
         local prefix=${AWS_CONFIG_FILE%/*} token=
         : ${prefix:=${__aws_defaults['config']%/*}}
+
+        case "${FUNCNAME[1]}" in
+          aws.profile)  [ -n "$AWS_PROFILE" ] && token="/$AWS_PROFILE" ;&
+		  aws.region)   [ -n "$AWS_DEFAULT_REGION" ] && token="/${AWS_DEFAULT_REGION}${token}" ;;
+        esac
+
         #WARN! potentially expensive search with possible overlap from symlink(s)
-#TODO  case "${FUNCNAME[1]}" in
-#        aws.profile) token=/${AWS_PROFILE:-default} ;;
-#		aws.region)  token=/$AWS_DEFAULT_REGION ;;
-#      esac
-	    set -- "${prefix}"/**/{*.ssh,bin}/
+        shopt -s nullglob
+        set -- "${prefix}${token}"/**/{*.ssh,bin}/
       fi
 	  IFS=$'\n'; echo "$*" | sort -u
     )
+  return 0
 }
 
 function aws.rmPath() { aws.addPath -D "$@"; }
@@ -608,7 +608,7 @@ function ec2.connect() {
             esac
 
             # exclude 'localhost', TODO ipv6
-            grep --quiet -E 'localhost|127\.[0-9]+' - -- <<< "$rhost" && unset rhost
+            grep -qE 'localhost|127\.[0-9]+' - -- <<< "$rhost" && unset rhost
             [ ${rport:?} -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
 
             cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
