@@ -60,14 +60,14 @@ function __JQ_merge() { \jq --slurp 'reduce .[] as $item ({}; . * $item)'; }
 #    );
 #  deepmerge({}; .)' file1.json file2.json
 
-function __CURL() { \curl --connect-timeout 3 --fail --silent ${VERBOSE:+ '--verbose' '--progress-bar'} "$@"; }
+function __CURL() { \curl --connect-timeout 3 --fail --silent --location ${VERBOSE:+ '--verbose' '--progress-bar'} "$@"; }
 
 # override 'exit on error' program flow
 function __continue() { [ -n "$CONTINUE" ]; }
 
 function pause() {
-  local _default='Press [ENTER] to continue ...'
-  read -p "${*:-_default}"
+  local _default='Press [ENTER] to continue ... '
+  read -p "${*:-$_default}"
 }
 
 
@@ -139,7 +139,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
               else [ -f "$1" ]
 			  fi || { [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
 
-              eval ${VERBOSE:+echo $1}
+              eval ${VERBOSE:+echo "$1"}
               shift
             done
             return
@@ -150,7 +150,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
               bin=$( __WHICH "$1" 2>/dev/null ) || {
                   [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
 
-              eval ${VERBOSE:+echo $bin}
+              eval ${VERBOSE:+echo "$bin"}
               shift
             done
             return
@@ -159,7 +159,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
               declare -F "$1" &>/dev/null || {
                   [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
 
-              eval ${VERBOSE:+whereis_function $1}
+              eval ${VERBOSE:+whereis_function "$1"}
               shift
             done
             return
@@ -206,15 +206,14 @@ function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]; }
 # scripts and helper functions. Leaving it here simplifies includes.
 function is_windows() (
   set -e -o pipefail
-  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
+  (( $# )) || [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
 
   local bin
   #WARN multi-arg supported, but not recommended
   while (( $# )); do
-    [ -n "$1" ] || { shift; continue; }
-
-    # check file or path
-    bin=$( is_exec -v "$1" || readlink -e "$1")
+    for op in echo 'readlink -e' 'is_exec -v'; do
+	  if bin=$( $op "$1" ); then [ "${bin:0:1}" = '/' ] && break; fi
+	done
     [[ "$bin" =~ ^/cygdrive ]] || { file "$bin" | grep -q 'for MS Windows'; }
     shift
   done
@@ -342,10 +341,10 @@ function copy_function() {
     #log.* may not be defined as yet
     if declare -F "$target" &>/dev/null; then
       if [ ${overwrite:-0} -eq 1 ]; then
-        is_readonly "$target" && {
-            [ -n "$VERBOSE" ] && log "ERROR\toverwrite read-only function ($target)"
-            return 1
-          }
+#        is_readonly "$target" && {
+#            [ -n "$VERBOSE" ] && log "ERROR\toverwrite read-only function ($target)"
+#            return 1
+#          }
         [ -n "$VERBOSE" ] && log "NOTICE\toverwriting function ($target)"
       else
         [ -n "$VERBOSE" ] && log "WARN\tfunction exits ($target)"
@@ -458,7 +457,7 @@ function string.contains() {
 #Usage: <source> <pattern>... 
 #  example: (IFS=:; grep --quiet --word-regexp -e "string" <<< "one:string:two"; )
 
-  local DELIM delim op flags=( )
+  local DELIM delim op flags=()
   [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
 
   local -i OPTIND; local OPTARG opt
@@ -468,8 +467,12 @@ function string.contains() {
       o)    op=$OPTARG ;;
 
       :)    log.error "missing argument (-$OPTARG)" ;;&
-      # assume 'grep' options
-     \?)    : ${op=grep}; flags+=( "-$OPTARG" ) ;;
+      # assume unhandled flags are 'grep' options IFF solitary '--flag' or '--flag=value'
+      # unless OPTIND=N-1
+     \?)    : ${op=grep}
+#detect flag type and OPTARG='-'
+            flags+=( "-$OPTARG" )
+            ;;
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME [ options ] <str> [<str> ...]
   -D        xxx
@@ -480,16 +483,18 @@ _EOF
   done
   shift $((OPTIND - 1))
 
+  [ $# -ge 2 ] || { log.error "insufficient arguments ($#)" "$@"; return 2; }
+
   local source sub
   if [ ${#delim} -eq 1 ]; then
-    local IFS=$delim; source=${1:?source}
-  else source="${delim}${1:?source}${delim}"; fi
+    local IFS=$delim; source=$1
+  else source="${delim}$1${delim}"; fi
   shift
 
   while (( $# )); do
     # empty string is pointless but 'true'
     [ -n "$1" ] || { shift; continue; }
-
+#FIXME why if IFS set?
     [ ${#delim} -eq 1 ] && sub=${1:?pattern} || sub="${delim}${1:?pattern}${delim}"
 
     case "$op" in
@@ -547,7 +552,7 @@ _EOF
   esac
 
   : ${delim:=${PATHSEP:-':'}}
-  local -n kval=${k:?varname}
+  local -n kval=${k:?VAR_name}
   local -ir __prepend=${prepend:-0} #save
 
   while read item; do
@@ -577,8 +582,7 @@ _EOF
 
 #TODO simply treat as DELETE=1 addPath
 function rmPath() {
-
-  : ${1:?varname or path}
+  : ${1:?VAR_name or path}
   local k delim
 
   case "${k:=$1}" in
@@ -590,16 +594,15 @@ function rmPath() {
   esac
 
   : ${delim:=${PATHSEP:-':'}}
-  local -n kval=${k:?varname}
+  local -n kval=${k:?VAR_name}
   # split into tokens. unset array element to erase
   #alt: eval $k=`loop`
   kval=$( IFS=$delim
       read -ra items <<< "${!k}"
       while read line; do
         for i in "${!items[@]}"; do
-          [ "${items[i]}" = "$line" ] && { unset items[$i]; log.debug "remove element ($i, $line)"; }
+          if [ "${items[i]}" = "$line" ]; then unset 'items[i]'; log.debug "remove element ($i, $line)"; fi
         done
-        shift
       done < <( readlink -m "$@" )
       echo "${items[*]}"
     )
