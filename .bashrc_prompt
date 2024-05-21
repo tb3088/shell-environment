@@ -54,9 +54,10 @@ function __prompt() {
 
   PS1=${PS_PREFIX}
   while read fn; do
+    [ -n "$fn" ] || continue
     PS1+="$( $fn )"
   done < <(
-      declare -F | awk '{ print $NF; }' | grep '__prompt\.'
+      declare -F | awk '{ print $NF; }' | grep -E '^__prompt\.'
       IFS=$'\n'; echo "${__prompts[*]}"
     )
 

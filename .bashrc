@@ -23,7 +23,7 @@ case $- in
   # a bit redundant since whole point of .bashrc is 'interactive' use...
   *i*)  for f in .bashrc{.local,_{prompt,os,*}} .aliases{,.local}; do
           [ -s "$f" ] || continue
-          grep -q -E '.swp$|.bak$|~$' - -- <<< "$f" && continue
+          grep -qE '\.swp$|\.bak$|~$' - -- <<< "$f" && continue
 
           source "$f" || { log.error "RC=$? during $f, aborting."; return; }
         done
