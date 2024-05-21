@@ -35,14 +35,13 @@
   hf = lfile
   hd = ldiff
 
-  l = lo
   last = log -1 HEAD
-  lo = log --oneline
-  lfile = lo --name-only
+  l1 = log --oneline
+  lfile = l1 --name-only
   ldiff = log -p --
 
   # tip: 'hash..[branch] --reverse' gives nice series of diffs in chronological order
-  lpatch = lo --patch
+  patch = l1 --patch
 
   pff = ! "git fetch-all; git pull --ff-only"
   push1 = ! "f() { git push ${1:?remote} ${2:?hash}:${3:?branch}; }; f"
