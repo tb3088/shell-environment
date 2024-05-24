@@ -65,16 +65,20 @@ function aws.printenv() { local v; for v in ${!AWS_*}; do printf '%s=%q\n' "$v" 
 function aws.region() {
   local region _default
   local -i OPTIND; local OPTARG opt long_opts=()
-  while getopts 'dPr:h' opt; do
+
+  while getopts ':hdPr:-:' opt; do
     case "$opt" in
       d)    _default=$OPTARG ;;
       P)    region='prompt' ;;
       r)    region=$OPTARG ;;
 
-      :)    log.error "missing argument (-$OPTARG)" ;;&
-     \?)    #if [ ${OPTARG:0:1} = '-' ]; then long_opts+=( "-$OPTARG" ); continue; fi
-            log.error "unsupported option (-${OPTARG})" ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME ... TODO
 EOF
             return 2
@@ -133,16 +137,19 @@ function aws.profile() {
   esac
 
   local profile
-  local -i OPTIND; local OPTARG opt
-  while getopts 'lPp:h' opt; do
+  local -i OPTIND; local OPTARG opt long_opts=()
+  while getopts ':hlPp:-:' opt; do
     case "$opt" in
       l)    $FUNCNAME LIST; return ;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
 
-      :)    log.error "missing argument (-$OPTARG)" ;;&
-     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then long_opts+=( "-${OPTARG}"); continue; fi
-            log.error "unsupported option (-${OPTARG})" ;&
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
       h|*)  >&2 cat << EOF
 Usage: $FUNCNAME [profile] [region]
 EOF
@@ -232,17 +239,20 @@ function iam.session-load() {
   local input=
   local -a keys=()
 
-  local -i OPTIND; local OPTARG opt
-  while getopts 'f:k:h' opt; do
+  local -i OPTIND; local OPTARG opt long_opts=()
+  while getopts ':hf:k:-:' opt; do
     case "$opt" in
       k)    keys+=( "$OPTARG" ) ;;
       f)    is_file "$OPTARG" || return
             input=$( < "$OPTARG" ) ;;
 
-      :) 	log.error "missing argument (-$OPTARG)" ;;&
-     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then long_opts+=( "-${OPTARG}" ); continue; fi
-            log.error "unsupported option (-${OPTARG})" ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME [filename]
 EOF
             return 2
@@ -382,8 +392,8 @@ function iam.session() {
   local role mfa
   local token=  # MUST be string! Bash strips leading ZEROs, printf treats as Octal
 
-  local -i OPTIND; local opt OPTARG
-  while getopts 'r:St:x:h' opt; do
+  local -i OPTIND; local opt OPTARG long_opts=()
+  while getopts ':hr:St:x:-:' opt; do
     case "$opt" in
       r)    role=$OPTARG ;;
       S)    subshell=1 ;;
@@ -392,10 +402,13 @@ function iam.session() {
             token=$OPTARG ;;
       x)    duration=$OPTARG ;;
 
-      :)    log.error "missing argument (-$OPTARG)" ;;&
-     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then long_opts+=( "-${OPTARG}" ); continue; fi
-            log.error "unsupported option (-${OPTARG})" ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME [options]
 EOF
             return 2
@@ -590,8 +603,8 @@ function aws.rmPath() { aws.addPath -D "$@"; }
 function ec2.connect() {
   local -a cmd=( ssm start-session )
 
-  local -i OPTIND; local OPTARG opt #long_opts=()
-  while getopts ':hL:' opt; do
+  local -i OPTIND; local OPTARG opt long_opts=()
+  while getopts ':hL:-:' opt; do
     case "$opt" in
       #ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html
       L)    local -i lport rport
@@ -612,15 +625,18 @@ function ec2.connect() {
             [ ${rport:?} -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
 
             cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
-                   '--parameters' "`string.join -zd ',' "portNumber=$rport"
-                       ${lport:+localPortNumber=$lport}
-                       ${rhost:+host=$rhost}`" )
+                   '--parameters' `string.join -zd ',' "portNumber=$rport"
+                       "${lport:+localPortNumber=$lport}" "${rhost:+host=$rhost}"`
+              )
             ;;
 
-      :)    log.error "missing argument (-$OPTARG)" ;;&
-     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then break; fi # long_opts+=( "-$OPTARG" ); continue;
-            log.error "unsupported option (-$OPTARG)" ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME ... TODO
 EOF
             return 2
@@ -628,7 +644,7 @@ EOF
   done
   shift $((OPTIND - 1))
 #TODO? check if 
-  __AWS "${cmd[@]}" --target ${1:?InstanceId} "${@:2}"
+  __AWS "${cmd[@]}" --target ${1:?InstanceId} "${long_opts[@]}" "${@:2}"
 }
 # backwards compat
 function ec2.session() { log.warn "deprecated - use 'ec2.connect()'"; ec2.connect "$@"; }
