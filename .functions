@@ -170,14 +170,15 @@ function __is_type() {  #WARN! selective short-circuit on first error
                 log.error "unsupported type ($keyword)"; return 2; }
   esac
 
-  local whatami flag= _type
+  local whatami flag=
   while (( $# )); do
     # suss out functions during 'readonly'
-    _type=$( type -t "$1" ) || return
-    [ "${_type:-unknown}" = 'function' ] && flag='-F'
+    [ "$( type -t "$1" )" = 'function' ] && flag='-F'
 
     whatami=$( declare -p $flag "$1" 2>/dev/null | awk '{ print $2; }' ) || {
-        log.error "type detection failed ($1)"; return; }
+        log.error "type detection failed ($1)"
+        return
+      }
 
     if [ ${_readonly:-0} -eq 1 ]; then whatami=${whatami//[^r]/}
 	else whatami=${whatami//[r-]/}; fi
@@ -187,11 +188,9 @@ function __is_type() {  #WARN! selective short-circuit on first error
     shift
   done
 }
-#export -f __is_type
 # data-type wrappers
 for f in array dir{,ectory} exec{,utable} file hash integer string function readonly nref; do
   eval function is_$f '{ __is_type "$@"; }'
-#  export -f is_$f
 done
 
 
@@ -382,28 +381,30 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local QUOTE quote
+  local QUOTE quote flags=()
   # do NOT default quote character
   [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
 
   local -i abs=0 escape=1
-  local flags=()
 
   local -i OPTIND; local opt OPTARG long_opts=()
-  while getopts ':aeEq:t:' opt; do
+  while getopts ':haeEq:t:-:' opt; do
     case "$opt" in
       a)    abs=1 ;;
       e)    escape=1 ;;     # default
       E)    escape=0 ;;
       q)    quote=$OPTARG; readonly escape=0 ;;
-      t)    flags+=( '--type' "$OPTARG" ) ;;
+      t)    long_opts+=( '--type' "$OPTARG" ) ;;
 
-      :)    log.error "missing argument (-$OPTARG)" ;;&
-      # pass-thru unhandled args to cygpath
-     \?)    flags+=( "-$OPTARG" ) ;;
-      h|*)  >&2 cat <<_EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+    # pass-thru unhandled args to cygpath
+     \?)    long_opts+=( "-${OPTARG}" ) ;;
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME ...
-_EOF
+EOF
     esac
   done
   shift $((OPTIND - 1))
@@ -417,7 +418,7 @@ _EOF
     [ $abs -eq 1 ] && p=`readlink -m "$p"`
 
     # '-a' expand+unroll symlinks ONLY if relative
-    is_windows && p=`cygpath -a "${flags[@]}" -- "$p"`
+    is_windows && p=`cygpath -a "${long_opts[@]}" -- "$p"`
 
 #TODO? leverage string.quote
     if [ $escape -eq 1 ]; then printf '%q\n' "$p"; else echo "${quote}$p${quote}"; fi
@@ -906,50 +907,58 @@ function max() { min -r "$@"; }
 
 #
 #if [[ "$BASH_VERSION" =~ 5|4.4 ]]; then
-#NOTE values NOT quoted for whitespace, use LF to compensate
-function keys()   { local -n nref=${1:?array}; local IFS=$'\n'; echo "${!nref[*]}"; }
-function values() { local -n nref=${1:?array}; local IFS=$'\n'; echo "${nref[*]}"; }
-#NOTE using '%q' adds quotes if empty which breaks [ -n "`value ...`" ]
-function value()  { local -n nref=${1:?array}; printf '%s' "${nref[${2:?element}]}"; }
+#NOTE values NOT quoted for whitespace, using LF to compensate
+function keys()   { local -n nref=${1:?array var_name}; local IFS=$'\n'; echo "${!nref[*]}"; }
+#NOTE using '%q' adds quotes when empty which breaks [ -n "`value ...`" ]
+function values() { local -n nref=${1:?array var_name}; if [ -n "$2" ]; then printf '%s\n' ${nref[$2]}; else local IFS=$'\n'; echo "${nref[*]}"; fi; }
+function value()  { values "$@" | head -n 1; }
 #fi
 
 function array.print() {
   local format
-  local -i with_keys=0 to_upper=0
-  local -A __format=( ['with_keys']='%s\t%s\n' ['default']='%s\n' )
+  local -i with_keys= to_upper= quote=
+  local -A __format=( ['key']='%s\t' ['value']='%q ' )
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':hfkQuV' opt; do
+  while getopts 'hf:JkKQv' opt; do
     case "$opt" in
       f)    format=$OPTARG ;;
+#      J)    with_keys=1
+#            __format['key']='"%s":'
+#            ;;
+      K)	to_upper=1 ;&
       k)    with_keys=1 ;;
-      # quoted
-      Q)    __format=( ['with_keys']='%q\t%q\n' ['default']='%q\n' ) ;;
-      u)	to_upper=1 ;;
+            #alt: key='%s\n' value='\t%s\n'
+      # escape white-space
+#      Q)    quote=1 ;;
       # set variable, consumed with eval
-      V)	__format['with_keys']='%s=%q\n' ;;
+      V)	__format['key']='%s=%q\n' ;;
 
-#      :)   ;;&
+      :)    log.error "missing argument (${!OPTIND})" ;;&
      \?)    log.error "unsupported option (-$OPTARG)" ;&
-      h|*)  >&2 cat <<_EOF
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME ...
-_EOF
+EOF
+            return 2
     esac
   done
   shift $((OPTIND - 1))
 
-  : ${1:?array}
+  : ${1:?array var_name}
 
-  if [ ${with_keys:-0} -eq 1 ]; then
-    while read; do
-      printf "${format:-${__format['with_keys']}}" \
-          "$( [ ${to_upper:-0} -eq 1 ] && echo "${REPLY^^}" || echo "$REPLY" )" \
-          "$( value $1 "$REPLY" )"
-    done < <( keys $1 )
+  if [ ${with_keys:-0} -eq 1 ] && is_hash "$1"; then
+    [ ${to_upper:-0} -eq 1 ] && local -u kv || local kv
+
+    while read key; do
+      if [ -n "$2" ]; then [ "$2" = "$key" ] || continue; fi
+
+      kv=$key
+      printf "${format:-${__format['key']}}" "$kv"
+      printf "${format:-${__format['value']}}" `values "$1" "$key"`
+      echo
+    done < <( keys "$1" )
   else
-    while read; do
-      printf "${format:-${__format['default']}}" "$REPLY"
-    done < <( values $1 )
+    [ -n "$format" ] && printf "$format" `values "$1" "$2"` || values "$1" "$2"
   fi
 }
 
