@@ -53,7 +53,7 @@ function add_program() {
 }
 
 
-j=`__READLINK -e "$BASH_SOURCE"`
+j=`readlink -e "$BASH_SOURCE"`
 k=${BASH_SOURCE#*.bashrc_}
 [ "${j#*.bashrc_}" = "$k" ] || add_program "$k"
 unset j k

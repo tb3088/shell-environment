@@ -94,7 +94,7 @@ read -rd '' __log_template <<'EOF'
     return ${RC:-$rc}
   fi
 
-  _continue || exit ${RC:-$rc}
+  __continue || exit ${RC:-$rc}
 }
 EOF
 

@@ -1,18 +1,27 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 
+# prevent multiple-inclusion
+__link=`readlink -f "$BASH_SOURCE"`
+declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
+[ ${__tag:-0} -eq 0 ] || return 0
+__tag=1
+#------------------
+
+####  WARNING   WARNING   WARNING   ###
+# long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
+
 is_windows && AWSCLI=Amazon/AWSCLIV2
 source ${BASH_SOURCE%_*}_3rdparty aws
 unset AWSCLI
-is_exec aws || return 0
-#------------------
+is_exec -q aws || return 0
 
 #ref: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
-addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
+QUIET=1 addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
 
 # SSM Session-Manager
 # ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
@@ -23,7 +32,7 @@ addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
 link=`is_exec -v aws_completer` && complete -C "$( printf '%q' "$link" )" aws
 unset link
 
-# session credentials expire in 8h
+# session credentials expire in 4h
 export AWS_SESSION_DURATION=$((3600 * 4))
 
 alias aws='__AWS'
@@ -33,15 +42,15 @@ alias aws.clearenv='aws.profile RESET'
 
 
 function __prompt.aws() {
-  [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}" ] || return 0
+  [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}${AWS_SESSION_TOKEN}" ] || return 0
 
-  local _config=`sed -E "s|^$HOME/(.aws/)?||; s|/config$||" <<< "$AWS_CONFIG_FILE"`
+  local _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config#.aws/}; _config=${_config%/config};
+  #alt: $( sed -E "s|^$HOME/(.aws/)?||; s|/config$||" <<< "$AWS_CONFIG_FILE" )
 
   echo -ne "\n${UL}AWS:${RS} ${FMAG}${_config:---} ${HC}${AWS_PROFILE:---}${RS} / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}${RS}"
 
-#TODO? AWS_ROLE_ARN shortened by '*:role/'
 #FIXME don't use math, print to common format and simple compare?
-  if [ "$AWS_SESSION_EXPIRE" ]; then
+  if [ -n "$AWS_SESSION_TOKEN" -a -n "$AWS_SESSION_EXPIRE" ]; then
     local -i remain=$(( (`date --date="$AWS_SESSION_EXPIRE" '+%s'` - `date '+%s'`) / 60 ))
     [ $remain -gt 0 ] && echo -ne "  (${remain} min)" || echo -ne "  (${BRED}expired${RS})"
   fi
@@ -55,17 +64,22 @@ function aws.printenv() { local v; for v in ${!AWS_*}; do printf '%s=%q\n' "$v" 
 
 
 function aws.region() {
-  local region _default                 # supplied by aws.profile()
-  local -i OPTIND; local OPTARG opt
-  while getopts 'Pr:h' opt; do
+  local region _default
+  local -i OPTIND; local OPTARG opt long_opts=()
+
+  while getopts ':hdPr:-:' opt; do
     case "$opt" in
+      d)    _default=$OPTARG ;;
       P)    region='prompt' ;;
       r)    region=$OPTARG ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-#      # consume '--'
-#      \?)    [ $OPTARG = '-' ] && { (( OPTIND++ )); break; } || log.error "unsupported (-${OPTARG})" ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME ... TODO
 EOF
             return 2
@@ -75,22 +89,20 @@ EOF
 
   : ${region=${1-'prompt'}}
 
-  # 'blank' argument or match current short-circuits further processing
+  # 'blank' argument or match current, short-circuits further processing
   # except AWS_*REGION can't be left blank since it's non-intuitive
-#  [[ "$region" = "${AWS_DEFAULT_REGION:-_unset}" ||
-#     ( -z "${region}" && -n "${AWS_REGION}${AWS_DEFAULT_REGION}" ) ]] && return
-  [ -z "$region" -a -n "${AWS_REGION}${AWS_DEFAULT_REGION}" -o\
-      "${region:-_blank_}" = "$AWS_DEFAULT_REGION" ] && return
+  [ -z "$region" -a -n "$AWS_DEFAULT_REGION" ] && return
+  [ "$region" = "${AWS_DEFAULT_REGION:-_null_}" ] && return
 
-  # force value if possible
-  : ${region:=${_default-`__AWS configure get region`}}
+  # force new value
+  : ${region:=${_default:-`__AWS configure get region`}}
 
   if [ "${region:-prompt}" = 'prompt' ]; then
     PS3=`echo -ne "\nChoose REGION:  "`
     select region in "${__aws_regions[@]}"; do
       [ -n "$region" ] && break
       # examine REPLY for textual format
-      [ -n "$REPLY" ] && array.is_member __aws_regions "$REPLY" && break
+      if [ -n "$REPLY" ]; then array.is_member __aws_regions "$REPLY" && break; fi
     done
   fi
 
@@ -100,17 +112,16 @@ EOF
 
 
 function aws.creds-load() {
-
-: #XXX
-
+  return 2
 }
 
 
 function aws.creds-save() {
+#TODO pass in as HASH using -H
   local profile=${1:?profile} key=${2:?ACCESS_KEY} secret=${3:?SECRET} session=$4
   local cmd=( __AWS configure --profile "$profile" set )
 
-  [ "$profile" != 'default' ] || { log.error "unsupported profile ($profile)"; return 2; }
+  [ "$profile" != 'default' ] || { log.error "unsupported profile ($profile)"; return; }
 
   "${cmd[@]}" aws_access_key_id "$key"
   "${cmd[@]}" aws_secret_access_key "$secret"
@@ -122,22 +133,24 @@ function aws.profile() {
   # hacktastic shortcuts
   case "$1" in
     RESET)  aws.rmPath; unset ${!AWS_*}; return ;;
-    DELETE) log.error "not implemented"; return ;;
+#TODO DELETE=1 $FUNCNAME -p <value>
     LIST)   __AWS configure list-profiles | column; return ;;
   esac
 
   local profile
-  local -i OPTIND; local OPTARG opt
-  while getopts 'DlPp:h' opt; do
+  local -i OPTIND; local OPTARG opt long_opts=()
+  while getopts ':hlPp:-:' opt; do
     case "$opt" in
-      D)    $FUNCNAME DELETE; return ;;
       l)    $FUNCNAME LIST; return ;;
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
 
-#      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-#    # consume '--'
-#      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
       h|*)  >&2 cat << EOF
 Usage: $FUNCNAME [profile] [region]
 EOF
@@ -149,22 +162,21 @@ EOF
   : ${profile=${1-'prompt'}}
 
   # 'blank' argument or match current, short-circuits further processing
-  [ -z "$profile" -a -n "$AWS_PROFILE" ] ||
-      [ "${profile:-_blank_}" = "${AWS_PROFILE:-default}" ] &&
-      { aws.region "$2"; return; }
+  [ -z "$profile" -a -n "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  [ "$profile" = "$AWS_PROFILE" ] && { aws.region "$2"; return; }
 
-  if [ "$profile" = 'prompt' ]; then
+  if [ "${profile:-'prompt'}" = 'prompt' ]; then
     local -a list=( `__AWS configure list-profiles` )
     #alt:
     # pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
-    # list=( `awk -- "$pattern" "$conf" "$creds" | sort --unique` )
+    # list=( `awk -- "$pattern" "$conf" "$creds" | sort -u` )
 
     if [ ${#list[@]} -ge 1 ]; then
       PS3=$( echo -ne "\nChoose PROFILE:  " )
       select profile in "${list[@]}"; do
         [ -n "$profile" ] && break
         # examine REPLY for textual format
-        [ -n "$REPLY" ] && array.is_member list "$REPLY" && break
+        if [ -n "$REPLY" ]; then array.is_member list "$REPLY" && break; fi
       done
     else
       log.warn "no profile(s) found ($AWS_CONFIG_FILE)"
@@ -181,17 +193,16 @@ EOF
   # $? == 1 simply means no explicit declaration
   local region
   region=$( __AWS ${profile:+ '--profile' "$profile"} configure get region )
-  [ $? -eq 255 ] || [[ "${region:-X}" =~ ProfileNotFound ]] && return 255
+  if [ $? -eq 255 ] || [[ "${region:-X}" =~ ProfileNotFound ]]; then return 255; fi
 
-  if [ "$profile" != "$AWS_PROFILE" ]; then
-    # cleanup previous environment
+  # cleanup previous environment
+  if [ "$profile" != "${AWS_PROFILE:-default}" ]; then
     aws.rmPath
-    iam.session DROP || true
+#TODO    iam.session DROP || true
   fi
 
-  [ "$profile" = 'default' ] && unset AWS_PROFILE || AWS_PROFILE=$profile
-  _default=$region aws.region "$2"
-#  || log.notice "RC=$? during aws.region()"
+  if [ "$profile" = 'default' ]; then unset AWS_PROFILE; else AWS_PROFILE=$profile; fi
+  aws.region -d "$region" "$2"
 
   export ${!AWS_*}
   aws.addPath
@@ -228,16 +239,21 @@ EOF
 function iam.session-load() {
   local input=
   local -a keys=()
-  local -i OPTIND; local OPTARG opt
-  while getopts 'f:k:h' opt; do
+
+  local -i OPTIND; local OPTARG opt long_opts=()
+  while getopts ':hf:k:-:' opt; do
     case "$opt" in
       k)    keys+=( "$OPTARG" ) ;;
-      f)    input=$OPTARG ;;
+      f)    is_file "$OPTARG" || return
+            input=$( < "$OPTARG" ) ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-#    # consume '--'
-#      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME [filename]
 EOF
             return 2
@@ -377,23 +393,23 @@ function iam.session() {
   local role mfa
   local token=  # MUST be string! Bash strips leading ZEROs, printf treats as Octal
 
-  local -i OPTIND; local opt OPTARG
-  while getopts 'r:St:x:h' opt; do
+  local -i OPTIND; local opt OPTARG long_opts=()
+  while getopts ':hr:St:x:-:' opt; do
     case "$opt" in
-#     C)    # use local cache - happens automagically
       r)    role=$OPTARG ;;
       S)    subshell=1 ;;
       t)    [[ "$OPTARG" =~ ${__aws_regex['token']} ]] || {
-                log.error "invalid TOTP format ($OPTARG)"
-                return 2
-              }
+                log.error "invalid TOTP format ($OPTARG)"; return 2; }
             token=$OPTARG ;;
       x)    duration=$OPTARG ;;
 
-#      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-#    # consume '--'
-#     \?)    [ $OPTARG = '-' ] && { (( OPTIND++ )); break; } || log.error "unsupported (-${OPTARG})" ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;& 
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME [options]
 EOF
             return 2
@@ -401,8 +417,6 @@ EOF
   done
   shift $((OPTIND - 1))
 
-  local -A source_creds=()
-  local -a cmd=( sts )
   local ofile
   ofile=$( mktemp "${AWS_PROFILE:-default}.XXXXX" ) || return
   trap "rm -f $ofile" RETURN
@@ -424,6 +438,8 @@ EOF
   )
 
   #----- main -----
+  local -A source_creds=()
+  local -a cmd=( sts )
 
   #ref: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html
   if [ -n "${role:=`__AWS configure get role_arn`}" ]; then
@@ -450,11 +466,11 @@ EOF
     return
   fi
 
-  #-- else --
+  #-- else !role --
 
   #ref: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/sts/get-session-token.html#options
   cmd+=( get-session-token )
-  
+
   # Technically 'get-session-token' works fine without an MFA, but a
   # 'ForceMFA'-style IAM policy is likely in effect, rendering such credentials void.
 
@@ -473,18 +489,16 @@ EOF
 
   #BUG! CLI improperly ignores 'source_profile'
   local source_profile=`__AWS configure get source_profile`
-
   [ -n "$source_profile" ] &&
       for k in aws_access_key_id aws_secret_access_key; do
-        source_creds+=( ["${k^^}"]=$( __AWS --profile "$source_profile" configure get "$k" ) || {
-            log.warn "not found ($k) for profile ($source_profile)" "file: ${AWS_CONFIG_FILE:-default}"
-            break
-          }
+        source_creds+=( ["${k^^}"]=`__AWS --profile "$source_profile" configure get "$k"` ) || {
+            log.error "not found ($k) for profile ($source_profile)" "file: ${AWS_CONFIG_FILE:-default}"
+            return; }
       done
 
   __doit || return $PIPESTATUS > >( tee "$ofile" | log.info )
 
-FIXME we need to keep AWS_PROFILE but also aset AWS_SESSION_NAME and reflect it into the prompt. 
+#TODO? keep AWS_PROFILE? but set AWS_SESSION_NAME from ofile?
   [ ${subshell:-0} -eq 1 ] && (
       set -a
       iam.session-load "$ofile" && { AWS_PROFILE=${ofile##*/}; "$SHELL"; }
@@ -524,25 +538,19 @@ FIXME we need to keep AWS_PROFILE but also aset AWS_SESSION_NAME and reflect it 
 #aws.profile --list should show temporary derivitive profile(s), with perhaps '--clean|clear_cache'
 
 
-function aws.addPath() (
-  local -i DELETE load_sshkeys use_stdin
-  local -a long_opts=()
+function aws.addPath() {
+  local -i DELETE load_sshkeys=1
+  local flags=()
 
   local -i OPTIND; local OPTARG opt
-  while getopts ':hdvDL' opt; do
+  while getopts ':hDL' opt; do
     case "$opt" in
       D)    DELETE=1 ;;
-      d)    local DEBUG=1 ;;
-      L)    load_sshkeys=1 ;;
-      S)	use_stdin=1 ;;
-      v)    local VERBOSE=1 ;;
+      L)    load_sshkeys=0 ;;
 
       :)    log.error "missing argument (-$OPTARG)" ;;&
-      # long and 'grep' options
-     \?)    if [ $OPTARG = '-' ]; then
-              long_opts+=( "${!OPTIND}" ); (( OPTIND++ )); continue
-            else log.error "unsupported (-$OPTARG)"; fi
-            ;&
+      # assume flags to addPath
+     \?)    local flags+=( "-$OPTARG" ) ;;
       h|*)  >&2 cat <<EOF
 Usage: $FUNCNAME ... TODO
 EOF
@@ -551,37 +559,44 @@ EOF
   done
   shift $((OPTIND - 1))
 
-  shopt -s nullglob
+  local _shopt=`shopt -p failglob nullglob`
+  trap 'eval "$_shopt"' RETURN
   shopt -u failglob
 
   while read item; do
+    [ -n "$item" ] || { shift; continue; }
+
     if [ ${DELETE:-0} -eq 1 ]; then
-      [[ "$item" =~ .ssh/?$ ]] &&
-          ${DEBUG:+ runv} ssh-add -d ${VERBOSE:+'-v'} "${item%/}"/*.pub 2>/dev/null
+      [[ "$item" =~ .ssh/?$ ]] &&	#BUG! errors emit stdout, but ONLY for '-d'
+          ${DEBUG:+ runv} ssh-add -d ${VERBOSE:+'-v'} "${item%/}"/*.pub
       [[ "$item" =~ /bin/?$ ]] && rmPath "${item%/}"
     else
-      #WARN! use 'IdentitiesOnly yes' in ssh_config else AuthFailure from too many attempts
+      #NOTE use 'IdentitiesOnly yes' in ssh_config, else AuthFailure from many attempts
       [[ "$item" =~ .ssh/?$ ]] && [ ${load_sshkeys:-0} -eq 1 ] &&
           ${DEBUG:+ runv} ssh-add ${VERBOSE:+'-v'} "${item%/}"/{id_*,*.pem} 2>/dev/null
-	  [[ "$item" =~ /bin/?$ ]] && addPath -P "${item%/}"
+	  [[ "$item" =~ /bin/?$ ]] && addPath -P "${flags[@]}" "${item%/}"
     fi
   done < <(
-    (( $# )) || {
-        [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
+      if (( $# )); then
+        :
+#      elif [ ${use_stdin:-0} -eq 1 ]; then set -- $( < /dev/stdin )
+      else
+        local prefix=${AWS_CONFIG_FILE%/*} token=
+        : ${prefix:=${__aws_defaults['config']%/*}}
 
-    if [ $# -gt 0 ]; then printf '%s\n' "$@"
-    else
-      local prefix=${AWS_CONFIG_FILE%/*} token=
-      : ${prefix:=${__aws_defaults['config']%/*}}
-      #WARN! potentially expensive search with possible overlap from symlink(s)
-#TODO  case "${FUNCNAME[1]}" in
-#        aws.profile) token=/${AWS_PROFILE:-default} ;;
-#		aws.region)  token=/$AWS_DEFAULT_REGION ;;
-#      esac
-	  printf '%s\n' "${prefix}${token}"/**/{*.ssh,bin}/
-    fi
-  ) | sort -u
-)
+        case "${FUNCNAME[1]}" in
+          aws.profile)  [ -n "$AWS_PROFILE" ] && token="/$AWS_PROFILE" ;&
+		  aws.region)   [ -n "$AWS_DEFAULT_REGION" ] && token="/${AWS_DEFAULT_REGION}${token}" ;;
+        esac
+
+        #WARN! potentially expensive search with possible overlap from symlink(s)
+        shopt -s nullglob
+        set -- "${prefix}${token}"/**/{*.ssh,bin}/
+      fi
+	  IFS=$'\n'; echo "$*" | sort -u
+    )
+  return 0
+}
 
 function aws.rmPath() { aws.addPath -D "$@"; }
 
@@ -590,8 +605,8 @@ function aws.rmPath() { aws.addPath -D "$@"; }
 function ec2.connect() {
   local -a cmd=( ssm start-session )
 
-  local -i OPTIND; local OPTARG opt
-  while getopts ':L:h' opt; do
+  local -i OPTIND; local OPTARG opt long_opts=()
+  while getopts ':hL:-:' opt; do
     case "$opt" in
       #ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html
       L)    local -i lport rport
@@ -599,16 +614,12 @@ function ec2.connect() {
             # pseudo SSH port-forward spec '[local_port:][remote_host:]remote_port'
             IFS=: read -a words <<< "$OPTARG"
             case ${#words[@]} in
-              1)    rport=$words
-                    ;;
+              1)    rport=$words ;;
               2)    rport=${words[1]}
-                    is_number "${words:?}"  && lport=$words || rhost=$words
-                    ;;
-              3)    lport=$words
-                    rhost=${words[1]}
-                    rport=${words[2]}
-                    ;;
-              *)    log.error "invalid port-forward spec ('[local_port:][remote_host:]remote_port', $OPTARG)"; return
+                    is_number "${words:?}" && lport=$words || rhost=$words ;;
+              3)    lport=$words; rhost=${words[1]}; rport=${words[2]} ;;
+              *)    log.error "invalid port-forward spec ('[local_port:][remote_host:]remote_port')" "$OPTARG"
+                    return 2
             esac
 
             # exclude 'localhost', TODO ipv6
@@ -616,25 +627,26 @@ function ec2.connect() {
             [ ${rport:?} -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
 
             cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
-                   '--parameters' "`string.join -zd ',' "portNumber=$rport"
-                       ${lport:+localPortNumber=$lport}
-                       ${rhost:+host=$rhost}`" )
+                   '--parameters' `string.join -zd ',' "portNumber=$rport"
+                       "${lport:+localPortNumber=$lport}" "${rhost:+host=$rhost}"`
+              )
             ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-    # consume '--'
-      \?)   [ $OPTARG = '-' ] && { (( OPTIND++ )); break; } ||
-                log.error "unsupported (--${@[$OPTIND]})"	#FIXME?
-            ;&
-      h|*)  >&2 cat <<EOF
+     \-)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported (-$OPTARG)" ;&
+      h|*)  >&2 cat << EOF
 Usage: $FUNCNAME ... TODO
 EOF
             return 2
     esac
   done
   shift $((OPTIND - 1))
-
-  __AWS "${cmd[@]}" --target ${1:?InstanceId} "${@:2}"
+#TODO? check if 
+  __AWS "${cmd[@]}" --target ${1:?InstanceId} "${long_opts[@]}" "${@:2}"
 }
 # backwards compat
 function ec2.session() { log.warn "deprecated - use 'ec2.connect()'"; ec2.connect "$@"; }

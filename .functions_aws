@@ -2,6 +2,9 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 #------------------
 
+####  WARNING   WARNING   WARNING  ####
+# long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' shell pattern
+
 shopt -s extglob
 
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
@@ -108,30 +111,25 @@ function __AWS() {
   local -a cmd=()
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    [ -s "$AWS_CONFIG_FILE" ] || {
-        log.error "file not found/invalid (AWS_CONFIG_FILE: $AWS_CONFIG_FILE)"
-        return
-      }
+    #FIXME? don't care if specified values are invalid
+    is_file "$AWS_CONFIG_FILE" || return
+    #BUG! CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
     : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
-    [ -s "$AWS_SHARED_CREDENTIALS_FILE" ] || {
-        log.notice "file not found/invalid (AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE)"
-        unset AWS_SHARED_CREDENTIALS_FILE
-      }
 
     # path prefix mismatch?
-    if [ -n "$AWS_SHARED_CREDENTIALS_FILE" ]; then
-      [ "${AWS_CONFIG_FILE%/*}" = "${AWS_SHARED_CREDENTIALS_FILE%/*}" ] || log.warn \
-          "path prefix mismatch" "AWS_CONFIG_FILE: $AWS_CONFIG_FILE" \
+    if [ "${AWS_CONFIG_FILE%/*}" != "${AWS_SHARED_CREDENTIALS_FILE%/*}" ]; then
+      log.warn "path prefix mismatch" \
+          "AWS_CONFIG_FILE: $AWS_CONFIG_FILE" \
           "AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE"
     fi
 
-    # reduce path conversions with AWS_*_FILE_WINDOWS
+    #HACK reduce expensive conversions with *_WINDOWS
+    #TODO? use 'convert_path -a' to work around CLI-unfriendly link types? eg. Junctions
     if is_windows "${__aws_bin}"; then
       cmd+=( 'env'
-          AWS_CONFIG_FILE=${AWS_CONFIG_FILE_WINDOWS:=`
-              convert_path -E -a -w "$AWS_CONFIG_FILE"`}
-          AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE_WINDOWS:=`
-              convert_path -E -a -w "$AWS_SHARED_CREDENTIALS_FILE"`}
+          AWS_CONFIG_FILE=${AWS_CONFIG_FILE_WINDOWS:-`cygpath -am "$AWS_CONFIG_FILE"`}
+          AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE_WINDOWS:-`
+              cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
         )
     fi
   else
@@ -157,7 +155,7 @@ function __AWS() {
               ?(AWS_SHARED)CRED*?(_FILE))
                         file=${AWS_SHARED_CREDENTIALS_FILE:-${__aws_defaults['credentials']}}
             esac
-            is_file -v "${file:?}" && ${sop:-$1} "$file"
+            is_file "${file:?}" && ${sop:-$1} "$file"
             return
             ;;
 
@@ -175,7 +173,7 @@ function __AWS() {
               load-creds)
                         ;;
               get|set|list?(-profiles))
-                        ;&
+                        ;;
               *)        __AWS_NOPIPE=1
             esac
             set -- configure "${@:2}"
@@ -217,7 +215,7 @@ function __AWS() {
 
   #WARN! ugly-ass hack to strip DOS line-endings, but not when
   #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
-  if string.contains -w "$*" 'ssm start-session'  || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
+  if string.contains -w "$*" 'ssm start-session' || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
 
 #  elif string.contains --extended-regexp "$*" 'sts (assume-role|get-session-token)'
@@ -337,8 +335,9 @@ function aws.describe() {
       s)    sort_keys=1 ;;
       t)    filter+=( "$OPTARG" ) ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+      :)    log.error "missing argument (-$OPTARG)" ;;&
+     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then break; fi # long_opts+=( "-$OPTARG" ); continue;
+            log.error "unsupported option (-${OPTARG})" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
@@ -577,7 +576,7 @@ function aws.get() {
 function aws.format_tags() {
   local -Ar __printf=(
       ['kv']=     # $key=$value
-      ['jKV']=    # compose JSON via eg. jq --null-input --arg K "$k" --arg V "$v" '{ "Key": $k, "Value": $v}'
+      ['jKV']=    # compose JSON via jq --null-input --arg K "$k" --arg V "$v" '{ "Key": $k, "Value": $v}'
       ['KkVv']='Key=%s,Value=%s'
       ['jKkVv']=
     )
@@ -590,8 +589,9 @@ function aws.format_tags() {
       k)    keyword=$OPTARG; break ;;
       S)    use_stdin=1 ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   [ "$OPTARG" = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+      :)    log.error "missing argument (-$OPTARG)" ;;&
+     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then break; fi # long_opts+=( "-$OPTARG" ); continue;
+            log.error "unsupported option (-${OPTARG})" ;&
       h|*)  >&2 cat << EOF
 echo "Usage: $FUNCNAME ... TODO"
 EOF
@@ -729,8 +729,9 @@ function asg.set-capacity() {
       M)    max=$OPTARG ;;
       m)    min=$OPTARG ;;
 
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   [ $OPTARG = '-' ] && { ((OPTIND++)); break; } || log.error "unsupported (-${OPTARG})" ;&
+      :)    log.error "missing argument (-$OPTARG)" ;;&
+     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then break; fi # long_opts+=( "-$OPTARG" ); continue;
+            log.error "unsupported option (-${OPTARG})" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac
@@ -769,7 +770,8 @@ function aws.list() {
       S)    sort=1          ;;
 
       :)    log.error "missing argument (-$OPTARG)"; return ;;
-      \?)   [ $OPTARG = '-' ] && break || log.error "unsupported (-${OPTARG})" ;&
+     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then break; fi # long_opts+=( "-$OPTARG" ); continue;
+            log.error "unsupported option (-${OPTARG})" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2
     esac

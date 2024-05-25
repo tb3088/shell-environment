@@ -1,23 +1,61 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
-
-# prevent multiple-inclusion
-__link=`readlink -f "$BASH_SOURCE"`
-declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
-[ ${__tag:-0} = 0 ] || return 0
-__tag=1
 #------------------
 
 
 function is_wsl() { uname -r | grep -q WSL; }
-
+declare -F is_windows &>/dev/null ||
+function is_windows() { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; }
 #TODO is_linux, or is_os that can emit solaris, windows, cygwin, etc
 
 
-#FIXME work-in-progress
+function os.tree() {
+  local filter= type= reverse= flags=()
+  local -a cmd=( \find )    #alt: \ls -R -1 --quoting-style=shell
+
+  local -i OPTIND
+  local opt OPTARG
+  while getopts ':hdlL:P:x' opt 2>/dev/null; do
+    case "$opt" in
+      d)    flags+=( '-type' d ) ;;
+      l)    cmd+=( '-L' ) ;;
+      L)    flags+=( '-maxdepth' "$OPTARG" ) ;;
+      P)    flags+=( '-name' "$OPTARG" ) ;;
+      x)    flags+=( '-xdev' ) ;;
+
+      :)    log.error "missing argument (-$OPTARG)" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;&
+      h|*)  >&2 cat <<_EOF
+Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
+
+  -d            list Directories only
+  -l            follow symbolic links
+  -L <level>    maximum traverse depth
+  -P <pattern>  must escape any wildcards
+  -x            stay on current filesystem
+
+ref: http://mama.indstate.edu/users/ice/tree/tree.1.html
+_EOF
+            return 2
+            ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  while read item; do
+    out=$( sed -e 's/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|- \1/' <<< "$item" )
+    #TODO handle filenames with spaces
+    [ -h "$item" ] && out+=" -> $( readlink -f "$item" )"
+    echo "$out"
+  done < <( ${DEBUG:+ runv} "${cmd[@]}" -H ${1:-.} ${flags[@]} )
+  echo
+}
+
+#WIP
 return 0
 
-#is_exec rpm apt || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
+
+#is_exec -q rpm apt || { >&2 echo -e "ERROR\tmissing required commands"; return 2; }
 
 function detect_os() {
   #TODO leverage facter2, chef equiv, and distro if available
@@ -180,48 +218,6 @@ os.detect
 #    # leave ARCH as-is
 #    ;;
 #esac
-
-function os.tree() {
-  local filter= type= reverse= flags=()
-  local -a cmd=( \find )    #alt: \ls -R -1 --quoting-style=shell
-
-  local -i OPTIND
-  local opt OPTARG
-  while getopts ':hdlL:P:x' opt 2>/dev/null; do
-    case "$opt" in
-      d)    flags+=( '-type' d ) ;;
-      l)    cmd+=( '-L' ) ;;
-      L)    flags+=( '-maxdepth' "$OPTARG" ) ;;
-      P)    flags+=( '-name' "$OPTARG" ) ;;
-      x)    flags+=( '-xdev' ) ;;
-
-      :)    log.error "missing argument (-$OPTARG)"; return 2 ;;
-      \?)   log.error "unsupported (-$OPTARG)" ;&
-      h|*)  >&2 cat <<_EOF
-Usage: $FUNCNAME [ options ] <dir> [<dir> ...]
-
-  -d            list Directories only
-  -l            follow symbolic links
-  -L <level>    maximum traverse depth
-  -P <pattern>  must escape any wildcards
-  -x            stay on current filesystem
-
-ref: http://mama.indstate.edu/users/ice/tree/tree.1.html
-_EOF
-            return 2
-            ;;
-    esac
-  done
-  shift $((OPTIND - 1))
-
-  while read item; do
-    out=$( echo "$item" | sed -e 's/[^-][^\/]*\// |/g' -e 's/|\([^ ]\)/|- \1/' )
-    #TODO handle filenames with spaces
-    [ -h "$item" ] && out+=" -> "`$READLINK -ve "$item"`
-    echo "$out"
-  done < <( ${DEBUG:+ runv} "${cmd[@]}" -H ${1:-.} ${flags[@]} )
-  echo
-}
 
 
 function os.file.replace() {
