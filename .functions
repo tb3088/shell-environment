@@ -945,7 +945,8 @@ EOF
   # sanity check
   : ${1:?array varname}
 
-  if [ ${with_keys:-0} -eq 1 ] && is_hash $1; then
+  if [ ${with_keys:-0} -eq 1 ]; then
+    is_hash $1 || return
     local kv; [ ${to_upper:-0} -eq 1 ] && local -u kv
 
     while read key; do
