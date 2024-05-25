@@ -29,7 +29,7 @@ case $- in
         done
 
         eval "$( dircolors -b - < <( cat .dir{,_}colors{,.local} 2>/dev/null ) )" || true
-:        : ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
+        : ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
         : ${PAGER:='less -RF'}
         export EDITOR PAGER
 
