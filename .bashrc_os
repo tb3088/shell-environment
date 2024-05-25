@@ -21,10 +21,9 @@ for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
-is_exec -q tree{,.com} || { declare -F os.tree && alias tree='os.tree'; }
+is_exec -q tree{,.com} || { is_function os.tree && alias tree='os.tree'; }
 
 #TODO activate .functions_os first
-#is_exec -q tree{,.com} || { is_function os.tree && alias tree='os.tree'; }
 #declare -F os.file.replace && alias replace_file='os.file.replace'
 #os.detect
 

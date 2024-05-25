@@ -919,20 +919,19 @@ function value()  { values "$@" | head -n 1; }
 
 
 function array.print() {
-  local format
+  local format func
   local -i with_keys= to_upper= to_json=
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':hjkK' opt; do
+  while getopts ':hjkKV' opt; do
     case "$opt" in
-      K)    to_upper=1 ;&
+      K|V)  to_upper=1 ;&
       j|k)  with_keys=1; declare -A format ;;&
       k|K)  format=( ['key']='%s\t' ['value']='%q ' ) ;;  #alt: key='%s\n' value='\t%s\n'
       j)    to_json=1; format=( ['key']='%s\n' ['value']='%s,' ) ;;
 
       # set variable, consumed with eval. just 1st element if array?
-      V)    format['key']='%s=%q\n' ;;      #FIXME
-            return 2
+      V)    format=( ['key']='%s=' ['value']='%q' ); func=value ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
      \?)    log.error "unsupported option (-$OPTARG)" ;&
@@ -954,7 +953,7 @@ EOF
       kv=$key
 
       printf "${format['key']}" "$kv"
-      printf "${format['value']}" `values $1 "$key"`
+      printf "${format['value']}" `${func:-values} $1 "$key"`
       echo
     done < <( keys "$1" ) |
         if [ ${to_json:-0} -eq 1 ]; then
@@ -965,7 +964,7 @@ EOF
       printf "${format['value']}" `values $1 "$2"` |
           __JQ -R '[(split(",")-[ "" ])[] | tonumber? // .]'
     else
-      printf "${format:-%s\n}" `values $1 "$2"`
+      printf "${format:-%s\n}" `${func:-values} $1 "$2"`
     fi
   fi
 }
