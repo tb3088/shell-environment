@@ -289,7 +289,7 @@ function whereis_function() (
 
 
 function list_functions() (
-  local _format='%-25s\t%-50s #%d\n'
+  local format='%-25s\t%-50s #%d\n'
 
   if [ $# -eq 0 ]; then
     shopt -s extdebug; declare -F `compgen -A function`
@@ -305,7 +305,7 @@ function list_functions() (
 _EOF
       shift
     done
-  fi | awk -v fmt="$_format" '{ printf fmt, $1, $3, $2; }'
+  fi | awk -v fmt="$format" '{ printf fmt, $1, $3, $2; }'
 )
 
 
@@ -904,35 +904,33 @@ function max() { min -r "$@"; }
 #TODO bash 4.2.46 doesn't support 'nref', use 'eval ${$1}'
 #  bash 4.4 has "${!nref[@]@Q}" but that puts single-quotes around each element
 #
-
-#
-#if [[ "$BASH_VERSION" =~ 5|4.4 ]]; then
+if [[ "$BASH_VERSION" =~ 5|4.4 ]]; then
 #NOTE values NOT quoted for whitespace, using LF to compensate
-function keys()   { local -n nref=${1:?array var_name}; local IFS=$'\n'; echo "${!nref[*]}"; }
+function keys()   { local -n nref=${1:?array varname}; local IFS=$'\n'; echo "${!nref[*]}"; }
 #NOTE using '%q' adds quotes when empty which breaks [ -n "`value ...`" ]
-function values() { local -n nref=${1:?array var_name}; if [ -n "$2" ]; then printf '%s\n' ${nref[$2]}; else local IFS=$'\n'; echo "${nref[*]}"; fi; }
+function values() { local -n nref=${1:?array varname}
+  if [ -n "$2" ]; then printf '%s\n' ${nref[$2]}
+  else local IFS=$'\n'; echo "${nref[*]}"; fi
+}
+
+fi
 function value()  { values "$@" | head -n 1; }
-#fi
+
 
 function array.print() {
   local format
-  local -i with_keys= to_upper= quote=
-  local -A __format=( ['key']='%s\t' ['value']='%q ' )
+  local -i with_keys= to_upper= to_json=
 
   local -i OPTIND; local opt OPTARG
-  while getopts 'hf:JkKQv' opt; do
+  while getopts ':hjkK' opt; do
     case "$opt" in
-      f)    format=$OPTARG ;;
-#      J)    with_keys=1
-#            __format['key']='"%s":'
-#            ;;
       K)	to_upper=1 ;&
-      k)    with_keys=1 ;;
-            #alt: key='%s\n' value='\t%s\n'
-      # escape white-space
-#      Q)    quote=1 ;;
+      j|k)  with_keys=1; declare -A format ;;&
+      k|K)  format=( ['key']='%s\t' ['value']='%q ' ) ;;  #alt: key='%s\n' value='\t%s\n'
+      j)    to_json=1; format=( ['key']='%s\n' ['value']='%s,' ) ;;
+
       # set variable, consumed with eval
-      V)	__format['key']='%s=%q\n' ;;
+#TODO      V)	format['key']='%s=%q\n' ;; just 1st element if array?
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
      \?)    log.error "unsupported option (-$OPTARG)" ;&
@@ -943,22 +941,30 @@ EOF
     esac
   done
   shift $((OPTIND - 1))
+  # sanity check
+  : ${1:?array varname}
 
-  : ${1:?array var_name}
-
-  if [ ${with_keys:-0} -eq 1 ] && is_hash "$1"; then
-    [ ${to_upper:-0} -eq 1 ] && local -u kv || local kv
+  if [ ${with_keys:-0} -eq 1 ] && is_hash $1; then
+    local kv; [ ${to_upper:-0} -eq 1 ] && local -u kv
 
     while read key; do
       if [ -n "$2" ]; then [ "$2" = "$key" ] || continue; fi
-
       kv=$key
-      printf "${format:-${__format['key']}}" "$kv"
-      printf "${format:-${__format['value']}}" `values "$1" "$key"`
+
+      printf "${format['key']}" "$kv"
+      printf "${format['value']}" `values $1 "$key"`
       echo
-    done < <( keys "$1" )
+    done < <( keys "$1" ) |
+        if [ ${to_json:-0} -eq 1 ]; then
+          __JQ -Rn 'reduce inputs as $i ({}; . + {($i): [(input | split(",")-[ "" ])[] | tonumber? // .]})'
+        else cat; fi
   else
-    [ -n "$format" ] && printf "$format" `values "$1" "$2"` || values "$1" "$2"
+    if [ ${to_json:-0} -eq 1 ]; then
+      printf "${format['value']}" `values $1 "$2"` |
+          __JQ -R '[(split(",")-[ "" ])[] | tonumber? // .]'
+    else
+      printf "${format:-%s\n}" `values $1 "$2"`
+    fi
   fi
 }
 
