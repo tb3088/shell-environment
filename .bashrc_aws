@@ -602,6 +602,47 @@ function aws.rmPath() { aws.addPath -D "$@"; }
 
 
 #TODO model after 18f, probes for region, VPC, and instance when invoked with '-P' or '--prompt'
+#
+# -d for 'direct', -s for 'ssm session', -c for ec2-instance-connect
+# with 'connect' you can temporarily (60 seconds) push an SSH key to the host if IAM authorized
+#ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/permissions-for-ec2-instance-connect-endpoint.html
+#ssh -i my-key-pair.pem ec2-user@i-0123456789example \
+#    -o ProxyCommand='aws ec2-instance-connect open-tunnel --instance-id i-0123456789example'
+# or aws ec2-instance-connect open-tunnel --instance-id i-01234  --local-port 8888
+# and then use '-p 8888' for successive traditional SSH client connections
+#ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-with-ec2-instance-connect-endpoint.html
+#
+# but does 'instance-connect' really provide useful differentiation over ssm w/ tunnel??
+# though an IAM condition set to separate out certain instances for focused access (users) vs sysadmin carte blanc?
+#ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-connect-configure-IAM-role.html
+#TODO scrape host ssh signature. https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-to-linux-instance.html
+#ssh-keyscan host | ssh-keygen -lf - [-E md5]	but obviously this requires L3 connectivity!
+#instead have bootstrap post signatures in instance metadata or possibly SSM parameter store.
+#http://169.254.169.254/latest/dynamic/instance-identity/document
+#
+# "accountId" : "067213379591",
+# "architecture" : "x86_64",
+# "availabilityZone" : "us-gov-west-1a",
+# "billingProducts" : null,
+# "devpayProductCodes" : null,
+# "marketplaceProductCodes" : null,
+# "imageId" : "ami-027a29f0c8393dad2",
+# "instanceId" : "i-0fd4dd72aaa97987e",
+# "instanceType" : "t3a.small",
+# "kernelId" : null,
+# "pendingTime" : "2024-05-27T04:00:14Z",
+# "privateIp" : "192.168.80.4",
+# "ramdiskId" : null,
+# "region" : "us-gov-west-1",
+# "version" : "2017-09-30"
+#cat /etc/ssh/ssh_host_*.pub | ssh-keygen -lf -		#add to TAGs during cloud-init.
+#  256 SHA256:V4HbEmLIlLdWefCVM4iSRjVaxVh3D78pSQxx9F9vG20 no comment (ECDSA)
+#  256 SHA256:wuMAAQSMbf67S+F9uq2pTEPVF734+151PzanpZ7fkJI no comment (ED25519)
+#  2048 SHA256:EgY9IyP1hMGyvz1ej7AEz5pFmim7RJL0KqKwq+9fEQ0 no comment (RSA)
+#
+# write an SSM document and invoke against the nodes, possibly invoked by a cron lambda to 'find' new hosts.
+#https://docs.aws.amazon.com/systems-manager/latest/userguide/walkthrough-cli.html
+
 function ec2.connect() {
   local -a cmd=( ssm start-session )
 
