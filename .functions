@@ -933,7 +933,7 @@ EOF
 
   local -n nref=${1:?varname}
   if [ "${FUNCNAME[1]}" = keys ]; then
-    keys='!nref'; LOG_LEVEL=WARN is_hash ${!nref}
+    keys='!nref'; LOG_LEVEL=WARN is_hash "${!nref}"
     set --      # remove args to force '*'
   fi
 
@@ -944,16 +944,16 @@ EOF
     # fake 'keys' to use pipe
     ?(to_)@(upper|lower)) : ${keys=''} ;;&
 
-    #NOTE using '%q' adds quotes when empty which breaks [ -n "`value ...`" ]
+    #NOTE adds quotes when empty which breaks [ -n "`value ...`" ]
     \@[kQ]) local IFS= ;;&
     # keys & format can not be combined
     *)      [ -z "$keys" ] || {
                 log.error "unsupported format ($format) ${keys+with keys}"
-                return 2
-              }
+                return 2; }
   esac
 
-  # using printf() since IFS ignored when $2
+  local printf='%s\n'   #NOTE '%q' emits '' when empty which breaks [ -n "`values ..." ]
+  # use printf() since IFS ignored when $2
   if [ "${keys+X}${format+Y}" = "XY" ]; then
     eval printf '%s\\n' "\${${keys:-nref}[${2:-*}]}" | $format
   else
@@ -970,19 +970,19 @@ function value() { values "$@" | head -n 1; }
 
 
 function array.print() {
-  local format
+  local printf
+  local -i to_json= with_keys=
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':hjkKV' opt; do
+  while getopts ':hjkPV' opt; do
     case "$opt" in
-      K|V)  local kvop='-u' ;&
-      j|k)  local with_keys=1; local -A format=() ;;&
-      k|K)  format=( ['key']='%s\t' ['value']='%q ' ) ;;  #alt: key='%s\n' value='\t%s\n'
-      j)    local to_json=1; format=( ['key']='%s\n' ['value']='%s,' ) ;;
+      *)    with_keys=1; local -A printf=() ;;&
+      k)    printf=( ['key']='%s\n' ['value']='%q ' ) ;;
+      P)    printf=( ['key']='%s\t' ['value']='%q ' ) ;;  #alt: key='%s\n' value='\t%s\n'
+      j)    printf=( ['key']='%s\n' ['value']='%s,' ); to_json=1 ;;
 
       # consume with eval
-#TODO look at ${var[*]@k} format
-      V)    format=( ['key']='%s=' ['value']='%q' )
+      V)    printf=( ['key']='%s=' ['value']='%q' ['keyf']='^^' )
             local one=''
             ;;
 
@@ -995,33 +995,32 @@ EOF
     esac
   done
   shift $((OPTIND - 1))
-  # sanity check
-  : ${1:?varname}
 
-  if [ ${with_keys:-0} -eq 1 ] && LOG_LEVEL=WARN is_hash $1; then
-#FIXME can be trivially re-written as  IFS=$'\n'; echo "${<hash_nref>[*]@k}";
+  local vref=${1:?varname} kval=$2
+  shift 2
+
+#TODO? leverage formatting as defined in values()
 #https://www.gnu.org/savannah-checkouts/gnu/bash/manual/html_node/Shell-Parameter-Expansion.html
 
-    local ${kvop} kv
+  if [ ${with_keys:-0} -eq 1 ] && LOG_LEVEL=WARN is_hash "$vref"; then
     while read key; do
       # simple filter on 'key'
-      if [ -n "$2" ]; then [ "$key" = "$2" ] || continue; fi
-      kv=$key
+      [ -n "$kval" ] && { [ "$key" = "$kval" ] || continue; }
 
-      printf "${format['key']}" "$kv"
-      printf "${format['value']}" `value${one-s} $1 "$key"`
+      eval printf "${printf['key']@Q}" "\${key${printf['keyf']}}"
+      printf "${printf['value']}" $( value${one-s} ${printf['valuef']:+'-f' "${printf['valuef']}"} "$vref" "$key" )
       echo
     done < <( keys "$@" ) |
         if [ ${to_json:-0} -eq 1 ]; then
           __JQ -Rn 'reduce inputs as $i ({}; . + {($i): (input | fromjson? // split(",") - [""] | [ .[] | tonumber? // . ])})'
         else cat; fi
   else
-    if [ ${to_json:-0} -eq 1 ]; then
-      printf "${format['value']}" `values "$@"` |
+    [ ${to_json:-0} -eq 1 ] || {        # single path bandaid
+        [ ${with_keys:-0} -eq 1 ] && unset 'printf[value]'; }
+    printf "${printf['value']:-%s\n}" $( values ${printf['valuef']:+'-f' "${printf['valuef']}"} "$vref" ) |
+        if [ ${to_json:-0} -eq 1 ]; then
           __JQ -R 'split(",") - [""] | [ .[] | tonumber? // . ]'
-    else
-      printf "${format:-%s\n}" `values "$@"`
-    fi
+        else cat; fi
   fi
 }
 
