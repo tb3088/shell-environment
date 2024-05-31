@@ -688,14 +688,15 @@ function join_string() { log.warn "DEPRECATED! use 'string.join()'"; string.join
 
 function join_quote() { log.warn "DEPRECATED! use 'string.join()'"; QUOTE=\' string.join "$@"; }
 
-function to_upper() { (( $# )) && { local IFS=$'\n'; echo "${*^^}"; } || tr '[:lower:]' '[:upper:]'; }
+# using 'echo' requires IFS='\n'. TODO
+function to_upper() { if (( $# )); then local IFS=$'\n'; echo "${*^^}"; else tr '[:lower:]' '[:upper:]'; fi }
 
-function to_lower() { (( $# )) && { local IFS=$'\n'; echo "${*,,}"; } || tr '[:upper:]' '[:lower:]'; }
+function to_lower() { if (( $# )); then local IFS=$'\n'; echo "${*,,}"; else tr '[:upper:]' '[:lower:]'; fi }
 
 
 function bool_to_int() {
 # Usage: [-u] <value|VAR_NAME> ...
-  local -i to_bool=0 unset=0
+  local -i to_bool unset
 
   local -i OPTIND; local opt OPTARG
   while getopts ':r' opt; do
@@ -714,8 +715,8 @@ _EOF
   shift $((OPTIND - 1))
 
   case "${1,,}" in
-    0|false) [ ${to_bool} -eq 1 ] && echo 'false' || echo 0; false ;;
-    1|true)  [ ${to_bool} -eq 1 ] && echo 'true'  || echo 1; true ;;
+    0|false) if [ ${to_bool:-0} -eq 1 ]; then echo 'false'; else echo 0; false; fi ;;
+    1|true)  if [ ${to_bool:-0} -eq 1 ]; then echo 'true'; else echo 1; true; fi ;;
 
 #      # assign truthiness to named variable, if false optionally unset it
 #      [a-z]*)   if [[ "$BASH_VERSION" =~ 5|4.[3-9] ]]; then
@@ -725,7 +726,7 @@ _EOF
 #                  local v=${1^^}
 #                  $FUNCNAME ${!v}
 #                fi
-#               [ ${unset} -eq 1 ] && unset $1
+#               [ ${unset:-0} -eq 1 ] && unset $1
     *)  return 2
   esac
 }
@@ -906,32 +907,84 @@ function max() { min -r "$@"; }
 #  bash 4.4 has "${!nref[@]@Q}" but that puts single-quotes around each element
 #
 if [[ "$BASH_VERSION" =~ 5|4.4 ]]; then
-  #TODO? warn type mismatch
+#----
+function keys() { values "$@"; }
 
-  #NOTE values NOT quoted for whitespace, using LF to compensate
-  function keys()   { local -n nref=${1:?array varname}; local IFS=$'\n'; echo "${!nref[*]}"; }
+function values() {
+  local format keys
 
-  #NOTE using '%q' adds quotes when empty which breaks [ -n "`value ...`" ]
-  function values() { local -n nref=${1:?array varname}; local IFS=$'\n'; eval echo "\${nref[${2:-*}]}"; }
+  local -i OPTIND; local opt OPTARG
+  while getopts ':hf:lqu' opt; do
+    case "$opt" in
+      f)    format=${OPTARG} ;;
+      l)    format='@L' ;;
+      q)    format='@Q' ;;
+      u)    format='@U' ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;&
+      h|*)  >&2 cat << EOF
+Usage: $FUNCNAME ...
+EOF
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  local -n nref=${1:?varname}
+  if [ "${FUNCNAME[1]}" = keys ]; then
+    keys='!nref'; LOG_LEVEL=WARN is_hash ${!nref}
+    set --      # remove args to force '*'
+  fi
+
+  case "$format" in
+    '')     : ;;
+    \@L|,,) [ -n "${keys+X}" ] && format=to_lower ;;&
+    \@U|^^) [ -n "${keys+X}" ] && format=to_upper ;;&
+    # fake 'keys' to use pipe
+    ?(to_)@(upper|lower)) : ${keys=''} ;;&
+
+    #NOTE using '%q' adds quotes when empty which breaks [ -n "`value ...`" ]
+    \@[kQ]) local IFS= ;;&
+    # keys & format can not be combined
+    *)      [ -z "$keys" ] || {
+                log.error "unsupported format ($format) ${keys+with keys}"
+                return 2
+              }
+  esac
+
+  # using printf() since IFS ignored when $2
+  if [ "${keys+X}${format+Y}" = "XY" ]; then
+    eval printf '%s\\n' "\${${keys:-nref}[${2:-*}]}" | $format
+  else
+    eval printf '%s\\n' "\${${keys:-nref}[${2:-*}]${format}}"
+  fi
+}
+#----
+#else
+# non-nref method
 fi
 
+#WARN complex formatting (eg. @[kQ]) have unintended side-effects
 function value() { values "$@" | head -n 1; }
 
 
 function array.print() {
   local format
-  local -i with_keys= to_upper= to_json=
 
   local -i OPTIND; local opt OPTARG
   while getopts ':hjkKV' opt; do
     case "$opt" in
-      K|V)  to_upper=1 ;&
-      j|k)  with_keys=1; declare -A format ;;&
+      K|V)  local kvop='-u' ;&
+      j|k)  local with_keys=1; local -A format=() ;;&
       k|K)  format=( ['key']='%s\t' ['value']='%q ' ) ;;  #alt: key='%s\n' value='\t%s\n'
-      j)    to_json=1; format=( ['key']='%s\n' ['value']='%s,' ) ;;
+      j)    local to_json=1; format=( ['key']='%s\n' ['value']='%s,' ) ;;
 
       # consume with eval
-      V)    format=( ['key']='%s=' ['value']='%q' ); local func=value ;;
+#TODO look at ${var[*]@k} format
+      V)    format=( ['key']='%s=' ['value']='%q' )
+            local one=''
+            ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
      \?)    log.error "unsupported option (-$OPTARG)" ;&
@@ -943,29 +996,31 @@ EOF
   done
   shift $((OPTIND - 1))
   # sanity check
-  : ${1:?array varname}
+  : ${1:?varname}
 
-  if [ ${with_keys:-0} -eq 1 ]; then
-    is_hash $1 || return
-    local kv; [ ${to_upper:-0} -eq 1 ] && local -u kv
+  if [ ${with_keys:-0} -eq 1 ] && LOG_LEVEL=WARN is_hash $1; then
+#FIXME can be trivially re-written as  IFS=$'\n'; echo "${<hash_nref>[*]@k}";
+#https://www.gnu.org/savannah-checkouts/gnu/bash/manual/html_node/Shell-Parameter-Expansion.html
 
+    local ${kvop} kv
     while read key; do
-      if [ -n "$2" ]; then [ "$2" = "$key" ] || continue; fi
+      # simple filter on 'key'
+      if [ -n "$2" ]; then [ "$key" = "$2" ] || continue; fi
       kv=$key
 
       printf "${format['key']}" "$kv"
-      printf "${format['value']}" `${func:-values} $1 "$key"`
+      printf "${format['value']}" `value${one-s} $1 "$key"`
       echo
-    done < <( keys "$1" ) |
+    done < <( keys "$@" ) |
         if [ ${to_json:-0} -eq 1 ]; then
-          __JQ -Rn 'reduce inputs as $i ({}; . + {($i): input | (split(",") - [""]) | [ .[] | tonumber? // . ]})'
+          __JQ -Rn 'reduce inputs as $i ({}; . + {($i): (input | fromjson? // split(",") - [""] | [ .[] | tonumber? // . ])})'
         else cat; fi
   else
     if [ ${to_json:-0} -eq 1 ]; then
-      printf "${format['value']}" `values $1 "$2"` |
-          __JQ -R '(split(",") - [""]) | [ .[] | tonumber? // . ]'
+      printf "${format['value']}" `values "$@"` |
+          __JQ -R 'split(",") - [""] | [ .[] | tonumber? // . ]'
     else
-      printf "${format:-%s\n}" `${func:-values} $1 "$2"`
+      printf "${format:-%s\n}" `values "$@"`
     fi
   fi
 }
