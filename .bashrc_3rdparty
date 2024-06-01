@@ -11,59 +11,63 @@
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty mvn java ...
 
-
+# lazy evaluation
 declare -A __3rdparty_map=(
-    ['aws']=${AWSCLI:-'aws{cli,}{v,}'$AWS_VERSION}
+    ['aws']='${AWSCLI:-"aws{cli,}{v$AWS_VERSION,}"}'
     ['mvn']=apache-maven
-    ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'$JAVA_VERSION}
-    ['puppet']=${PUPPET_BASE:-puppetlabs}
-    ['go']=${GOROOT:-'go{,lang}{-,}'$GO_VERSION}
-    ['ruby']=${RUBY_BASE:-'ruby{-,}'$RUBY_VERSION}
+    ['java']='${JAVA_HOME:-"j{re,dk,se}{-,}"$JAVA_VERSION}'
+    ['puppet']='${PUPPET_BASE:-puppetlabs}'
+    ['go']='${GOROOT:-"go{,lang}{-,}"$GO_VERSION}'
+    ['ruby']='${RUBY_BASE:-"ruby{-,}"$RUBY_VERSION}'
   )
 
+
 function add_program() {
-  is_exec -q "${1:?}" && return
+  local pkg=${1:?package}
+  is_exec -q "$pkg" && return
 
-  local m=${__3rdparty_map[$1]}
-  [ -n "$m" ] || { log.error "unsupported software package ($1)"; return; }
+  local m=`eval "echo ${__3rdparty_map[$pkg]}"`
+  [ -n "$m" ] || { log.error "unsupported software package ($pkg)"; return; }
 
-  if [ "${m:0:1}" = '/' ]; then
-    for p in "$m"/{bin,}; do
-      [ -x "$p/$1" ] && { addPath "$p"; break; }
-    done
-    return
-  fi
+  local -i found=0
+  for q in "$m"/{bin/,}$pkg; do
+    [ -x "$q" ] && { addPath "${q%/*}"; found=1; break; }
+  done
+  [ ${found:-0} -eq 1 ] && return
 
   #TODO https://unix.stackexchange.com/questions/406216/check-for-bash-options
   local pbin
   pbin=$(
-      shopt -u failglob
-      shopt -s globstar
-
       # process embedded glob patterns
-      for v in `eval echo "$m"`; do
-        # WARN '/**/' can be VERY slow
-        for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}/${v}*/**/{bin,}; do
-          [ -x "$p/$1" ] && { echo "$p"; break 2; }
+      shopt -u failglob
+      shopt -s globstar nullglob
+
+      # WARN '/**/' can be VERY slow
+      for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}; do
+        for v in `eval "echo $m"`; do
+          for q in "$p"/$v*/{bin/,}$pkg; do
+            [ -x "$q" ] && { echo "${q%/*}"; found=1; break 3; }
+          done
         done
       done
-    )
+      [ ${found:-0} -eq 1 ]
+    ) || { log.error "software package not found ($pkg)"; return; }
 
-  [ -n "$pbin" ] && addPath "$pbin" || log.notice "software package not found ($1)"
+  if [ -n "$pbin" ]; then addPath "$pbin"; fi
 }
 
+# multiple arguments supported, but not recommend
+while (( $# )); do
+  [ -n "$1" ] || { shift; continue; }
+
+  add_program "$1"
+  shift
+done
 
 j=`readlink -e "$BASH_SOURCE"`
 k=${BASH_SOURCE#*.bashrc_}
 [ "${j#*.bashrc_}" = "$k" ] || add_program "$k"
 unset j k
-
-# multiple arguments supported, but not recommend
-while (( $# )); do
-  [ -n "$1" ] || { shift; continue; }
-  add_program "$1"
-  shift
-done
 
 return 0
 
