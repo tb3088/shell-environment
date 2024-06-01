@@ -412,13 +412,12 @@ EOF
   while (( $# )); do
     [ -n "$1" ] || { log.warn "empty argument"; echo; shift; continue; }
 
-    # unescape whitespace to not double-escape
-    local p="${1//\\ / }"
-
+    # '-a' expand+unroll symlinks ONLY if relative
+    is_windows && p=$( cygpath -a "${long_opts[@]}" -- "$1" )
     [ $abs -eq 1 ] && p=`readlink -m "$p"`
 
-    # '-a' expand+unroll symlinks ONLY if relative
-    is_windows && p=`cygpath -a "${long_opts[@]}" -- "$p"`
+    # unescape whitespace to not double-escape
+    local p="${p//\\ / }"
 
 #TODO? leverage string.quote
     if [ $escape -eq 1 ]; then printf '%q\n' "$p"; else echo "${quote}$p${quote}"; fi
@@ -530,7 +529,6 @@ function addPath() {
 #      [dvq]) dqv+=( "-$OPTARG" )
 
       :)    log.error "missing argument (-$OPTARG)" ;;&
-            # short-hand prepend notation on absolute path
      \?)    log.error "unsupported option (-$OPTARG)" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME -k VAR path...
@@ -540,40 +538,36 @@ _EOF
   done
   shift $((OPTIND - 1))
 
-  (( $# )) || return
-  local delim flags=()
+  if (( $# )); then :
+  elif [ ${use_stdin:-0} -eq 1 ]; then set -- $( < /dev/stdin )
+  else return 2
+  fi
 
+  local delim flags=()
   case "${k:-$1}" in
     ''|?(-|.)*/*) k=PATH ;&
-            # '-a' to forcibly unroll symlinks so only single match
+            # '-a' to forcibly unroll symlinks for comparison accuracy
     PATH)   delim=':'; flags+=( '-E' '-p' '-a' ) ;;
 
 #TODO GOPATH, RUBYPATH etc. use PATHSEP
   esac
   : ${delim:=${PATHSEP:-':'}}
-
   local -n kval=${k:?VAR_name}
-  local -ir __prepend=${prepend:-0} #save
 
+  local -ir __prepend=${prepend:-0} #save
   while read item; do
     [ -n "$item" ] || { shift; continue; }
     prepend=$__prepend              #restore
 
-    # leading '-' means prepend
-    [ "${item:0:1}" = '-' ] && prepend=1
-    v=`convert_path "${flags[@]}" "${item#-}"`
-    is_dir "$v" || { shift; continue; }
+    is_dir "$item" || continue
 
 #TODO set IFS=$delim instead or use explicit arg
-    if ! string.contains -D "$delim" "$kval" "$v"; then
-      if [ $prepend -eq 1 ]; then kval="$v${delim}${kval}"; else kval+="${delim}$v"; fi
-      log.debug "add element to $k ($v)"
+    if ! string.contains -D "$delim" "$kval" "$item"; then
+      if [ $prepend -eq 1 ]; then kval="$item${delim}${kval}"; else kval+="${delim}$item"; fi
+      log.debug "add element to $k ($item)"
     fi
     shift
-  done < <(
-      (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
-      IFS=$'\n'; echo "$*"
-    )
+  done < <( convert_path "${flags[@]}" "$@" )
 
   # remove leading, trailing and any leftover repeated delimiter
   kval=${kval##$delim}; kval=${kval%%$delim}
