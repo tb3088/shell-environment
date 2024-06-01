@@ -527,12 +527,11 @@ function addPath() {
       k)    k=$OPTARG ;;
       P)    prepend=1 ;;
       S)    use_stdin=1 ;;
+#      [dvq]) dqv+=( "-$OPTARG" )
 
       :)    log.error "missing argument (-$OPTARG)" ;;&
             # short-hand prepend notation on absolute path
-     \?)    if [ "${OPTARG:0:1}" = '/' ]; then break; fi
-#            elif [[ $OPTARG =~ d|q|v ]]; then dqv+=( "-$OPTARG" )
-            log.error "unsupported option (-$OPTARG)" ;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;&
       h|*)  >&2 cat <<_EOF
 Usage: $FUNCNAME -k VAR path...
 _EOF
@@ -544,13 +543,12 @@ _EOF
   (( $# )) || return
   local delim flags=()
 
-  case "${k:=$1}" in
-    # VAR unspecified, short-hand for prepend
-    ?(-|.)/*) k=PATH ;&
-    PATH)   delim=':'; flags+=( '-E' '-p' '-a' ) ;;
+  case "${k:-$1}" in
+    ''|?(-|.)*/*) k=PATH ;&
             # '-a' to forcibly unroll symlinks so only single match
+    PATH)   delim=':'; flags+=( '-E' '-p' '-a' ) ;;
 
-    #TODO GOPATH, RUBYPATH etc. use PATHSEP
+#TODO GOPATH, RUBYPATH etc. use PATHSEP
   esac
   : ${delim:=${PATHSEP:-':'}}
 
