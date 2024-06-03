@@ -55,11 +55,10 @@ function __prompt() {
   PS1=${PS_PREFIX}
   while read fn; do
     [ -n "$fn" ] || continue
+
     PS1+="$( $fn )"
-  done < <(
-      declare -F | awk '{ print $NF; }' | grep -E '^__prompt\.'
-      IFS=$'\n'; echo "${__prompts[*]}"
-    )
+  done < <( IFS=$'\n'; echo "${__prompts[*]}" )
+#alt:      declare -F | awk '{ print $NF; }' | grep -E '^__prompt\.'
 
   [ $EUID -eq 0 ] && PS1+="${BRED}"
   [ $RC -eq 0 ] && unset RC

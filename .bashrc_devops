@@ -76,6 +76,7 @@ function __prompt.git() {
   _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
   echo -ne "\n${UL}Git:${RS} ${HC}$_branch${_upstream:+...$_upstream}${RS} ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}${RS}}"
 }
+__prompts+=( __prompt.git )
 
 
 function git.current() { __GIT branch | awk '$1 == "*" { print $2; exit; }'; }
