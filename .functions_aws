@@ -216,7 +216,7 @@ function __AWS() {
   #WARN! ugly-ass hack to strip DOS line-endings, but not when
   #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
   if string.contains -w "$*" 'ssm start-session' || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
-    ${DEBUG:+ runv} "${cmd[@]}" "$@"
+    ${DEBUG:+runv} "${cmd[@]}" "$@"
 
 #  elif string.contains --extended-regexp "$*" 'sts (assume-role|get-session-token)'
 #    exec 3>&1

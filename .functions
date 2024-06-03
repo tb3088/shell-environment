@@ -615,7 +615,6 @@ function string.join() {
   [ -n "${ESCAPE+X}" ] && escape=$ESCAPE
 
   local flags=
-
   local -i OPTIND; local opt OPTARG
   while getopts ':d:e:lq:uz' opt; do
     case "$opt" in
@@ -654,7 +653,7 @@ _EOF
     local -a args=( "$@" )
 
     for i in "${!args[@]}"; do
-      [ -n "${args[$i]}" ] || unset args[$i]
+      [ -n "${args[$i]}" ] || unset 'args[i]'
     done
     set -- "${args[@]}"
   fi
