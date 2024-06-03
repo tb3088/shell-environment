@@ -567,8 +567,8 @@ EOF
     [ -n "$item" ] || { shift; continue; }
 
     if [ ${DELETE:-0} -eq 1 ]; then
-      [[ "$item" =~ .ssh/?$ ]] &&	#BUG! errors emit stdout, but ONLY for '-d'
-          ${DEBUG:+ runv} ssh-add -d ${VERBOSE:+'-v'} "${item%/}"/*.pub
+      [[ "$item" =~ .ssh/?$ ]] &&	#BUG! errors emit stdout when '-d'
+          ${DEBUG:+ runv} ssh-add -d ${VERBOSE:+'-v'} "${item%/}"/*.pub >/dev/null
       [[ "$item" =~ /bin/?$ ]] && rmPath "${item%/}"
     else
       #NOTE use 'IdentitiesOnly yes' in ssh_config, else AuthFailure from many attempts
@@ -577,10 +577,7 @@ EOF
 	  [[ "$item" =~ /bin/?$ ]] && addPath -P "${flags[@]}" "${item%/}"
     fi
   done < <(
-      if (( $# )); then
-        :
-#      elif [ ${use_stdin:-0} -eq 1 ]; then set -- $( < /dev/stdin )
-      else
+      if ! (( $# )); then
         local prefix=${AWS_CONFIG_FILE%/*} token=
         : ${prefix:=${__aws_defaults['config']%/*}}
 
@@ -667,15 +664,14 @@ function ec2.connect() {
             grep -qE 'localhost|127\.[0-9]+' - -- <<< "$rhost" && unset rhost
             [ ${rport:?} -gt 0 ] || { log.error "invalid remote port ($rport)"; return 2; }
 
-            cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost}
-                   '--parameters' `string.join -zd ',' "portNumber=$rport"
-                       "${lport:+localPortNumber=$lport}" "${rhost:+host=$rhost}"`
-              )
+            cmd+=( '--document-name' AWS-StartPortForwardingSession${rhost:+SessionToRemoteHost} )
+            local params=`string.join -zd ',' "portNumber=$rport" \
+                "${lport:+localPortNumber=$lport}" \
+                "${rhost:+host=$rhost}"`
+            [ -n "$params" ] && cmd+=( '--parameters' "$params" )
             ;;
-
-     \-)    long_opts+=( "--${OPTARG}" )
-            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
-            ;;
+      -)    long_opts+=( "--${OPTARG}" )
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})" ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
      \?)    log.error "unsupported (-$OPTARG)" ;&
@@ -686,6 +682,7 @@ EOF
     esac
   done
   shift $((OPTIND - 1))
+
 #TODO? check if 
   __AWS "${cmd[@]}" --target ${1:?InstanceId} "${long_opts[@]}" "${@:2}"
 }
