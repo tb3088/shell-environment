@@ -107,7 +107,8 @@ declare -Ar __aws_availability_zones=(
 
 
 function __AWS() {
-  local OUTPUT __AWS_NOPIPE
+  local AWS_OUTPUT AWS_NOPIPE
+  local -i __is_windows=`is_windows "${__aws_bin}" && echo 1`
   local -a cmd=()
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
@@ -116,16 +117,14 @@ function __AWS() {
     #BUG! CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
     : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
 
-    # path prefix mismatch?
     if [ "${AWS_CONFIG_FILE%/*}" != "${AWS_SHARED_CREDENTIALS_FILE%/*}" ]; then
-      log.warn "path prefix mismatch" \
+      log.warn "prefix mismatch" \
           "AWS_CONFIG_FILE: $AWS_CONFIG_FILE" \
           "AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE"
     fi
 
-    #HACK reduce expensive conversions with *_WINDOWS
-    #TODO? use 'convert_path -a' to work around CLI-unfriendly link types? eg. Junctions
-    if is_windows "${__aws_bin}"; then
+    #HACK reduce expensive conversions with *_WINDOWS, but freshness?
+    if [ ${__is_windows:-0} -eq 1 ]; then
       cmd+=( 'env'
           AWS_CONFIG_FILE=${AWS_CONFIG_FILE_WINDOWS:-`cygpath -am "$AWS_CONFIG_FILE"`}
           AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE_WINDOWS:-`
@@ -166,21 +165,21 @@ function __AWS() {
     # format='text' appears hard-coded; explicit '--output' ineffectual
     config?(ure))
             case "$2" in
-              delete-profile)
+              delete-profile)       #TODO
                         ;;
-              delete-creds)
+              delete-creds)         #TODO
                         ;;
-              load-creds)
+              load-creds)           #TODO
                         ;;
               get|set|list?(-profiles))
                         ;;
-              *)        __AWS_NOPIPE=1
+              *)        AWS_NOPIPE=1
             esac
             set -- configure "${@:2}"
             ;;
 
     #WARN format='text' is hazardous & unpredictable in programatic invocation
-    *)      string.contains -w "$*" '--output' || cmd+=( '--output' ${OUTPUT:-json} )
+    *)      string.contains -- "$*" '--output' || cmd+=( '--output' ${AWS_OUTPUT:-json} )
             cmd+=(
                 '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
                 '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
@@ -203,7 +202,7 @@ function __AWS() {
 
   if is_ec2 && [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ]; then
     # bailout EC2
-    string.contains -w "$*" '--region' || {
+    string.contains -- "$*" '--region' || {
         local region=$( ec2.metadata region || "${cmd[@]}" configure get region )
         [ -n "$region" ] || {
             region=${__aws_defaults['region']}
@@ -215,22 +214,22 @@ function __AWS() {
 
   #WARN! ugly-ass hack to strip DOS line-endings, but not when
   #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
-  if string.contains -w "$*" 'ssm start-session' || [ ${__AWS_NOPIPE:-0} -eq 1 ]; then
+  if string.contains -- "$*" 'ssm start-session' || [ ${AWS_NOPIPE:-0} -eq 1 ]; then
     ${DEBUG:+runv} "${cmd[@]}" "$@"
 
-#  elif string.contains --extended-regexp "$*" 'sts (assume-role|get-session-token)'
+#  elif string.contains -o grep --extended-regexp -- "$*" 'sts (assume-role|get-session-token)'
 #    exec 3>&1
 #was >&3 3>&- | tr -d '\r'
 #    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
 #    exec 3>&-
   else
     # crude search for 'file://' arguments
-    if is_windows "${__aws_bin}"; then
+    if [ ${__is_windows:-0} -eq 1 ]; then
       local -a args=()
       while (( $# )); do
-        [[ "$1" =~ ^file:// ]] && {
-            args+=( 'file://'$( convert_path -E -a -w "${1#file://}" ) )
-          } || args+=( "$1" )
+        if [[ "$1" =~ ^file:// ]] || is_file "$1"; then
+          args+=( "file://`cygpath -am "${1#file://}"`" )
+        else args+=( "$1" ); fi
         shift
       done
       set -- "${args[@]}"
@@ -480,7 +479,7 @@ function aws.describe() {
   if [ -n "$query" ]; then
     cmd+=( '--query' "${query[@]}" )
     unset field
-  elif string.contains -w "$*" '--query'; then
+  elif string.contains -- "$*" '--query'; then
     unset field
   fi
 
