@@ -413,7 +413,7 @@ EOF
     [ -n "$1" ] || { log.warn "empty argument"; echo; shift; continue; }
 
     # '-a' expand+unroll symlinks ONLY if relative
-    is_windows && p=$( cygpath -a "${long_opts[@]}" -- "$1" )
+    is_windows && p=`cygpath "${long_opts[@]}" -- "$1"`
     [ $abs -eq 1 ] && p=`readlink -m "$p"`
 
     # unescape whitespace to not double-escape
@@ -428,9 +428,9 @@ EOF
 #function convert_path=os.filepath.print
 
 
-#FIXME basically no different than string.contains with word match
+#TODO has_value(s), has_key(s)
 function array.is_member() (
-#Usage: <array|hash> value(s) ...
+#Usage: <array|hash> value(s)
   set -e
 
   if is_nref "${1:?array}"; then
@@ -445,69 +445,88 @@ function array.is_member() (
   fi
 )
 
-#TODO handle Hash/Array,
-#FIXME leverage IFS="$delim" read <<< "$1"
-# note IFS only considers a single char, you can't have compound IFS
-# see https://unix.stackexchange.com/questions/7904/can-ifs-internal-field-separator-function-as-a-single-seperator-for-multiple-c
-# for a neat trick. but if say delim='::' you can't just collapse into a single-char unless
-# you can correctly guess something not in the data stream (eg. high-order non-printing char?)
-# otherwise have to feed it to AWK/SED for magic
 
 function string.contains() {
-#Usage: <source> <pattern>...
-#  example: (IFS=:; grep --quiet --word-regexp -e "string" <<< "one:string:two"; )
-
   local DELIM delim op flags=()
   [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
-  local -a long_opts=()
+
+  local -i skip_blank=0 use_stdin=0 reverse_arg=0 exact=0
+#  local -a long_opts=()
+#FIXME rename flags to grep_opts, and use assoc array of flags([use_stdin]=0 etc
 
   local -i OPTIND; local OPTARG opt
-  while getopts ':hD:o:' opt; do
+  while getopts ':hD:o:RSxz' opt; do
     case "$opt" in
       D)    delim=$OPTARG ;;
       o)    op=$OPTARG ;;
+      S)    use_stdin=1 ;;
+      R)    reverse_arg=1 ;;
+      x)    exact=1 ;;
+      z)    skip_blank=1 ;;
 
       :)    log.error "missing argument (-$OPTARG)" ;;&
-      # assume unhandled flags are 'grep' options IFF solitary '--flag' or '--flag=value'
-      # unless OPTIND=N-1
+
+      #WARN getopts blindly consumes 1 char at a time, ignores word splitting
+      #  so will walk an argument string with embedded '-' instead of stopping
+      #
+      # assume unhandled flags are 'grep' options
      \?)    : ${op=grep}
-#detect flag type and OPTARG='-'
-            flags+=( "-$OPTARG" )
-            ;;
+            #FIXME test OPTIND for longopt
+            #[[ "${!OPTIND}" =~ ^--[a-z] ]] with '='?
+			flags+=( "-$OPTARG" ) ;;
+
       h|*)  >&2 cat <<_EOF
-Usage: $FUNCNAME [ options ] <str> [<str> ...]
-  -D        xxx
-  -o        yyy
+Usage: $FUNCNAME [ options ] <object> [ substring ... ]
+  -D        delimiter char(s)
+  -o        method of comparison: grep, pe (parameter expansion), regex (bash)
+  -S        use STDIN for input string(s)
+  -z        ignore empty strings, else will ERROR
+  -R        reverse argument order; <substring> [ object ... ]
 ...
 _EOF
     esac
   done
   shift $((OPTIND - 1))
 
-  [ $# -ge 2 ] || { log.error "insufficient arguments ($#)" "$@"; return 2; }
+  local object=${1:?object_str}; shift
+  (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
+  (( $# )) || return 2
+#TODO handle nref, also an EXACT match option mostly for addPath()
 
-  local source sub
-  if [ ${#delim} -eq 1 ]; then
-    local IFS=$delim; source=$1
-  else source="${delim}$1${delim}"; fi
-  shift
-
-  while (( $# )); do
-    # empty string is pointless but 'true'
-    [ -n "$1" ] || { shift; continue; }
-#FIXME why if IFS set?
-    [ ${#delim} -eq 1 ] && sub=${1:?pattern} || sub="${delim}${1:?pattern}${delim}"
-
+  function __compare() {
     case "$op" in
-      grep) grep "${flags[@]}" -e "$sub" - -- <<< "$source" ;;
-      pe)   [ "${source#*$sub}" != "$source" ] ;;
-      regex)[[ "$source" =~ $sub ]] ;;
-      *)    [[ "$source" == *$sub* ]]
-            #alt: [ -z "${sub##*${source}*}" ] && is_matched
-    esac || return
-    shift
-  done
+      pe)   [ "${2#*$1}" != "$2" ] ;;
+      regex) [[ "$2" =~ $1 ]] ;;
+      exact) [[ "$2" == "$1" ]] ;;
+      *)    [[ "$2" == *"$1"* ]]
+    esac
+  }
+
+  [ ${reverse_arg:-0} -eq 1 ] && local _save=$object
+  while read sub; do
+    # empty string is 'false' but can be ignored
+    if [ -z "$sub" ]; then
+      [ ${skip_blank:-0} -eq 1 ] && { shift; continue; } || return
+    fi
+
+    [ ${reverse_arg:-0} -eq 1 ] && { object=$sub; sub=$_save; }
+
+    if [ "$op" == 'grep' ]; then
+      [ -n "$delim" ] && sub=${delim}\?${sub}${delim}\?
+      grep --quiet "${flags[@]}" ${delim:+'--extended-regexp'} "$sub" - -- <<< "$object"
+    elif [ -n "$delim" ]; then
+#      for _sub in {$delim,}"${sub}"{$delim,}; do __compare "$_sub" "$object" && break; done
+      local _IFS=$delim
+      [ ${#delim} -eq 1 ] || _IFS=§     #(ALT+0167)
+      IFS=$_IFS read -r -a tokens <<< "${object//$delim/$_IFS}"
+#FIXME why not a while loop just like outer? also need to preserve state for no_match condition.
+      for tk in "${tokens[@]}"; do __compare "$sub" "$tk" && break; done
+    else __compare "$sub" "$object"
+    fi || return
+  done < <( IFS=$'\n'; echo "$*" )
 }
+
+#TODO define is_substring() to call above
 
 
 function addPath() {
@@ -538,10 +557,8 @@ _EOF
   done
   shift $((OPTIND - 1))
 
-  if (( $# )); then :
-  elif [ ${use_stdin:-0} -eq 1 ]; then set -- $( < /dev/stdin )
-  else return 2
-  fi
+  (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
+  (( $# )) || return 2
 
   local delim flags=()
   case "${k:-$1}" in
@@ -554,16 +571,18 @@ _EOF
   : ${delim:=${PATHSEP:-':'}}
   local -n kval=${k:?VAR_name}
 
-  local -ir __prepend=${prepend:-0} #save
+#FIXME detect if new path already has ^/cygpath and don't invoke cygpath()
+
+  local -ir __prepend=${prepend:-0}	    #save
   while read item; do
     [ -n "$item" ] || { shift; continue; }
-    prepend=$__prepend              #restore
+    prepend=$__prepend                  #restore
 
     is_dir "$item" || continue
 
 #TODO set IFS=$delim instead or use explicit arg
     if ! string.contains -D "$delim" "$kval" "$item"; then
-      if [ $prepend -eq 1 ]; then kval="$item${delim}${kval}"; else kval+="${delim}$item"; fi
+      [ $prepend -eq 1 ] && kval="${item}${delim}${kval}" || kval+="${delim}${item}"
       log.debug "add element to $k ($item)"
     fi
     shift
@@ -1020,9 +1039,6 @@ function hash.print() { array.print -k "$@"; }
 #TODO define 'to_hash' 'to_array'
 #TODO array functions; push, pop, delete, replace, truncate
 #TODO array.append|.add|.insert, prune|delete, length, equal, is_empty, clear, dedup, index_of|key,
-
-#TODO
-#function is_member() { [ -n "${__aws_availability_zones[$region]}" ]; }
 
 
 function expand_dvq() {

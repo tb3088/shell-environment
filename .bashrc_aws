@@ -11,26 +11,31 @@ __tag=1
 ####  WARNING   WARNING   WARNING   ###
 # long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
 
-is_windows && AWSCLI=Amazon/AWSCLIV2
+if is_windows; then
+  AWSCLI=$PROGRAMFILES/Amazon/AWSCLIV2
+#  AWS_SM_PLUGIN=$PROGRAMFILES/Amazon/SessionManagerPlugin
+fi
 source ${BASH_SOURCE%_*}_3rdparty aws
-unset AWSCLI
-is_exec -q aws || return 0
+is_exec -q aws || return
+
+# SSM Session-Manager
+# ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+#
+# Windows CLI detects location from registry, else put on PATH
+[ -n "$AWS_SM_PLUGIN" ] && { "$AWS_SM_PLUGIN"/bin/session-manager-plugin; }
+
+#TODO just use 'aws shell' instead
+link=`is_exec -v aws_completer` && complete -C "$( printf '%q' "$link" )" aws
+unset link
+
+QUIET=1 addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
+
 
 #ref: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
-QUIET=1 addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
-
-# SSM Session-Manager
-# ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
-#
-# Windows CLI detects location from registry, else put on PATH
-
-# just use 'aws shell' instead
-link=`is_exec -v aws_completer` && complete -C "$( printf '%q' "$link" )" aws
-unset link
 
 # session credentials expire in 4h
 export AWS_SESSION_DURATION=$((3600 * 4))
