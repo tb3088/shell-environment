@@ -11,29 +11,27 @@
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty mvn java ...
 
-# lazy evaluation
-declare -A __3rdparty_map=(
-    ['aws']='${AWSCLI:-"aws{cli,}{v$AWS_VERSION,}"}'
-    ['mvn']=apache-maven
-    ['java']='${JAVA_HOME:-"j{re,dk,se}{-,}"$JAVA_VERSION}'
-    ['puppet']='${PUPPET_BASE:-puppetlabs}'
-    ['go']='${GOROOT:-"go{,lang}{-,}"$GO_VERSION}'
-    ['ruby']='${RUBY_BASE:-"ruby{-,}"$RUBY_VERSION}'
-  )
+function 3rdparty.add_program() {
+  local pkg=${1:?package name}
+  [ -x "$pkg" ] && return
 
+  # search spec
+  declare -A software_map=(
+      ['aws']=${AWSCLI:-aws'{cli,}{v,}'$AWS_VERSION}
+      ['session-manager-plugin']=\${AWS_SM_PLUGIN:?}
+      ['mvn']=apache-maven
+      ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'$JAVA_VERSION}
+      ['puppet']=${PUPPET_BASE:-puppetlabs}
+      ['go']=${GOROOT:-'go{,lang}{-,}'$GO_VERSION}
+      ['ruby']=${RUBY_BASE:-'ruby{-,}'$RUBY_VERSION}
+    )
 
-function add_program() {
-  local pkg=${1:?package}
-  is_exec -q "$pkg" && return
+  local exp
+  exp=${software_map[$pkg]} 2>/dev/null || {
+      log.error "unsupported software package ($pkg)"; return; }
 
-  local m=`eval "echo ${__3rdparty_map[$pkg]}"`
-  [ -n "$m" ] || { log.error "unsupported software package ($pkg)"; return; }
-
-  local -i found=0
-  for q in "$m"/{bin/,}$pkg; do
-    [ -x "$q" ] && { addPath "${q%/*}"; found=1; break; }
-  done
-  [ ${found:-0} -eq 1 ] && return
+  if [[ "$exp" =~ {*} ]]; then exp=( `convert_path -E $(eval echo "$exp")` )
+  else exp=`convert_path -E "$exp"`; fi
 
   #TODO https://unix.stackexchange.com/questions/406216/check-for-bash-options
   local pbin
@@ -43,30 +41,36 @@ function add_program() {
       shopt -s globstar nullglob
 
       # WARN '/**/' can be VERY slow
-      for p in {/opt,/usr/local,"$PROGRAMFILES","$LOCALAPPDATA"}; do
-        for v in `eval "echo $m"`; do
-          for q in "$p"/$v*/{bin/,}$pkg; do
-            [ -x "$q" ] && { echo "${q%/*}"; found=1; break 3; }
+      while read tld; do
+        for mid in "${exp[@]}"; do
+          for exe in "${tld:+$tld/}${mid#$tld}"*/{bin/,}$pkg; do
+            [ -x "$exe" ] && { echo "$exe"; return; }   #found=1; break 3; }
           done
         done
-      done
-      [ ${found:-0} -eq 1 ]
-    ) || { log.error "software package not found ($pkg)"; return; }
+      done < <(
+          printf '%s\n' '' /opt /usr/local
+          for i in "${USERPROFILE:-$HOME}" "$LOCALAPPDATA" "$PROGRAMFILES"; do
+            [ -n "$i" ] || continue
+            convert_path "$i"
+          done
+        )
+    )
 
-  if [ -n "$pbin" ]; then addPath "$pbin"; fi
+  if [ -n "$pbin" ]; then addPath "${pbin%/*}"
+  else log.warn "software package not found ($pkg)"; fi
 }
 
 # multiple arguments supported, but not recommend
 while (( $# )); do
   [ -n "$1" ] || { shift; continue; }
 
-  add_program "$1"
+  3rdparty.add_program "$1"
   shift
 done
 
 j=`readlink -e "$BASH_SOURCE"`
 k=${BASH_SOURCE#*.bashrc_}
-[ "${j#*.bashrc_}" = "$k" ] || add_program "$k"
+[ "${j#*.bashrc_}" = "$k" ] || 3rdparty.add_program "$k"
 unset j k
 
 return 0
