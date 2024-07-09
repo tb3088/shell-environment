@@ -5,6 +5,7 @@
 .berkshelf
 .bundle
 .cache
+.cdk
 .chef
 .dbvis/
 .dbus*
@@ -21,7 +22,6 @@ go
 .minttyrc
 .motd_shown
 .m2
-.npm/
 .packer.d
 .pex/
 .pgpass
@@ -36,6 +36,7 @@ RCS/
 .terraformrc
 .vscode/
 .viminfo
+.vimtags
 .vim/.netrwhist
 .wget-hsts
 .Xauthority*
@@ -110,3 +111,10 @@ MicrosoftEdgeBackups
 # MacOS-specific
 .DS_Store/
 .Trash/
+
+# NPM garbage
+.npm
+package.json
+package-lock.json
+node_modules
+.node_repl_history
