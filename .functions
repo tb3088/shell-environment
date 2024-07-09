@@ -473,9 +473,10 @@ function string.contains() {
      \?)    : ${op=grep}
             #FIXME test OPTIND for longopt
             #[[ "${!OPTIND}" =~ ^--[a-z] ]] with '='?
-			flags+=( "-$OPTARG" ) ;;
+            flags+=( "-$OPTARG" )
+            ;;
 
-      h|*)  >&2 cat <<_EOF
+      h|*)  >&2 cat << _EOF
 Usage: $FUNCNAME [ options ] <object> [ substring ... ]
   -D        delimiter char(s)
   -o        method of comparison: grep, pe (parameter expansion), regex (bash)
