@@ -1,5 +1,5 @@
 " docker on Windows and also when in screen
-"nnoremap <C-Z> <nop>
+nnoremap <C-Z> <Nop>
 
 " system-wide VIMRC can interfere
 filetype off
@@ -57,6 +57,10 @@ set colorcolumn=-3
 set cursorlineopt=number
 set cursorline
 
+" EasyTags https://peterodding.com/code/vim/easytags/
+"let g:easytags_cmd = '/usr/local/bin/ctags'
+"let g:easytags_file = '~/.vim/tags'
+
 " Syntastic
 set statusline+=%#warningmsg#
 set statusline+=%{SyntasticStatuslineFlag()}
@@ -74,7 +78,25 @@ set guioptions=egmrLt
 set noerrorbells visualbell t_vb=
 autocmd GUIEnter * set visualbell t_vb=
 
-"ref: https://vim.fandom.com/wiki/Mapping_keys_in_Vim_-_Tutorial_(Part_1)
-" use F5 to grep for word under cursor in CWD
-nnoremap <F5> :grep <C-R><C-W> *<CR>
+"ref:	https://vim.fandom.com/wiki/Mapping_keys_in_Vim_-_Tutorial_(Part_2)
+"	https://vim.fandom.com/wiki/Browsing_programs_with_tags
+" my .screenrc uses Ctrl-O as command prefix, Alt-L/R to switch buffers, and F1-F4 for direct
+nnoremap <F1> <Nop>
+nnoremap <F2> <Nop>
+nnoremap <F3> <Nop>
+nnoremap <F4> <Nop>
+" redefine 'next' and 'previous' match
+noremap <C-Up> <C-O>
+noremap <C-Down> <C-I>
+
+"ref: https://shapeshed.com/vim-netrw/
+" use F5 to list files in current file's directory
+nnoremap <silent> <F5> :lchdir %:p:h<CR>:Vexplore<CR>
+let g:netrw_banner = 0
+let g:netrw_winsize = 25
+let g:netrw_liststyle = 3
+"let g:netrw_browse_split = 1
+" switch all splits to Horizontal/Vertical
+nnoremap <F9> :windo wincmd K<CR>
+nnoremap <F10> :windo wincmd H<CR>
 

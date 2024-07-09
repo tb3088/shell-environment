@@ -68,10 +68,6 @@ bindkey -k k1 select 1  # F1
 bindkey -k k2 select 2
 bindkey -k k3 select 3
 bindkey -k k4 select 4
-bindkey -k k5 select 5
-bindkey -k k6 select 6
-bindkey -k k7 select 7
-bindkey -k k8 select 8  # F8
 
 # use ctrl-Oh or F11 instead of Ctrl-a for command mode
 escape ^Oo
