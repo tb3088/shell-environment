@@ -58,7 +58,7 @@ set cursorlineopt=number
 set cursorline
 set splitright
 " recurse upward for tags, stop at $HOME. 'ctags [--language-force=<type>] [-f <tagfile>] <files ...>'
-set tags+=tags;$HOME
+"set tags=./tags;$HOME
 
 " EasyTags https://peterodding.com/code/vim/easytags/
 "let g:easytags_cmd = '/usr/local/bin/ctags'
