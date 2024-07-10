@@ -504,26 +504,31 @@ _EOF
   }
 
   [ ${reverse_arg:-0} -eq 1 ] && local _save=$object
+
   while read sub; do
     # empty string is 'false' but can be ignored
     if [ -z "$sub" ]; then
-      [ ${skip_blank:-0} -eq 1 ] && { shift; continue; } || return
+      [ ${skip_blank:-0} -eq 1 ] && continue || return
     fi
 
     [ ${reverse_arg:-0} -eq 1 ] && { object=$sub; sub=$_save; }
 
     if [ "$op" == 'grep' ]; then
-      [ -n "$delim" ] && sub=${delim}\?${sub}${delim}\?
+      [ -n "$delim" ] && sub="${delim}\?${sub}${delim}\?"
       grep --quiet "${flags[@]}" ${delim:+'--extended-regexp'} "$sub" - -- <<< "$object"
+
     elif [ -n "$delim" ]; then
-#      for _sub in {$delim,}"${sub}"{$delim,}; do __compare "$_sub" "$object" && break; done
       local _IFS=$delim
-      [ ${#delim} -eq 1 ] || _IFS=ยง     #(ALT+0167)
+      [ ${#delim} -eq 1 ] || _IFS='ง'   #(shell: Alt+0167, vi: C-v+167)
       IFS=$_IFS read -r -a tokens <<< "${object//$delim/$_IFS}"
-#FIXME why not a while loop just like outer? also need to preserve state for no_match condition.
-      for tk in "${tokens[@]}"; do __compare "$sub" "$tk" && break; done
-    else __compare "$sub" "$object"
-    fi || return
+
+      local -i found=0
+      for tok in "${tokens[@]}"; do
+        __compare "$sub" "$tok" && { found=1; break; }
+      done
+      [ ${found:-0} -eq 1 ]
+
+    else __compare "$sub" "$object"; fi || return
   done < <( IFS=$'\n'; echo "$*" )
 }
 
@@ -565,7 +570,7 @@ _EOF
   case "${k:-$1}" in
     ''|?(-|.)*/*) k=PATH ;&
             # '-a' to forcibly unroll symlinks for comparison accuracy
-    PATH)   delim=':'; flags+=( '-E' '-p' '-a' ) ;;
+    PATH)   delim=':'; flags+=( '-Epa' ) ;;
 
 #TODO GOPATH, RUBYPATH etc. use PATHSEP
   esac
