@@ -3,7 +3,11 @@
 #------------------
 
 ####  WARNING   WARNING   WARNING  ####
-# long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' shell pattern
+# long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
+#
+# should NEVER happen unless non-traditional invocation
+: ${HOME:=`cygpath -a "${USERPROFILE:-.}"`}
+: ${HOME:=/}
 
 shopt -s extglob
 
@@ -21,13 +25,13 @@ __aws_api=$( "$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[
 is_exec jq || { log.error "missing required command (jq)"; return 1; }
 is_exec yq || log.warn "missing important command (yq)"
 
-# safety fall-back when neither AWS_[DEFAULT_]REGION
-[ -n "${HOME}${USERPROFILE}" ] || HOME=/
+
 declare -Ar __aws_defaults=(
+    # safety fall-back when neither AWS_[DEFAULT_]REGION or ec2.metadata
     ['region']='us-east-1'
-    ['config']="${HOME:-`cygpath "$USERPROFILE"`}/.aws/config"
-    ['credentials']="${HOME:-`cygpath "$USERPROFILE"`}/.aws/credentials"
-    ['cache_dir']="${HOME:-`cygpath "$USERPROFILE"`}/.aws/cli/cache"
+    ['config']='$HOME/.aws/config'
+    ['credentials']='$HOME/.aws/credentials'
+    ['cache_dir']='$HOME/.aws/cli/cache'
     ['readTimeout']=30
     ['connectTimeout']=7
   )
@@ -112,27 +116,27 @@ function __AWS() {
   local -a cmd=()
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
-    #FIXME? don't care if specified values are invalid
     is_file "$AWS_CONFIG_FILE" || return
-    #BUG! CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
+    #NOTE! CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
     : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
 
+    #FIXME use readlink to make honest compare
     if [ "${AWS_CONFIG_FILE%/*}" != "${AWS_SHARED_CREDENTIALS_FILE%/*}" ]; then
-      log.warn "prefix mismatch" \
+      log.warn "prefix mismatch; resetting CREDENTIALS_FILE ..." \
           "AWS_CONFIG_FILE: $AWS_CONFIG_FILE" \
           "AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE"
+      AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
     fi
 
-    #HACK reduce expensive conversions with *_WINDOWS, but freshness?
     if [ ${__is_windows:-0} -eq 1 ]; then
+      local CONFIG_WINDOWS CREDENTIALS_WINDOWS
       cmd+=( 'env'
-          AWS_CONFIG_FILE=${AWS_CONFIG_FILE_WINDOWS:-`cygpath -am "$AWS_CONFIG_FILE"`}
-          AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE_WINDOWS:-`
-              cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
+          AWS_CONFIG_FILE=${CONFIG_WINDOWS:=`cygpath -am "$AWS_CONFIG_FILE"`}
+          AWS_SHARED_CREDENTIALS_FILE=${CREDENTIALS_WINDOWS:=`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
         )
     fi
   else
-    unset AWS_{CONFIG,SHARED_CREDENTIALS}_FILE{,_WINDOWS}
+    unset AWS_{CONFIG,SHARED_CREDENTIALS}_FILE
   fi
 
   cmd+=( "$__aws_bin" )
@@ -149,10 +153,10 @@ function __AWS() {
             local file=${2:-AWS_CONFIG_FILE}
             case "${file^^}" in
               ?(AWS_)CONFIG?(_FILE))
-                        file=${AWS_CONFIG_FILE:-${__aws_defaults['config']}}
+                        eval file=${AWS_CONFIG_FILE:-${__aws_defaults['config']}}
                         ;;
               ?(AWS_SHARED)CRED*?(_FILE))
-                        file=${AWS_SHARED_CREDENTIALS_FILE:-${__aws_defaults['credentials']}}
+                        eval file=${AWS_SHARED_CREDENTIALS_FILE:-${__aws_defaults['credentials']}}
             esac
             is_file "${file:?}" && ${sop:-$1} "$file"
             return
@@ -204,10 +208,10 @@ function __AWS() {
     # bailout EC2
     string.contains -- "$*" '--region' || {
         local region=$( ec2.metadata region || "${cmd[@]}" configure get region )
-        [ -n "$region" ] || {
-            region=${__aws_defaults['region']}
-            log.warn "forcing 'region' to hard-coded default (${__aws_defaults['region']})"
-          }
+        if [ -z "$region" ]; then
+          region=${__aws_defaults['region']}
+          log.warn "forcing AWS_REGION to hard-coded default ($region)"
+        fi
         cmd+=( '--region' "${region:?}" )
       }
   fi
@@ -223,16 +227,16 @@ function __AWS() {
 #    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
 #    exec 3>&-
   else
-    # crude search for 'file://' arguments
+    local -a rewrite_args=()
     if [ ${__is_windows:-0} -eq 1 ]; then
-      local -a args=()
+      # cook filenames; incorrect syntax will NOT be fixed
       while (( $# )); do
-        if [[ "$1" =~ ^file:// ]] || is_file -q "$1"; then
-          args+=( "file://`cygpath -am "${1#file://}"`" )
-        else args+=( "$1" ); fi
+        if [[ "$1" =~ ^file:// ]]; then
+          rewrite_args+=( "file://`cygpath -am "${1#file://}"`" )
+        else rewrite_args+=( "$1" ); fi
         shift
       done
-      set -- "${args[@]}"
+      set -- "${rewrite_args[@]}"
     fi
 
     [ ${DEBUG:-0} -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )

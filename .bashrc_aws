@@ -94,10 +94,13 @@ EOF
 
   : ${region=${1-'prompt'}}
 
-  # 'blank' argument or match current, short-circuits further processing
-  # except AWS_*REGION can't be left blank since it's non-intuitive
-  [ -z "$region" -a -n "$AWS_DEFAULT_REGION" ] && return
-  [ "$region" = "${AWS_DEFAULT_REGION:-_null_}" ] && return
+  # short-circuit on 'blank' argument or match current
+  # except AWS_*REGION can't be left blank since it's non-obvious
+  if [ -z "$region" ]; then
+    [ -n "$AWS_DEFAULT_REGION" ] && return
+  else
+    [ "$region" = "$AWS_DEFAULT_REGION" ] && return
+  fi
 
   # force new value
   : ${region:=${_default:-`__AWS configure get region`}}
@@ -166,9 +169,12 @@ EOF
 
   : ${profile=${1-'prompt'}}
 
-  # 'blank' argument or match current, short-circuits further processing
-  [ -z "$profile" -a -n "$AWS_PROFILE" ] && { aws.region "$2"; return; }
-  [ "$profile" = "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  # short-circuit on 'blank' argument or match current
+  if [ -z "$profile" ]; then
+    [ -n "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  else
+    [ "$profile" = "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  fi
 
   if [ "${profile:-'prompt'}" = 'prompt' ]; then
     local -a list=( `__AWS configure list-profiles` )
