@@ -1,5 +1,5 @@
-" docker on Windows and also when in screen
-nnoremap <C-Z> <Nop>
+" docker on Windows, and also when in screen
+map <C-Z> <Nop>
 
 " system-wide VIMRC can interfere
 filetype off
@@ -37,7 +37,7 @@ au BufRead,BufNewFile *.py,*.pyw,*.tf set expandtab
 au BufRead,BufNewFile *.yml,*.yaml,*.json set expandtab shiftwidth=2
 " prevent insertion of '*' at the beginning of every line in a comment
 au BufRead,BufNewFile *.c,*.h set formatoptions-=c formatoptions-=o formatoptions-=r
-au BufNewFile,BufRead .bashrc*,.functions* set filetype=bash textwidth=85
+au BufNewFile,BufRead,BufEnter .bashrc*,.functions* set filetype=bash textwidth=85
 au BufNewFile,BufRead .bashrc*,.functions* match BadWhitespace /\s\+$/
 
 set modeline
@@ -56,6 +56,9 @@ set wrap linebreak
 set colorcolumn=-3
 set cursorlineopt=number
 set cursorline
+set splitright
+" recurse upward for tags, stop at $HOME. 'ctags [--language-force=<type>] [-f <tagfile>] <files ...>'
+set tags+=tags;$HOME
 
 " EasyTags https://peterodding.com/code/vim/easytags/
 "let g:easytags_cmd = '/usr/local/bin/ctags'
@@ -80,14 +83,17 @@ autocmd GUIEnter * set visualbell t_vb=
 
 "ref:	https://vim.fandom.com/wiki/Mapping_keys_in_Vim_-_Tutorial_(Part_2)
 "	https://vim.fandom.com/wiki/Browsing_programs_with_tags
-" my .screenrc uses Ctrl-O as command prefix, Alt-L/R to switch buffers, and F1-F4 for direct
-nnoremap <F1> <Nop>
-nnoremap <F2> <Nop>
-nnoremap <F3> <Nop>
-nnoremap <F4> <Nop>
+" my .screenrc uses Ctrl-O as command prefix, Alt-L/R to switch panels, and F1-F4 for direct access
+map <F1> <Nop>
+map <F2> <Nop>
+map <F3> <Nop>
+map <F4> <Nop>
 " redefine 'next' and 'previous' match
-noremap <C-Up> <C-O>
-noremap <C-Down> <C-I>
+nnoremap <C-Up> <C-O>
+nnoremap <C-Down> <C-I>
+
+"ref:	https://vim.fandom.com/wiki/Browsing_programs_with_tags
+" open definition in Horiz split: Ctrl-W,Ctrl-]
 
 "ref: https://shapeshed.com/vim-netrw/
 " use F5 to list files in current file's directory
