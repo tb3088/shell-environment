@@ -33,7 +33,7 @@ _EOF
   shift $((OPTIND - 1))
 
   # allows trailing directory like real 'ln' but $# >2 else dangling link
-  [ $# -ge 2 ] &&
+  [ $# -gt 2 ] &&
       if [ -n "$destdir" ]; then
 	    :
       elif [ -d "${!#}" ]; then

@@ -20,6 +20,7 @@ function 3rdparty.add_program() {
       ['aws']=${AWSCLI:-aws'{cli,}{v,}'$AWS_VERSION}
       ['session-manager-plugin']=\${AWS_SM_PLUGIN:?}
       ['mvn']=apache-maven
+      ['npm']=nodejs
       ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'$JAVA_VERSION}
       ['puppet']=${PUPPET_BASE:-puppetlabs}
       ['go']=${GOROOT:-'go{,lang}{-,}'$GO_VERSION}
