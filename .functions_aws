@@ -227,7 +227,7 @@ function __AWS() {
     if [ ${__is_windows:-0} -eq 1 ]; then
       local -a args=()
       while (( $# )); do
-        if [[ "$1" =~ ^file:// ]] || is_file "$1"; then
+        if [[ "$1" =~ ^file:// ]] || is_file -q "$1"; then
           args+=( "file://`cygpath -am "${1#file://}"`" )
         else args+=( "$1" ); fi
         shift
