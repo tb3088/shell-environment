@@ -569,11 +569,13 @@ _EOF
   local delim flags=()
   case "${k:-$1}" in
     ''|?(-|.)*/*) k=PATH ;&
-            # '-a' to forcibly unroll symlinks for comparison accuracy
+
+    # '-a' unroll symlinks for accurate comparison
     PATH)   delim=':'; flags+=( '-Epa' ) ;;
 
 #TODO GOPATH, RUBYPATH etc. use PATHSEP
   esac
+
   : ${delim:=${PATHSEP:-':'}}
   local -n kval=${k:?VAR_name}
 
