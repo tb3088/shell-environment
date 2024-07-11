@@ -8,6 +8,7 @@ execute pathogen#infect()
 
 set nocompatible | filetype plugin indent on | syntax enable
 
+
 " if $COLORSCHEME != ""
 "   let base16colorspace=256
 "   exec 'colorscheme '.$COLORSCHEME
@@ -28,17 +29,24 @@ highlight ColorColumn ctermbg=DarkGray
 " Use the highlight group to expose unwanted/bad whitespace
 highlight BadWhitespace ctermbg=red guibg=red
 
-" Display tabs at the beginning of a line in Python mode as bad.
-au BufRead,BufNewFile *.py,*.pyw match BadWhitespace /^\t\+/
-" Make trailing whitespace be flagged as bad.
-au BufRead,BufNewFile *.py,*.pyw,*.c,*.h,*.yml,*.yaml,*.json,*.pp match BadWhitespace /\s\+$/
 
-au BufRead,BufNewFile *.py,*.pyw,*.tf set expandtab
-au BufRead,BufNewFile *.yml,*.yaml,*.json set expandtab shiftwidth=2
+" prevent multi-inclusion
+autocmd!
+
+" Display tabs at the beginning of a line in Python mode as bad.
+au BufRead,BufNewFile *.py,*.pyw		match BadWhitespace /^\t\+/
+
+au BufRead,BufNewFile *.py,*.pyw,*.tf		set expandtab
+au BufRead,BufNewFile *.yml,*.yaml,*.json	set expandtab shiftwidth=2
+
 " prevent insertion of '*' at the beginning of every line in a comment
-au BufRead,BufNewFile *.c,*.h set formatoptions-=c formatoptions-=o formatoptions-=r
-au BufNewFile,BufRead,BufEnter .bashrc*,.functions* set filetype=bash textwidth=85
-au BufNewFile,BufRead .bashrc*,.functions* match BadWhitespace /\s\+$/
+au BufRead,BufNewFile *.c,*.h	set formatoptions-=c formatoptions-=o formatoptions-=r
+
+au BufNewFile,BufRead ~/.bashrc*,~/.functions*	set filetype=sh textwidth=85 | syntax on
+
+" Make trailing whitespace be flagged as bad.
+au BufRead,BufNewFile *		match BadWhitespace /\s\+$/
+
 
 set modeline
 set noim
@@ -57,6 +65,7 @@ set colorcolumn=-3
 set cursorlineopt=number
 set cursorline
 set splitright
+
 " recurse upward for tags, stop at $HOME. 'ctags [--language-force=<type>] [-f <tagfile>] <files ...>'
 "set tags=./tags;$HOME
 
@@ -68,9 +77,10 @@ set splitright
 set statusline+=%#warningmsg#
 set statusline+=%{SyntasticStatuslineFlag()}
 set statusline+=%*
+let g:syntastic_mode = "passive"
 let g:syntastic_always_populate_loc_list = 1
 let g:syntastic_auto_loc_list = 1
-let g:syntastic_check_on_open = 1
+let g:syntastic_check_on_open = 0
 let g:syntastic_check_on_wq = 0
 
 " only on windows gVim
@@ -88,6 +98,12 @@ map <F1> <Nop>
 map <F2> <Nop>
 map <F3> <Nop>
 map <F4> <Nop>
+" use F5 to list files in current file's directory
+nmap <silent> <F5> :lchdir %:p:h<CR>:Vexplore<CR>
+nmap <silent> <F8> :TagbarToggle<CR>
+" switch all splits to Horizontal <-> Vertical
+nmap <F9> :windo wincmd K<CR>
+nmap <F10> :windo wincmd H<CR>
 " redefine 'next' and 'previous' match
 nnoremap <C-Up> <C-O>
 nnoremap <C-Down> <C-I>
@@ -96,13 +112,8 @@ nnoremap <C-Down> <C-I>
 " open definition in Horiz split: Ctrl-W,Ctrl-]
 
 "ref: https://shapeshed.com/vim-netrw/
-" use F5 to list files in current file's directory
-nnoremap <silent> <F5> :lchdir %:p:h<CR>:Vexplore<CR>
 let g:netrw_banner = 0
 let g:netrw_winsize = 25
 let g:netrw_liststyle = 3
 "let g:netrw_browse_split = 1
-" switch all splits to Horizontal/Vertical
-nnoremap <F9> :windo wincmd K<CR>
-nnoremap <F10> :windo wincmd H<CR>
 
