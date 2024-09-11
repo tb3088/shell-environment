@@ -11,10 +11,11 @@
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty mvn java ...
 
-function 3rdparty.add_program() {
-  local pkg=${1:?package name}
-  [ -x "$pkg" ] && return
 
+function 3rdparty.add_program() {
+  is_exec -q "${1:?software package}" && return
+
+  local pkg=$1
   # search spec
   declare -A software_map=(
       ['aws']=${AWSCLI:-aws'{cli,}{v,}'$AWS_VERSION}
@@ -28,39 +29,33 @@ function 3rdparty.add_program() {
       ['ruby']=${RUBY_BASE:-'ruby{-,}'$RUBY_VERSION}
     )
 
-  local exp
-  exp=${software_map[$pkg]} 2>/dev/null || {
-      log.error "unsupported software package ($pkg)"; return; }
+  [ -n "${software_map[$pkg]}" ] || { log.error "unsupported software ($pkg)"; return; }
 
-  if [[ "$exp" =~ {*} ]]; then exp=( `convert_path -E $(eval echo "$exp")` )
-  else exp=`convert_path -E "$exp"`; fi
+  local exp=( `eval printf '%q\\\n' "${software_map[$pkg]}"` )
 
   #TODO https://unix.stackexchange.com/questions/406216/check-for-bash-options
-  local pbin
-  pbin=$(
+  local pbin=$(
       # process embedded glob patterns
       shopt -u failglob
       shopt -s globstar nullglob
 
-      # WARN '/**/' can be VERY slow
       while read tld; do
-        for mid in "${exp[@]}"; do
+        while read mid; do
+          # WARN '/**/' can be VERY slow
           for exe in "${tld:+$tld/}${mid#$tld}"*/{bin/,}$pkg; do
-            [ -x "$exe" ] && { echo "$exe"; return; }   #found=1; break 3; }
+            [ -x "$exe" ] && { echo "$exe"; return; }
           done
-        done
+        done < <( convert_path -E "${exp[@]}" )
       done < <(
           printf '%s\n' '' /opt /usr/local
-          for i in "${USERPROFILE:-$HOME}" "$LOCALAPPDATA" "$PROGRAMFILES"; do
-            [ -n "$i" ] || continue
-            convert_path "$i"
-          done
+          convert_path -E "${USERPROFILE:-$HOME}" "$LOCALAPPDATA" "$PROGRAMFILES"
         )
     )
 
   if [ -n "$pbin" ]; then addPath "${pbin%/*}"
-  else log.warn "software package not found ($pkg)"; fi
+  else log.warn "software not found ($pkg)"; fi
 }
+
 
 # multiple arguments supported, but not recommend
 while (( $# )); do
