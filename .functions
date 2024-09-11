@@ -207,7 +207,8 @@ function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]; }
 # scripts and helper functions. Leaving it here simplifies includes.
 function is_windows() (
   if [ $# -eq 0 ]; then
-    return [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
+    [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
+    return
   fi
 
   set -e -o pipefail
