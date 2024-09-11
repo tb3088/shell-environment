@@ -421,7 +421,7 @@ EOF
 
   local p
   while (( $# )); do
-    [ -n "$1" ] || { log.warn "empty argument"; shift; continue; }
+    [ -n "$1" ] || { shift; continue; }
 
     # '-a' expand+unroll symlinks ONLY if relative
     if is_windows; then p=`cygpath "${long_opts[@]}" -- "$1"`; fi
