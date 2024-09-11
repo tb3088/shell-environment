@@ -1139,7 +1139,7 @@ copy_function log.notice log.warn
 
 
 # more efficient
-if is_exec pv; then
+if is_exec -q pv; then
   function cat() { pv -q "$@"; }
 fi
 
