@@ -8,33 +8,43 @@ declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 __tag=1
 #------------------
 
-####  WARNING   WARNING   WARNING   ###
-# long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
+
+# multi-version support
+#AWS_VERSION=2
 
 if is_windows; then
-  AWSCLI=$PROGRAMFILES/Amazon/AWSCLIV2
-#  AWS_SM_PLUGIN=$PROGRAMFILES/Amazon/SessionManagerPlugin
+  AWSCLI=Amazon/AWSCLIV2
+
+  # SSM Session-Manager
+  # ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+
+  # Windows CLI auto-detects PLUGIN location from registry
+#  AWS_SM_PLUGIN=${AWSCLI%/*}/SessionManagerPlugin
 fi
+
 source ${BASH_SOURCE%_*}_3rdparty aws
-is_exec -q aws || return
-
-# SSM Session-Manager
-# ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
-#
-# Windows CLI detects location from registry, else put on PATH
-[ -n "$AWS_SM_PLUGIN" ] && { "$AWS_SM_PLUGIN"/bin/session-manager-plugin; }
-
-#TODO just use 'aws shell' instead
-link=`is_exec -v aws_completer` && complete -C "$( printf '%q' "$link" )" aws
-unset link
-
-QUIET=1 addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
-
 
 #ref: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
 for f in "${BASH_SOURCE/bashrc/functions}"; do
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
+
+[ -n "$AWS_SM_PLUGIN" ] &&
+    source ${BASH_SOURCE%_*}_3rdparty session-manager-plugin
+
+#TODO version_compare() w/ sort -g (--version-sort doesn't actually work)
+# echo -e '2.3.43\n2.3.7' | sort -t . -k 1,1 -k 2,2 -k 3,3
+#ref:   https://github.com/ivan-dyachenko/version
+#       https://stackoverflow.com/questions/48491662/comparing-two-version-numbers-in-a-shell-script
+#       https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
+__aws_api=$( "$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
+[[ ${__aws_api} > 2.3.7 ]] || log.warn "very old CLI version ($__aws_api)"
+
+#TODO just use 'aws shell' instead
+link=`is_exec -v aws_completer` && complete -C `printf '%q' "$link"` aws
+unset link
+
+QUIET=1 addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
 
 
 # session credentials expire in 4h
@@ -60,6 +70,7 @@ function __prompt.aws() {
     [ $remain -gt 0 ] && echo -ne "  (${remain} min)" || echo -ne "  (${BRED}expired${RS})"
   fi
 }
+#FIXME secret handshake from .bashrc_prompt
 __prompts+=( __prompt.aws )
 
 
