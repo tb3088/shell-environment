@@ -10,7 +10,7 @@ shopt -u nullglob
 
 
 #NOTE 'command' is unsuitable since returns aliases and functions
-function __WHICH() { \which --skip-alias --skip-functions "$@"; }
+function __WHICH() { \which "$@"; }
 function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
 
 #function __YQ() { \yq ??? "$@"; }

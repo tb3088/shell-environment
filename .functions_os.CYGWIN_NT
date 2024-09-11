@@ -10,6 +10,9 @@
 PATHSEP=';'
 readonly PATHSEP
 
+function __WHICH() { \which --skip-alias --skip-functions "$@"; }
+readonly -f __WHICH
+
 # override CYGWIN default which uses non-portable Junctions
 function ln() {
   local flag destdir=
