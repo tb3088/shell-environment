@@ -6,7 +6,8 @@
 # long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
 #
 # should NEVER happen unless non-traditional invocation
-: ${HOME:=`cygpath -a "${USERPROFILE:-.}"`}
+is_windows &&
+    : ${HOME:=`cygpath -a "${USERPROFILE:-.}"`}
 : ${HOME:=/}
 
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws

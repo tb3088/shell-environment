@@ -369,7 +369,7 @@ function rename_function() {
 }
 
 
-function convert_path() {
+function convert_path() (
   # Usage: caller use 'while read()' one entry per line for whitespace
   # management if providing multiple arguments, assign to array, or set --
   #
@@ -416,21 +416,26 @@ EOF
   done
   shift $((OPTIND - 1))
 
+  shopt -s nullglob
+  set -e -o pipefail
+
+  local p
   while (( $# )); do
-    [ -n "$1" ] || { log.warn "empty argument"; echo; shift; continue; }
+    [ -n "$1" ] || { log.warn "empty argument"; shift; continue; }
 
     # '-a' expand+unroll symlinks ONLY if relative
-    is_windows && p=`cygpath "${long_opts[@]}" -- "$1"`
-    [ $abs -eq 1 ] && p=`readlink -m "$p"`
+    if is_windows; then p=`cygpath "${long_opts[@]}" -- "$1"`; fi
+    [ $abs -eq 1 ] && p=`readlink -m "${p:-$1}"`
 
     # unescape whitespace to not double-escape
-    local p="${p//\\ / }"
+    p="${p//\\ / }"
 
 #TODO? leverage string.quote
-    if [ $escape -eq 1 ]; then printf '%q\n' "$p"; else echo "${quote}$p${quote}"; fi
+    if [ $escape -eq 1 ]; then printf '%q\n' "$p"
+    else echo "${quote}$p${quote}"; fi
     shift
   done
-}
+)
 #TODO
 #function convert_path=os.filepath.print
 
@@ -601,7 +606,7 @@ _EOF
       log.debug "add element to $k ($item)"
     fi
     shift
-  done < <( convert_path "${flags[@]}" "$@" )
+  done < <( shopt -s nullglob; convert_path "${flags[@]}" "$@" )
 
   # remove leading, trailing and any leftover repeated delimiter
   kval=${kval##$delim}; kval=${kval%%$delim}
