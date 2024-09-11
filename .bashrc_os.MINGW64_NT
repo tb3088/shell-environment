@@ -12,7 +12,7 @@ __tag=1
 # ignore if wrong OS
 _flavor=${BASH_SOURCE##*/}
 _flavor=${_flavor#?*.}
-[ "${OSTYPE:-`uname`}" = "${_flavor:-unknown}" ] || return 0
+[[ "${OSTYPE:-`uname`}" =~ "${_flavor:-unknown}" ]] || return 0
 
 # !! WARN !! force symlinks otherwise MINGW resorts to copying files
 # requires Win10 > 18363 or 'SeCreateSymbolicLink' rights

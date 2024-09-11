@@ -4,6 +4,7 @@
 
 
 function is_wsl() { uname -r | grep -q WSL; }
+# fallback
 declare -F is_windows &>/dev/null ||
 function is_windows() { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; }
 #TODO is_linux, or is_os that can emit solaris, windows, cygwin, etc

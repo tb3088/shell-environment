@@ -5,7 +5,6 @@
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${__tag:-0} -eq 0 ] || return 0
-__tag=1
 #------------------
 
 
@@ -15,11 +14,15 @@ __tag=1
 
 : ${OSTYPE:=`uname -o | cut -d _ -f 1 | tr '[:upper:]' '[:lower:]'`}
 
+__tag=1
+
+
 __uname=`uname`  # alt: uname|sed -E 's/(-[0-9.]+)+$//'
 for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%-*}}; do
   [ -s "$f" ] || continue
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
+
 
 is_exec -q tree{,.com} || { is_function os.tree && alias tree='os.tree'; }
 

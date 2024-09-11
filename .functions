@@ -206,20 +206,24 @@ function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]; }
 # Properly belongs in '.functions_os[.cygwin]' but required for various
 # scripts and helper functions. Leaving it here simplifies includes.
 function is_windows() (
+  if [ $# -eq 0 ]; then
+    return [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
+  fi
+
   set -e -o pipefail
-  (( $# )) || [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
 
   local bin
   #WARN multi-arg supported, but not recommended
   while (( $# )); do
-    for op in echo 'readlink -e' 'is_exec -v'; do
-      if bin=$( $op "$1" ); then [ "${bin:0:1}" = '/' ] && break; fi
+    for op in 'readlink -e' 'is_exec -v'; do
+      bin=`$op "$1"`
+      if [ "${bin:0:1}" = '/' ]; then break; fi
     done
-    [[ "$bin" =~ ^/cygdrive ]] || { file "$bin" | grep -q 'for MS Windows'; }
+    if [[ "${bin:?}" =~ ^/cygdrive ]]; then :
+    else file "$bin" | grep -q 'for MS Windows'; fi
     shift
   done
 )
-# pedant
 readonly -f is_windows
 
 
