@@ -21,7 +21,7 @@ QUIET=1 addPath -P -k PATH "$HOME"/{,.local/}bin
 
 case $- in
   # a bit redundant since whole point of .bashrc is 'interactive' use...
-  *i*)  for f in .bashrc{.local,_{prompt,os,*}} .aliases{,.local}; do
+  *i*)  for f in "$HOME"/{.bashrc{.local,_{prompt,os,*}},.aliases{,.local}}; do
           [ -s "$f" ] || continue
           grep -qE '\.swp$|\.bak$|~$' - -- <<< "$f" && continue
 

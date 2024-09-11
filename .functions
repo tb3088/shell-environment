@@ -16,6 +16,7 @@ function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
 #function __YQ() { \yq ??? "$@"; }
 function __JQ() { \jq --exit-status "$@"; }
 function __JQR() { \jq "$@" | \jq --exit-status --raw-output '. // empty'; }
+
 #TODO call it merge1 since it ONLY handles 1st level
 function __JQ_merge() { \jq --slurp 'reduce .[] as $item ({}; . * $item)'; }
 #TODO merge_deep(er)
@@ -81,6 +82,7 @@ function confirm() {
 # mimic 'set -x' and send STDERR to file
 function runv() {
   local indent=`printf '%.0s+' {1..$SHLVL}`
+  #TODO wrap arguments in " for easy copy+paste
   >&2 printf '%s %s\n' "$indent" "$*"
 
   # set to <blank> is insufficient
@@ -581,7 +583,7 @@ _EOF
 
 #FIXME detect if new path already has ^/cygpath and don't invoke cygpath()
 
-  local -ir __prepend=${prepend:-0}	    #save
+  local -ir __prepend=${prepend:-0}     #save
   while read item; do
     [ -n "$item" ] || { shift; continue; }
     prepend=$__prepend                  #restore
@@ -1069,7 +1071,7 @@ function expand_dvq() {
 }
 
 
-# simple logging implementation
+# simple implementation
 function log() {
   local -u level
   local fname=
@@ -1082,10 +1084,15 @@ function log() {
   [ -n "${FUNCNAME[$offset]}" ] &&
       fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
 
-  while [ "${1+X}" ]; do
-    >&2 echo -e "${level:-LOG}\t${fname}$1"
-    shift
-  done
+  if [ $# -eq 0 ]; then
+    local line=$( < /dev/stdin )
+    >&2 echo -e "${level:-LOG}\t${fname}${line}"
+  else
+    while (( $# )); do
+      >&2 echo -e "${level:-LOG}\t${fname}$1"
+      shift
+    done
+  fi
 }
 
 function log.none() { return; }

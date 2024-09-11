@@ -47,8 +47,6 @@ PS1="${PS_PREFIX}\n\! \$ "
 #PS1="\[\e]0;\w\a\]\n\[\e[32m\]\u@\h \[\e[33m\]\w\[\e[0m\]\n\!,\j \$ "
 #\[\033[36m\][\t]\[\033[32m\][\u@\h:\[\033[33m\]\w\[\033[32m\]]-> \[\033[0m\]
 
-declare -a __prompts=()
-
 function __prompt() {
   local RC=$? fn
 
@@ -57,8 +55,8 @@ function __prompt() {
     [ -n "$fn" ] || continue
 
     PS1+="$( $fn )"
-  done < <( IFS=$'\n'; echo "${__prompts[*]}" )
-#alt:      declare -F | awk '{ print $NF; }' | grep -E '^__prompt\.'
+  done < <( IFS=$'\n'; echo "${__prompts[*]}" )     #FIXME rename to __bash_prompts
+  #alt:  declare -F | awk '{ print $NF; }' | grep -E '^__prompt\.'    # slow
 
   [ $EUID -eq 0 ] && PS1+="${BRED}"
   [ $RC -eq 0 ] && unset RC

@@ -11,7 +11,8 @@ __tag=1
 
 if is_exec -q git; then
 #--- BEGIN git ---
-3rdparty.add_program git-credential-manager
+
+source ${BASH_SOURCE%_*}_3rdparty git-credential-manager
 
 alias gsb='\git status --short --branch'
 alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"

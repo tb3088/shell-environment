@@ -9,6 +9,7 @@
   au = add --update
   ab = ! git.bulk_add
   bl = ! "git show-branch --list ${@:- --all}"
+  bls = bl
   bv = branch --verbose
 
   co = checkout
