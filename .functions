@@ -216,12 +216,11 @@ function is_windows() (
   local bin
   #WARN multi-arg supported, but not recommended
   while (( $# )); do
-    for op in 'readlink -e' 'is_exec -v'; do
-      bin=`$op "$1"`
+    for op in 'echo' 'readlink -e' 'is_exec -v'; do
+      bin=`$op "$1"` || continue
       if [ "${bin:0:1}" = '/' ]; then break; fi
     done
-    if [[ "${bin:?}" =~ ^/cygdrive ]]; then :
-    else file "$bin" | grep -q 'for MS Windows'; fi
+    [[ "${bin:?}" =~ ^/cygdrive ]] || { file "$bin" | grep -q 'for MS Windows'; }
     shift
   done
 )

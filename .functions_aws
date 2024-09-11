@@ -104,7 +104,7 @@ declare -Ar __aws_availability_zones=(
 
 function __AWS() {
   local AWS_OUTPUT AWS_NOPIPE
-  local -i __is_windows=`is_windows "${__aws_bin}" && echo 1`
+  local -i __is_windows=0; is_windows "${__aws_bin}" && __is_windows=1
   local -a cmd=()
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
