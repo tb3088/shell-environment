@@ -5,7 +5,7 @@
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${__tag:-0} -eq 0 ] || return 0
-__tag=1
+
 #------------------
 
 
@@ -17,31 +17,20 @@ if is_windows; then
 
   # SSM Session-Manager
   # ref: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
-
+  #
   # Windows CLI auto-detects PLUGIN location from registry
 #  AWS_SM_PLUGIN=${AWSCLI%/*}/SessionManagerPlugin
 fi
 
 source ${BASH_SOURCE%_*}_3rdparty aws
 
-#ref: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
-for f in "${BASH_SOURCE/bashrc/functions}"; do
-  source "$f" || { log.error "RC=$? during $f"; return; }
-done
-
 [ -n "$AWS_SM_PLUGIN" ] &&
     source ${BASH_SOURCE%_*}_3rdparty session-manager-plugin
 
-#TODO version_compare() w/ sort -g (--version-sort doesn't actually work)
-# echo -e '2.3.43\n2.3.7' | sort -t . -k 1,1 -k 2,2 -k 3,3
-#ref:   https://github.com/ivan-dyachenko/version
-#       https://stackoverflow.com/questions/48491662/comparing-two-version-numbers-in-a-shell-script
-#       https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
-__aws_api=$( "$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
-[[ ${__aws_api} > 2.3.7 ]] || log.warn "very old CLI version ($__aws_api)"
-
 #TODO just use 'aws shell' instead
-link=`is_exec -v aws_completer` && complete -C `printf '%q' "$link"` aws
+if link=`is_exec -v aws_completer`; then
+  complete -C `printf '%q' "$link"` aws
+fi
 unset link
 
 QUIET=1 addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
@@ -54,6 +43,10 @@ alias aws='__AWS'
 alias aws.clearenv='aws.profile RESET'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
 # TODO DELETE=1 ec2.connect -i <instnace>
+
+
+__tag=1
+#------------------
 
 
 function __prompt.aws() {
@@ -771,5 +764,21 @@ function iam.sshkeys {
 # 'EC2' ranges are for instances, not services but subset of 'AMAZON'
 #
 #   jq -r '.prefixes[] | select(.region == "us-east-1") | [select(.service=="AMAZON").ip_prefix] - [select(.service=="EC2").ip_prefix] | add // empty' ip-ranges.json
+
+
+#ref: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
+for f in "${BASH_SOURCE/bashrc/functions}"; do
+  [ -s "$f" ] || continue
+  source "$f" || { log.error "RC=$? during $f"; return; }
+done
+
+#TODO version_compare() w/ sort -g (--version-sort doesn't actually work)
+# echo -e '2.3.43\n2.3.7' | sort -t . -k 1,1 -k 2,2 -k 3,3
+#ref:   https://github.com/ivan-dyachenko/version
+#       https://stackoverflow.com/questions/48491662/comparing-two-version-numbers-in-a-shell-script
+#       https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
+__aws_api=$( "$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
+[[ ${__aws_api} > 2.3.7 ]] || log.warn "very old CLI version ($__aws_api)"
+
 
 # vim: expandtab:ts=8:sw=4
