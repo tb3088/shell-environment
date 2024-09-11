@@ -205,13 +205,11 @@ function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]; }
 #DO NOT MOVE!!
 # Properly belongs in '.functions_os[.cygwin]' but required for various
 # scripts and helper functions. Leaving it here simplifies includes.
-function is_windows() (
+function is_windows() {
   if [ $# -eq 0 ]; then
     [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
     return
   fi
-
-  set -e -o pipefail
 
   local bin
   #WARN multi-arg supported, but not recommended
@@ -220,10 +218,10 @@ function is_windows() (
       bin=`$op "$1"` || continue
       if [ "${bin:0:1}" = '/' ]; then break; fi
     done
-    [[ "${bin:?}" =~ ^/cygdrive ]] || { file "$bin" | grep -q 'for MS Windows'; }
+    [[ "${bin:?}" =~ ^/cygdrive ]] || { file "$bin" | grep -q 'for MS Windows'; } || return
     shift
   done
-)
+}
 readonly -f is_windows
 
 
