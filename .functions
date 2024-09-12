@@ -414,18 +414,17 @@ EOF
   shift $((OPTIND - 1))
 
   shopt -s nullglob
-  set -e -o pipefail
 
   local p
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
-    # '-a' expand+unroll symlinks ONLY if relative
-    if is_windows; then p=`cygpath "${long_opts[@]}" -- "$1"`; fi
-    [ $abs -eq 1 ] && p=`readlink -m "${p:-$1}"`
-
     # unescape whitespace to not double-escape
-    p="${p//\\ / }"
+    p="${1//\\ / }"
+
+    # '-a' expand+unroll symlinks ONLY if relative
+    if is_windows; then p=`eval cygpath "${long_opts[@]}" -- "${p// /\\ }"` || return; fi
+    [ $abs -eq 1 ] && p=`readlink -m "$p"`
 
 #TODO? leverage string.quote
     if [ $escape -eq 1 ]; then printf '%q\n' "$p"
