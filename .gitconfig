@@ -36,5 +36,3 @@
 [credential]
 	helper = manager
 	validate = false
-[credential "dev.azure.com"]
-	username = matthew.patton
