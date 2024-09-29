@@ -33,8 +33,7 @@ if link=`is_exec -v aws_completer`; then
 fi
 unset link
 
-QUIET=1 addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
-
+addPath -k PATH /usr/local/ec2-ami-tools*/**/bin
 
 # session credentials expire in 4h
 export AWS_SESSION_DURATION=$((3600 * 4))
@@ -43,7 +42,6 @@ alias aws='__AWS'
 alias aws.clearenv='aws.profile RESET'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
 # TODO DELETE=1 ec2.connect -i <instnace>
-
 
 __tag=1
 #------------------
@@ -777,8 +775,10 @@ done
 #ref:   https://github.com/ivan-dyachenko/version
 #       https://stackoverflow.com/questions/48491662/comparing-two-version-numbers-in-a-shell-script
 #       https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
-__aws_api=$( "$__aws_bin" --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
+
+__aws_api=$( __AWS --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
 [[ ${__aws_api} > 2.3.7 ]] || log.warn "very old CLI version ($__aws_api)"
+unset __aws_api
 
 
 # vim: expandtab:ts=8:sw=4

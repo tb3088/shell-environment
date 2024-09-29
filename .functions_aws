@@ -2,19 +2,25 @@
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 #------------------
 
-####  WARNING   WARNING   WARNING  ####
+#===  WARNING   WARNING   WARNING  ===
 # long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
 #
+#ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
+__aws_bin=`is_exec -v "${AWS_BIN:-aws${AWS_VERSION}}"` || return 127
+# theoretically windows OR cygwin could invoke a WSL binary
+if is_windows "$__aws_bin"; then
+  declare -i __aws_windows=1
+  function __aws_postproc() { tr -d '\r'; }
+fi
+
+declare -F __JQ{,R} >/dev/null || { log.error "missing required function (__JQ)"; return 127; }
+
+
 # should NEVER happen unless non-traditional invocation
 is_windows &&
     : ${HOME:=`cygpath -a "${USERPROFILE:-.}"`}
 : ${HOME:=/}
-
-#ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
-__aws_bin=$( is_exec -v "aws${AWS_VERSION}" ) || return 127
-
-declare -F __JQ{,R} >/dev/null || { log.error "missing required function (__JQ)"; return 127; }
-
+export HOME
 
 shopt -s extglob
 
@@ -103,13 +109,12 @@ declare -Ar __aws_availability_zones=(
 
 
 function __AWS() {
-  local AWS_OUTPUT AWS_NOPIPE
-  local -i __is_windows=0; is_windows "${__aws_bin}" && __is_windows=1
+  local AWS_OUTPUT AWS_NOPIPE AWS_POSTPROC
   local -a cmd=()
 
   if [ -n "$AWS_CONFIG_FILE" ]; then
     is_file "$AWS_CONFIG_FILE" || return
-    #NOTE! CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
+    #NOTE CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
     : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
 
     #FIXME use readlink to make honest compare
@@ -120,43 +125,43 @@ function __AWS() {
       AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
     fi
 
-    if [ ${__is_windows:-0} -eq 1 ]; then
-      local CONFIG_WINDOWS CREDENTIALS_WINDOWS
+    if [ ${__aws_windows:-0} -eq 1 ]; then
       cmd+=( 'env'
-          AWS_CONFIG_FILE=${CONFIG_WINDOWS:=`cygpath -am "$AWS_CONFIG_FILE"`}
-          AWS_SHARED_CREDENTIALS_FILE=${CREDENTIALS_WINDOWS:=`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
+          AWS_CONFIG_FILE=${AWS_CONFIG_WINDOWS:-`cygpath -am "$AWS_CONFIG_FILE"`}
+          AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_WINDOWS:-`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
         )
     fi
   else
-    unset AWS_{CONFIG,SHARED_CREDENTIALS}_FILE
+    unset AWS_{CONFIG,SHARED_CREDENTIALS}_{FILE,WINDOWS}
   fi
 
   cmd+=( "$__aws_bin" )
-
-  # special handling of certain commands
+  local -i __s3_mode=0
+  # special keywords mimics ssh-wrapper
   local sop
-  #WARN *seriously* brittle assumption that ignores possibility of '--XXX' options+args
+
+  #WARN *seriously* brittle assumption #1; that ignores possibility of '--XXX' options+args
   #FIXME? use getopt to re-flow all options
+
   case "$1" in
-    # Special OP mimics ssh-wrapper
     edit)   sop=${EDITOR:-vi} ;&
     # assumes operation against either of AWS_CONFIG_FILE or AWS_SHARED_CREDENTIALS_FILE
     file|echo|cat)
-            local file=${2:-AWS_CONFIG_FILE}
+            local file=${2:-'AWS_CONFIG_FILE'}
+            # leverage lazy evaluation
             case "${file^^}" in
               ?(AWS_)CONFIG?(_FILE))
-                        eval file=${AWS_CONFIG_FILE:-${__aws_defaults['config']}}
+                        file=${AWS_CONFIG_FILE:-`eval echo "${__aws_defaults['config']}"`}
                         ;;
               ?(AWS_SHARED)CRED*?(_FILE))
-                        eval file=${AWS_SHARED_CREDENTIALS_FILE:-${__aws_defaults['credentials']}}
+                        file=${AWS_SHARED_CREDENTIALS_FILE:-`eval echo "${__aws_defaults['credentials']}"`}
             esac
             is_file "${file:?}" && ${sop:-$1} "$file"
             return
             ;;
 
     # mimic aws-shell
-    shell)  "${cmd[@]}" --cli-auto-prompt; return
-            ;;
+    shell)  "${cmd[@]}" --cli-auto-prompt; return ;;
 
     # format='text' appears hard-coded; explicit '--output' ineffectual
     config?(ure))
@@ -171,68 +176,92 @@ function __AWS() {
                         ;;
               *)        AWS_NOPIPE=1
             esac
-            set -- configure "${@:2}"
+            set -- 'configure' "${@:2}"
             ;;
-
-    #WARN format='text' is hazardous & unpredictable in programatic invocation
-    *)      string.contains -- "$*" '--output' || cmd+=( '--output' ${AWS_OUTPUT:-json} )
-            cmd+=(
-                '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}}
-                '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}}
-              )
-            ;;&
-
-    ec2)    cmd+=( ${NOOP:+'--dry-run'} ) ;;&
-    s3)     cmd+=( ${NOOP:+'--dryrun'} ) ;;&
 
     # API v1 frequently ignores VPC endpoints (NOT exhaustive)
 #    ec2|sts|dynamodb|sqs|ses|ssm|s3)
-#            local endpoint=`join_string -zd . "$1" "$AWS_DEFAULT_REGION" 'amazonaws.com'`
+#            string.contains -- "$*" '--endpoint-url' || {
+#
+#              local endpoint=`join_string -zd . "$1" "${AWS_DEFAULT_REGION:-$AWS_REGION}" 'amazonaws.com'`
 #TODO? name resolution can be problematic and ping arguments inconsistent
-#            ( # DOS missing 'host', Linux missing 'bind-utils'
-#              host -s "$endpoint" || nslookup "$endpoint" || ping -n 1 "$endpoint"
-#            ) &>/dev/null &&
-#                cmd+=( '--endpoint-url' "https://${endpoint}/" ) ||
-#                log.debug "name resolution failed ($endpoint)"
+#              # DOS missing 'host', Linux missing 'bind-utils'
+#              if ( host -s "$endpoint" || nslookup "$endpoint" || ping -n 1 "$endpoint" ) &>/dev/null; then
+#                cmd+=( '--endpoint-url' "https://${endpoint}/" )
+#              else log.notice "name resolution failed ($endpoint)"; fi
+#            }
+
+    # do not post-process output when
+    # OpenSSH ProxyCommand pipe or sts prompting for MFA Token
+    sts)    string.contains -o grep --extended-regexp -- "$*" '(assume-role|get-session-token)' && AWS_NOPIPE=1 ;;
+    ssm)    string.contains -- "$*" 'start-session' && AWS_NOPIPE=1 ;;
+
+    ec2)    cmd+=( ${NOOP:+'--dry-run'} ) ;;
+    s3)     cmd+=( ${NOOP:+'--dryrun'} ); __s3_mode=1 ;;
   esac
 
+  # When running on EC2, the CLI *should* properly resolve its region but
+  # firewall rules or name resolution problems or incomplete config file with
+  # v1 client stupidity can still lead to failure.
   if is_ec2 && [ -z "${AWS_DEFAULT_REGION}${AWS_REGION}" ]; then
-    # bailout EC2
-    string.contains -- "$*" '--region' || {
-        local region=$( ec2.metadata region || "${cmd[@]}" configure get region )
-        if [ -z "$region" ]; then
-          region=${__aws_defaults['region']}
-          log.warn "forcing AWS_REGION to hard-coded default ($region)"
-        fi
-        cmd+=( '--region' "${region:?}" )
-      }
+    if ! string.contains -- "$*" '--region'; then
+      local region=$( ec2.metadata region || "${cmd[@]}" configure get region )
+      if [ -z "$region" ]; then
+        region=${__aws_defaults['region']}
+        log.warn "forcing AWS_REGION to hard-coded default ($region)"
+      fi
+      cmd+=( '--region' "${region:?}" )
+    fi
   fi
 
-  #WARN! ugly-ass hack to strip DOS line-endings, but not when
-  #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
-  if string.contains -- "$*" 'ssm start-session' || [ ${AWS_NOPIPE:-0} -eq 1 ]; then
-    ${DEBUG:+runv} "${cmd[@]}" "$@"
+  #WARN format='text' is hazardous & unpredictable in programatic invocation
+  string.contains -- "$*" '--output' || cmd+=( '--output' ${AWS_OUTPUT:-json} )
 
-#  elif string.contains -o grep --extended-regexp -- "$*" 'sts (assume-role|get-session-token)'
+  string.contains -- "$*" '--debug' ||
+      if ([ ${DEBUG:-0} -gt 1 ] || [ -n "$TRACE" ]); then cmd+=( '--debug' ); fi
+
+  string.contains -- "$*" '--cli-connect-timeout' ||
+      cmd+=( '--cli-connect-timeout' ${AWS_CONNECT_TIMEOUT:-${__aws_defaults['connectTimeout']}} )
+  string.contains -- "$*" '--cli-read-timeout' ||
+      cmd+=( '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}} )
+
+
+
+  #WARN *seriously* brittle assumption #2: <service> <operation>
+  cmd+=( "$1" "$2" ); shift 2
+ 
+  # cook filenames
+  if [ ${__aws_windows:-0} -eq 1 ]; then
+    local -a rewrite_args=()
+
+    while (( $# )); do
+      if [[ "$1" =~ ^file:// ]]; then
+        rewrite_args+=( "file://`cygpath -am "${1#file://}"`" )
+      elif [ ${__s3_mode:-0} -eq 1 ] && ! [[ "$1" =~ s3:// ]]; then
+        if is_file "$1" || is_dir "$1"; then
+          rewrite_args+=( "`cygpath -am "$1"`" )
+		else rewrite_args+=( "$1" ); fi
+      else
+        rewrite_args+=( "$1" )
+      fi
+      shift
+    done  
+    set -- "${rewrite_args[@]}"
+  fi
+
+  #NOTE do not post-process output when
+  #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
+  if [ ${AWS_NOPIPE:-0} -eq 1 ]; then
+    ${DEBUG:+runv} "${cmd[@]}" "$@"
+  elif [ -n "${AWS_POSTPROC=__aws_postproc}" ] && declare -F "$AWS_POSTPROC" >/dev/null; then
+    ${DEBUG:+ runv} "${cmd[@]}" "$@" | $AWS_POSTPROC
 #    exec 3>&1
 #was >&3 3>&- | tr -d '\r'
 #    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
 #    exec 3>&-
-  else
-    local -a rewrite_args=()
-    if [ ${__is_windows:-0} -eq 1 ]; then
-      # cook filenames; incorrect syntax will NOT be fixed
-      while (( $# )); do
-        if [[ "$1" =~ ^file:// ]]; then
-          rewrite_args+=( "file://`cygpath -am "${1#file://}"`" )
-        else rewrite_args+=( "$1" ); fi
-        shift
-      done
-      set -- "${rewrite_args[@]}"
-    fi
 
-    [ ${DEBUG:-0} -gt 1 -o -n "$TRACE" ] && cmd+=( '--debug' )
-    ${DEBUG:+ runv} "${cmd[@]}" "$@" | tr -d '\r'
+  else
+    ${DEBUG:+ runv} "${cmd[@]}" "$@"
   fi
 }
 
