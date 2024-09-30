@@ -370,7 +370,7 @@ function convert_path() (
   # Usage: caller use 'while read()' one entry per line for whitespace
   # management if providing multiple arguments, assign to array, or set --
   #
-  # WARN validity or existence is NOT checked!
+  #NOTE! validity/existence of the path is NOT checked!
   #
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
   # This *magical* behavior does NOT extend to other PATH-like variables!
@@ -389,8 +389,8 @@ function convert_path() (
   # do NOT default quote character
   [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
 
-  local -i abs=0 escape=1
-
+  local -i escape=1
+  local abs=
   local -i OPTIND; local opt OPTARG long_opts=()
   while getopts ':haeEq:t:-:' opt; do
     case "$opt" in
@@ -413,18 +413,16 @@ EOF
   done
   shift $((OPTIND - 1))
 
-  shopt -s nullglob
-
   local p
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
-    # unescape whitespace to not double-escape
-    p="${1//\\ / }"
-
-    # '-a' expand+unroll symlinks ONLY if relative
-    if is_windows; then p=`eval cygpath "${long_opts[@]}" -- "${p// /\\ }"` || return; fi
-    [ $abs -eq 1 ] && p=`readlink -m "$p"`
+    if is_windows; then
+      # '-a' expand+unroll symlinks ONLY if relative
+	  p=`cygpath ${abs:+'-a'} "${long_opts[@]}" -- "$1" 2>/dev/null`
+    elif [ ${abs:-0} -eq 1 ]; then
+      p=`readlink -m "$1"`
+    fi
 
 #TODO? leverage string.quote
     if [ $escape -eq 1 ]; then printf '%q\n' "$p"
@@ -602,7 +600,7 @@ _EOF
       log.debug "add element to $k ($item)"
     fi
     shift
-  done < <( shopt -s nullglob; convert_path "${flags[@]}" "$@" )
+  done < <( convert_path "${flags[@]}" "$@" )
 
   # remove leading, trailing and any leftover repeated delimiter
   kval=${kval##$delim}; kval=${kval%%$delim}
