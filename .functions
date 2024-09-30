@@ -366,11 +366,12 @@ function rename_function() {
 }
 
 
-function convert_path() (
+function convert_path() {
   # Usage: caller use 'while read()' one entry per line for whitespace
   # management if providing multiple arguments, assign to array, or set --
   #
-  #NOTE! validity/existence of the path is NOT checked!
+  #WARN validity/existence of the path is NOT checked!
+  # also makes NO attempt to detect/expand wildcard patterns
   #
   # Cygwin handles whitespace in "$PATH" and they must remain un-escaped.
   # This *magical* behavior does NOT extend to other PATH-like variables!
@@ -389,8 +390,7 @@ function convert_path() (
   # do NOT default quote character
   [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
 
-  local -i escape=1
-  local abs=
+  local -i escape=1 abs=0
   local -i OPTIND; local opt OPTARG long_opts=()
   while getopts ':haeEq:t:-:' opt; do
     case "$opt" in
@@ -413,23 +413,17 @@ EOF
   done
   shift $((OPTIND - 1))
 
-  local p
-  while (( $# )); do
-    [ -n "$1" ] || { shift; continue; }
+  local _format="${quote}%s${quote}\n"
+  [ ${escape:-0} -eq 1 ] && _format='%q\n'
+  local IFS=$'\n'
 
-    if is_windows; then
-      # '-a' expand+unroll symlinks ONLY if relative
-	  p=`cygpath ${abs:+'-a'} "${long_opts[@]}" -- "$1" 2>/dev/null`
-    elif [ ${abs:-0} -eq 1 ]; then
-      p=`readlink -m "$1"`
-    fi
+  [ ${abs:-0} -eq 1 ] && set -- `readlink -m "$@"`
+  if is_windows; then
+	set -- `cygpath "${long_opts[@]}" -- "$@" 2>/dev/null`
+  fi
 
-#TODO? leverage string.quote
-    if [ $escape -eq 1 ]; then printf '%q\n' "$p"
-    else echo "${quote}$p${quote}"; fi
-    shift
-  done
-)
+  printf "$_format" "$@"
+}
 #TODO
 #function convert_path=os.filepath.print
 
@@ -800,8 +794,8 @@ function version_to_int() (
   # superficial input sanitation
   set -- "${@//-/.}"; set -- "${@//[^0-9]/}"
 
-  while (( $# )); do    #deliberate un-quoted
-    printf '%.3d' ${1//./ }
+  while (( $# )); do
+    printf '%.3d' ${1//./ }		#deliberate un-quoted
     echo; shift
   done
 )
