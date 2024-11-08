@@ -3,11 +3,14 @@
 # shell aliases defined in .bashrc_devops
 
 [alias]
-  amend = commit --amend --message
-  # add by patch & prompt
+  #WARN not if pushed to origin since it'll generate conflict
+  amend = commit --amend --no-edit
+
+  # interactive patch selector
   ap = add --patch
-  au = add --update
   ab = ! git.bulk_add
+  au = add --update
+
   bl = ! "git show-branch --list ${@:- --all}"
   bls = bl
   bv = branch --verbose
@@ -17,6 +20,7 @@
   ci = commit --interactive
   cm = commit --message
 
+  #example: git diff | patch -p1 -d [dest-dir]
   d = diff
   dc = diff --cached
   dws = diff --ignore-all-space
@@ -41,7 +45,7 @@
   lfile = l1 --name-only
   ldiff = log -p --
 
-  # tip: 'hash..[branch] --reverse' gives nice series of diffs in chronological order
+  # tip: '<hash>..[branch] --reverse' gives nice series of diffs in chronological order
   patch = l1 --patch
 
   pff = ! "git fetch-all; git pull --ff-only"
@@ -94,7 +98,10 @@
 #   git rebase -i HEAD~N	    where N is commits to re-order, (can we use hash.. instead?)
 #   git push <remote> [<hash>:<branch>] for full, or partial but contiguous
 
-# add files to earlier commit
+# hacktastic alternative to rebase
+#   git stash; git merge; git stash pop
+
+# add files to earlier commit but NOT before push to remote!
 #  git add <overlooked files>
-#  git commit --fixup=<commit>
+#  git commit --fixup=<commit> or 'ammend'
 #  git rebase --interactive --autosquash <commit>^
