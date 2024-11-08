@@ -225,8 +225,6 @@ function __AWS() {
   string.contains -- "$*" '--cli-read-timeout' ||
       cmd+=( '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}} )
 
-
-
   #WARN *seriously* brittle assumption #2: <service> <operation>
   cmd+=( "$1" "$2" ); shift 2
  

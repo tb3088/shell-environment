@@ -120,13 +120,13 @@ function __is_type() {  #WARN! selective short-circuit on first error
   local DEBUG QUIET VERBOSE
 
   local -i OPTIND; local opt OPTARG
-  while getopts 'dqvS' opt; do
+  while getopts ':dqvS' opt; do
     case "$opt" in
       d)    DEBUG=1 ;;
       q)    QUIET=1 ;;
       v)    VERBOSE=1;;
       S)    use_stdin=1 ;;
-#     \?|*)  #silently ignore
+#     \?|*)  shift
     esac
   done
   shift $((OPTIND - 1))
@@ -141,16 +141,24 @@ function __is_type() {  #WARN! selective short-circuit on first error
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]; else [ -f "$1" ]; fi || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
-
+              # naked '-' not absorbed by getopts()
+              [ "$1" != '-' ] || return
               ${VERBOSE:+echo "$1"}
+
+              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]
+              else [ -f "$1" ]; fi || {
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"
+                  return 1
+                }
               shift
             done
             return
             ;;
     exec*)  local bin
             while (( $# )); do
+              # naked '-' not absorbed by getopts()
+              [ "$1" != '-' ] || return
+
               #WARN 'command' returns matches on alias and functions
               bin=$( __WHICH "$1" 2>/dev/null ) || {
                   [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
@@ -161,8 +169,12 @@ function __is_type() {  #WARN! selective short-circuit on first error
             return
             ;;
     func*)  while (( $# )); do
+              # naked '-' not absorbed by getopts()
+              [ "$1" != '-' ] || return
+
               declare -F "$1" &>/dev/null || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1
+                }
 
               ${VERBOSE:+whereis_function "$1"}
               shift
@@ -177,6 +189,9 @@ function __is_type() {  #WARN! selective short-circuit on first error
 
   local whatami flag=
   while (( $# )); do
+    # naked '-' not absorbed by getopts()
+    [ "$1" != '-' ] || return
+
     # suss out functions during 'readonly'
     [ "$( type -t "$1" )" = 'function' ] && flag='-F'
 
