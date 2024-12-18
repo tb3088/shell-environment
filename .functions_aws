@@ -17,8 +17,7 @@ declare -F __JQ{,R} >/dev/null || { log.error "missing required function (__JQ)"
 
 
 # should NEVER happen unless non-traditional invocation
-is_windows &&
-    : ${HOME:=`cygpath -a "${USERPROFILE:-.}"`}
+is_windows && : ${HOME:=`cygpath -a "${USERPROFILE:-.}"`}
 : ${HOME:=/}
 export HOME
 
@@ -227,7 +226,7 @@ function __AWS() {
 
   #WARN *seriously* brittle assumption #2: <service> <operation>
   cmd+=( "$1" "$2" ); shift 2
- 
+
   # cook filenames
   if [ ${__aws_windows:-0} -eq 1 ]; then
     local -a rewrite_args=()
@@ -243,21 +242,20 @@ function __AWS() {
         rewrite_args+=( "$1" )
       fi
       shift
-    done  
+    done
     set -- "${rewrite_args[@]}"
   fi
 
   #NOTE do not post-process output when
   #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
   if [ ${AWS_NOPIPE:-0} -eq 1 ]; then
-    ${DEBUG:+runv} "${cmd[@]}" "$@"
-  elif [ -n "${AWS_POSTPROC=__aws_postproc}" ] && declare -F "$AWS_POSTPROC" >/dev/null; then
+    ${DEBUG:+ runv} "${cmd[@]}" "$@"
+  elif is_function "${AWS_POSTPROC=__aws_postproc}"; then
     ${DEBUG:+ runv} "${cmd[@]}" "$@" | $AWS_POSTPROC
 #    exec 3>&1
 #was >&3 3>&- | tr -d '\r'
 #    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
 #    exec 3>&-
-
   else
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
   fi
@@ -266,9 +264,8 @@ function __AWS() {
 
 # approximate clone of program from ec2-utils.rpm
 function ec2.metadata() {
-  local url='http://169.254.169.254/latest/meta-data'
-  local item mac
-  local -A mapping=(
+  local -r url='http://169.254.169.254/latest/meta-data'
+  local -Ar mapping=(
       [a]='ami-id'
       [b]='block-device-mapping/'
       [availability-zone]='placement/availability-zone'
@@ -285,11 +282,10 @@ function ec2.metadata() {
       [v]='public-ipv4'
     )
 
-  : ${item:=$(echo "$1" | sed -E 's/^-+//')}
+  local item=${1##-} mac
 
-  # special/custom cases
+  # special cases
   case "$item" in
-
 #-c/--product-codes        Product codes associated with this instance.
 #-d/--user-data            User-supplied data.Only available if supplied at instance launch time.
     self)   item='i' ;;
@@ -320,12 +316,12 @@ function ec2.metadata() {
             ;;
     z|az)   item='availability-zone' ;;
 
-# Interferes with fall-through
+#NOTE wildcard interferes with fall-through
 #    *)  [ -n "${mapping[$item]}" ] ||
 #            log.error "unsupported format ($format)"; return 2
   esac
 
-  # intermediary items (eg. MACs) leave behind trailing '/'
+  # recursion for intermediary items (eg. MAC) can leave behind trailing '/'
   __CURL "$url/${mapping[$item]:-$item}" | sed 's|/$||'
 }
 
@@ -347,18 +343,22 @@ function aws.describe() {
   # returns a series of JSON objects    TODO? optionally wrapped in array (-a)
   local keyword= type= field=
   local -i single=0 sort_keys=0
-  local -a filter=() query=() post=()
+  local -a filter=() query=() post=() long_opts=()
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':1at:q:sh' opt; do
+  while getopts ':1at:q:Q:sh' opt; do
     case "$opt" in
       1)    single=1 ;;
-      q)    query+=( "$OPTARG" ) ;;
+      q|Q)  query+=( "$OPTARG" ) ;;
       s)    sort_keys=1 ;;
       t)    filter+=( "$OPTARG" ) ;;
 
       :)    log.error "missing argument (-$OPTARG)" ;;&
-     \?)    #if [ "${OPTARG:0:1}" = '-' ]; then break; fi # long_opts+=( "-$OPTARG" ); continue;
+#     \-)    [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+#            long_opts+=( "--${OPTARG}" )
+#            (( OPTIND++ ))
+#            ;;
+     \?)    #long_opts+=( "-${OPTARG}" ) ;;
             log.error "unsupported option (-${OPTARG})" ;&
       h|*)  >&2 echo "Usage: $FUNCNAME ... TODO"
             return 2

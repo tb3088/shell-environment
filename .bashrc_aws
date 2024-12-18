@@ -777,7 +777,8 @@ done
 #       https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
 
 __aws_api=$( __AWS --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
-[[ ${__aws_api} > 2.3.7 ]] || log.warn "very old CLI version ($__aws_api)"
+[[ ${__aws_api} > 2.3.7 ]] || [[ ${__aws_api} > 2.10 ]] ||
+    log.warn "very old CLI version ($__aws_api)"
 unset __aws_api
 
 
