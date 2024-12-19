@@ -206,12 +206,14 @@ EOF
     [ "$( type -t "$1" )" = 'function' ] && flag='-F'
 
     whatami=$( declare -p $flag "$1" 2>/dev/null | awk '{ print $2; }' ) || {
-        log.error "type detection failed ($1)"; return; }
-
-    if [ ${_readonly:-0} -eq 1 ]; then whatami=${whatami//[^r]/}; else whatami=${whatami//[r-]/}; fi
+        log.error "type detection failed ($1)"; return 1
+      }
+    (( $_readonly )) && whatami=${whatami//[^r]/} || whatami=${whatami//[r-]/}
 
     [[ "${whatami#-}" =~ ${__types[$keyword]} ]] || {
-        [ -n "$QUIET" ] || log.error "type mismatch ($1: ${__types[${whatami#-}]} != $keyword)"; return; }
+        [ -n "$QUIET" ] || log.error "type mismatch ($1: ${__types[${whatami#-}]} != $keyword)"
+        return 1
+      }
     shift
   done
 }
@@ -452,34 +454,38 @@ EOF
 #TODO
 #function convert_path=os.filepath.print
 
-
 #TODO has_value(s), has_key(s)
-function array.is_member() (
-#Usage: <array|hash> value(s)
-  set -e
 
-  if is_nref "${1:?array}"; then
-    local -n source=$1
-    for v in "${@:2}"; do
-      grep --quiet --line-regexp -e "$v" < <( IFS=$'\n'; echo "${source[*]}" )
-    done
-  else
-    for v in "${@:2}"; do
-      grep --quiet --word-regexp -e "$v" <<< "$1"
-    done
-  fi
+#FIXME keys/values use same nref detection
+function array.is_member() (
+#Usage: <array|hash> value(s) ...
+  (( $# > 1 )) || return 2
+
+  local -n object
+  is_nref "${1:?array}" && eval object="\${!$1}" || object=$1
+  is_array -v "${!object}" || return
+
+  shift
+#FIXME this is just values()
+  #NOTE grep matches successfully on blank pattern
+#FIXME can't use | which is an OR. so have to rewrite it into while read 
+# but only expand the set of values once?
+#is this where we use --word-regexp against "${array[*]}"
+
+  grep < <( IFS=$'\n'; echo "${object[*]}" ) \
+      '--quiet' '--line-regexp' '--extended-regexp' "$( IFS='|'; echo "$*" )" 
 )
 
 
 function string.contains() {
+#Usage: <string> substring(s) ...
   local DELIM delim op flags=()
   [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
 
   local -i skip_blank=0 use_stdin=0 reverse_arg=0 exact=0
-#  local -a long_opts=()
 #FIXME rename flags to grep_opts, and use assoc array of flags([use_stdin]=0 etc
 
-  local -i OPTIND; local OPTARG opt
+  local -i OPTIND; local OPTARG opt #long_opts=()
   while getopts ':hD:o:RSxz' opt; do
     case "$opt" in
       D)    delim=$OPTARG ;;
@@ -514,7 +520,7 @@ _EOF
   done
   shift $((OPTIND - 1))
 
-  local object=${1:?object_str}; shift
+  local object=${1:?object}; shift
   (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
   (( $# )) || return 2
 #TODO handle nref, also an EXACT match option mostly for addPath()
@@ -528,15 +534,15 @@ _EOF
     esac
   }
 
-  [ ${reverse_arg:-0} -eq 1 ] && local _save=$object
+  (( $reverse_arg )) && local _save=$object
 
   while read sub; do
     # empty string is 'false' but can be ignored
     if [ -z "$sub" ]; then
-      [ ${skip_blank:-0} -eq 1 ] && continue || return
+      (( $skip_blank )) && continue || return
     fi
 
-    [ ${reverse_arg:-0} -eq 1 ] && { object=$sub; sub=$_save; }
+    (( $reverse_arg )) && { object=$sub; sub=$_save; }
 
     if [ "$op" == 'grep' ]; then
       [ -n "$delim" ] && sub="${delim}\?${sub}${delim}\?"
@@ -544,14 +550,14 @@ _EOF
 
     elif [ -n "$delim" ]; then
       local _IFS=$delim
-      [ ${#delim} -eq 1 ] || _IFS='§'   #(shell: Alt+0167, vi: C-v+167)
+      (( ${#delim} > 1 )) && _IFS=$'§'   #(shell: Alt+0167, vi: C-v+167)
       IFS=$_IFS read -r -a tokens <<< "${object//$delim/$_IFS}"
 
       local -i found=0
       for tok in "${tokens[@]}"; do
         __compare "$sub" "$tok" && { found=1; break; }
       done
-      [ ${found:-0} -eq 1 ]
+      (( $found ))
 
     else __compare "$sub" "$object"; fi || return
   done < <( IFS=$'\n'; echo "$*" )
