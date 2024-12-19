@@ -12,6 +12,7 @@
 .docker
 .gem
 .gitidentity
+.git-credentials
 .gnupg
 .go
 go

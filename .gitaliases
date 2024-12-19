@@ -105,3 +105,6 @@
 #  git add <overlooked files>
 #  git commit --fixup=<commit> or 'ammend'
 #  git rebase --interactive --autosquash <commit>^
+
+# catch up submodules to their respective branch HEADs
+#   git submodule update --remote --merge

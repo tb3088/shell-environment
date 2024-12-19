@@ -33,6 +33,4 @@
 [submodule]
 	recurse = true
 	ignore = all
-[credential]
-	helper = manager
-	validate = false
+#[credential] put in .gitidentity

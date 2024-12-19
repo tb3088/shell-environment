@@ -9,15 +9,16 @@ execute pathogen#infect()
 set nocompatible | filetype plugin indent on | syntax enable
 
 
-" if $COLORSCHEME != ""
-"   let base16colorspace=256
-"   exec 'colorscheme '.$COLORSCHEME
-" endif
-
-" set termguicolors
+"set termguicolors
 set background=dark
 " murphy industry and torte also good
 colorscheme PaperColor
+
+"if $COLORSCHEME != ""
+"  let base16colorspace=256
+"  exec 'colorscheme '.$COLORSCHEME
+"endif
+
 " highlight Normal ctermfg=lightgrey ctermbg=black
 " highlight Function ctermfg=Green
 " highlight Comment ctermfg=Pink
