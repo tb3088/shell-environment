@@ -115,34 +115,46 @@ function __is_type() {  #WARN! selective short-circuit on first error
       ['r']='readonly'    ['readonly']='r'
       ['u']='upper'       ['upper']='u'
     )
-  local keyword=${FUNCNAME[1]#is_}
-  local -i use_stdin
-  local DEBUG QUIET VERBOSE
 
-  local -i OPTIND; local opt OPTARG
-  while getopts ':dqvS' opt; do
+  local keyword=${FUNCNAME[1]#is_}
+  local DEBUG QUIET=1 VERBOSE
+  local -i use_stdin=0
+
+  local -i OPTIND; local opt OPTARG long_opts=()
+  while getopts ':hdqvS' opt; do
     case "$opt" in
       d)    DEBUG=1 ;;
       q)    QUIET=1 ;;
       v)    VERBOSE=1;;
       S)    use_stdin=1 ;;
-#     \?|*)  shift
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \-)    [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            long_opts+=( "--${OPTARG}" )
+            (( OPTIND++ ))
+            ;;
+     \?)    #long_opts+=( "-${OPTARG}" ) ;;
+            log.error "unsupported option (-${OPTARG})" ;&
+      h|*)  >&2 cat << EOF
+Usage: $FUNCNAME ...
+EOF
     esac
   done
   shift $((OPTIND - 1))
+  #FIXME naked '-' implies problem with getopts
+  [ "$1" != '-' ] || { log.error "naked dash (-) argument"; return; }
 
-  # set verbosity flags
+  # evaluate verbosity flags
   [ -n "${DEBUG}${VERBOSE}" ] && unset QUIET
 
   # read STDIN (pipe) if no args
-  [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
+  (( ${use_stdin:-0} )) && set -- $( < /dev/stdin )
   (( $# )) || return
 
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              # naked '-' not absorbed by getopts()
-              [ "$1" != '-' ] || return
+              [ -n "$1" ] || { shift; continue; }
               ${VERBOSE:+echo "$1"}
 
               if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]
@@ -156,8 +168,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
             ;;
     exec*)  local bin
             while (( $# )); do
-              # naked '-' not absorbed by getopts()
-              [ "$1" != '-' ] || return
+              [ -n "$1" ] || { shift; continue; }
 
               #WARN 'command' returns matches on alias and functions
               bin=$( __WHICH "$1" 2>/dev/null ) || {
@@ -169,8 +180,7 @@ function __is_type() {  #WARN! selective short-circuit on first error
             return
             ;;
     func*)  while (( $# )); do
-              # naked '-' not absorbed by getopts()
-              [ "$1" != '-' ] || return
+              [ -n "$1" ] || { shift; continue; }
 
               declare -F "$1" &>/dev/null || {
                   [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1
