@@ -457,7 +457,7 @@ EOF
 #TODO has_value(s), has_key(s)
 
 #FIXME keys/values use same nref detection
-function array.is_member() (
+function array.contains() {
 #Usage: <array|hash> value(s) ...
   (( $# > 1 )) || return 2
 
@@ -466,19 +466,23 @@ function array.is_member() (
   is_array -v "${!object}" || return
 
   shift
-#FIXME this is just values()
-  #NOTE grep matches successfully on blank pattern
-#FIXME can't use | which is an OR. so have to rewrite it into while read 
-# but only expand the set of values once?
-#is this where we use --word-regexp against "${array[*]}"
 
-  grep < <( IFS=$'\n'; echo "${object[*]}" ) \
-      '--quiet' '--line-regexp' '--extended-regexp' "$( IFS='|'; echo "$*" )" 
-)
+  #compute once
+  local elements=${object[*]}
+  #if keys() then ${!object[*]}
+
+  while (( $# )); do
+    #NOTE grep matches on blank which is not helpful
+    [ -n "$1" ] || { shift; continue; }
+
+    grep --quiet --word-regexp "$1" -- <<< "$elements" || return
+    shift
+  done
+}
 
 
 function string.contains() {
-#Usage: <string> substring(s) ...
+#Usage: <object> substring(s) ...
   local DELIM delim op flags=()
   [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
 
@@ -520,10 +524,10 @@ _EOF
   done
   shift $((OPTIND - 1))
 
+#TODO handle nref like array.contains()
   local object=${1:?object}; shift
   (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
   (( $# )) || return 2
-#TODO handle nref, also an EXACT match option mostly for addPath()
 
   function __compare() {
     case "$op" in
@@ -980,6 +984,11 @@ EOF
   done
   shift $((OPTIND - 1))
 
+#FIXME
+#  local -n object
+#  is_nref "${1:?array}" && eval object="\${!$1}" || object=$1
+#  is_array -v "${!object}" || return
+
   local -n nref=${1:?varname}
   if [ "${FUNCNAME[1]}" = keys ]; then
     keys='!nref'; LOG_LEVEL=WARN is_hash "${!nref}"
@@ -1001,7 +1010,8 @@ EOF
                 return 2; }
   esac
 
-  local printf='%s\n'   #NOTE '%q' emits '' when empty which breaks [ -n "`values ..." ]
+#FIXME just ugly as sin
+  local printf='%s\n'   #NOTE '%q' emits '' when empty, which breaks [ -n "`values ..." ]
   # use printf() since IFS ignored when $2
   if [ "${keys+X}${format+Y}" = "XY" ]; then
     eval printf '%s\\n' "\${${keys:-nref}[${2:-*}]}" | $format

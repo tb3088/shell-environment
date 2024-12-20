@@ -7,9 +7,11 @@
 #
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
 __aws_bin=`is_exec -v "${AWS_BIN:-aws${AWS_VERSION}}"` || return 127
-# theoretically windows OR cygwin could invoke a WSL binary
+declare -i __aws_windows=0
+
+#TODO theoretically windows OR cygwin could invoke a WSL binary
 if is_windows "$__aws_bin"; then
-  declare -i __aws_windows=1
+  __aws_windows=1
   function __aws_postproc() { tr -d '\r'; }
 fi
 
@@ -108,12 +110,15 @@ declare -Ar __aws_availability_zones=(
 
 
 function __AWS() {
-  local AWS_OUTPUT AWS_NOPIPE AWS_POSTPROC
+  local AWS_OUTPUT AWS_POSTPROC
+  local -i AWS_NOPIPE
   local -a cmd=()
 
-  if [ -n "$AWS_CONFIG_FILE" ]; then
+  if [ -z "$AWS_CONFIG_FILE" ]; then
+    unset AWS_{CONFIG,SHARED_CREDENTIALS}_{FILE,WINDOWS}
+  else
     is_file "$AWS_CONFIG_FILE" || return
-    #NOTE CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
+    #NOTE Amazon CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
     : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
 
     #FIXME use readlink to make honest compare
@@ -124,24 +129,25 @@ function __AWS() {
       AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
     fi
 
-    if [ ${__aws_windows:-0} -eq 1 ]; then
-      cmd+=( 'env'
-          AWS_CONFIG_FILE=${AWS_CONFIG_WINDOWS:-`cygpath -am "$AWS_CONFIG_FILE"`}
-          AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_WINDOWS:-`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
-        )
+    #WARN! *_WINDOWS can easily diverge
+    if (( ${__aws_windows:-0} )); then
+      AWS_CONFIG_FILE=${AWS_CONFIG_WINDOWS:=`cygpath -am "$AWS_CONFIG_FILE"`}
+      AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_WINDOWS:=`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
     fi
-  else
-    unset AWS_{CONFIG,SHARED_CREDENTIALS}_{FILE,WINDOWS}
+
+    cmd+=( 'env'
+        AWS_CONFIG_FILE="$AWS_CONFIG_FILE"
+        AWS_SHARED_CREDENTIALS_FILE="$AWS_SHARED_CREDENTIALS_FILE" )
   fi
 
   cmd+=( "$__aws_bin" )
-  local -i __s3_mode=0
+
   # special keywords mimics ssh-wrapper
   local sop
+  local -i __s3_mode=0
 
   #WARN *seriously* brittle assumption #1; that ignores possibility of '--XXX' options+args
   #FIXME? use getopt to re-flow all options
-
   case "$1" in
     edit)   sop=${EDITOR:-vi} ;&
     # assumes operation against either of AWS_CONFIG_FILE or AWS_SHARED_CREDENTIALS_FILE
@@ -152,7 +158,7 @@ function __AWS() {
               ?(AWS_)CONFIG?(_FILE))
                         file=${AWS_CONFIG_FILE:-`eval echo "${__aws_defaults['config']}"`}
                         ;;
-              ?(AWS_SHARED)CRED*?(_FILE))
+              ?(AWS_SHARED_)CRED*?(_FILE))
                         file=${AWS_SHARED_CREDENTIALS_FILE:-`eval echo "${__aws_defaults['credentials']}"`}
             esac
             is_file "${file:?}" && ${sop:-$1} "$file"
@@ -206,14 +212,14 @@ function __AWS() {
     if ! string.contains -- "$*" '--region'; then
       local region=$( ec2.metadata region || "${cmd[@]}" configure get region )
       if [ -z "$region" ]; then
-        region=${__aws_defaults['region']}
         log.warn "forcing AWS_REGION to hard-coded default ($region)"
+        region=${__aws_defaults['region']}
       fi
       cmd+=( '--region' "${region:?}" )
     fi
   fi
 
-  #WARN format='text' is hazardous & unpredictable in programatic invocation
+  #WARN! format='text' is hazardous & unpredictable in programatic invocation
   string.contains -- "$*" '--output' || cmd+=( '--output' ${AWS_OUTPUT:-json} )
 
   string.contains -- "$*" '--debug' ||
@@ -224,20 +230,20 @@ function __AWS() {
   string.contains -- "$*" '--cli-read-timeout' ||
       cmd+=( '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}} )
 
-  #WARN *seriously* brittle assumption #2: <service> <operation>
+  #WARN! *seriously* brittle assumption #2: <service> <operation>
   cmd+=( "$1" "$2" ); shift 2
 
-  # cook filenames
-  if [ ${__aws_windows:-0} -eq 1 ]; then
+  if (( ${__aws_windows:-0} )); then
     local -a rewrite_args=()
 
     while (( $# )); do
       if [[ "$1" =~ ^file:// ]]; then
-        rewrite_args+=( "file://`cygpath -am "${1#file://}"`" )
-      elif [ ${__s3_mode:-0} -eq 1 ] && ! [[ "$1" =~ s3:// ]]; then
+        rewrite_args+=( "file://$( cygpath -am "${1#file://}" )" )
+      elif (( ${__s3_mode:-0} )) && ! [[ "$1" =~ s3:// ]]; then
+        # weak attempt to differentiate args from files
         if is_file "$1" || is_dir "$1"; then
-          rewrite_args+=( "`cygpath -am "$1"`" )
-		else rewrite_args+=( "$1" ); fi
+          rewrite_args+=( "$( cygpath -am "$1" )" )
+        else rewrite_args+=( "$1" ); fi
       else
         rewrite_args+=( "$1" )
       fi
@@ -246,21 +252,17 @@ function __AWS() {
     set -- "${rewrite_args[@]}"
   fi
 
-  #NOTE do not post-process output when
-  #  OpenSSH ProxyCommand pipe or sts prompting for MFA Token
-  if [ ${AWS_NOPIPE:-0} -eq 1 ]; then
-    ${DEBUG:+ runv} "${cmd[@]}" "$@"
-  elif is_function "${AWS_POSTPROC=__aws_postproc}"; then
+  if is_function "${AWS_POSTPROC-__aws_postproc}" && 
+      ! (( ${AWS_NOPIPE:-0} )); then
     ${DEBUG:+ runv} "${cmd[@]}" "$@" | $AWS_POSTPROC
-#    exec 3>&1
-#was >&3 3>&- | tr -d '\r'
-#    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 | tr -d '\r'
-#    exec 3>&-
   else
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
   fi
 }
-
+#alt: not sure if [...] is correct
+#    exec 3>&1
+#    ${DEBUG:+ runv} "${cmd[@]}" "$@" >&3 [3>&-] | tr -d '\r'
+#    exec 3>&-
 
 # approximate clone of program from ec2-utils.rpm
 function ec2.metadata() {
