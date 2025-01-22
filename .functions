@@ -154,25 +154,17 @@ EOF
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-              ${VERBOSE:+echo "$1"}
-
-              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]
-              else [ -f "$1" ]; fi || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"
-                  return 1
-                }
+              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]; else [ -f "$1" ]; fi || {
+                  [ -n "$QUIET" ] || log.error "$keyword not found (${1:?})"; return 1; }
               shift
             done
             return
             ;;
     exec*)  local bin
             while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-
               #WARN 'command' returns matches on alias and functions
-              bin=$( __WHICH "$1" 2>/dev/null ) || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
+              bin=$( __WHICH "${1:?}" 2>/dev/null ) || {
+                  [ -n "$QUIET" ] || log.error "$keyword not found (${1:?})"; return 1; }
 
               ${VERBOSE:+echo "$bin"}
               shift
@@ -180,11 +172,8 @@ EOF
             return
             ;;
     func*)  while (( $# )); do
-              [ -n "$1" ] || { shift; continue; }
-
               declare -F "$1" &>/dev/null || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1
-                }
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
 
               ${VERBOSE:+whereis_function "$1"}
               shift
