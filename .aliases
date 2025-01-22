@@ -20,7 +20,7 @@ function edit() {
   : ${title:=$FUNCNAME}
 
   if [ -n "$WT_SESSION" ]; then
-    cmd=( wt new-tab '--title' "${title##*/}" '--startingDirectory' ./ '--' )
+    cmd=( wt --window 0 new-tab '--title' "${title##*/}" '--startingDirectory' ./ '--' )
     # make sure $EDITOR is on Windows PATH or use 'cygpath -m ${EDITOR}'
     local editor=`convert_path -m "$EDITOR"`
   #TODO  PowerShell
