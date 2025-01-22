@@ -201,6 +201,8 @@ function __AWS() {
     sts)    string.contains -o grep --extended-regexp -- "$*" '(assume-role|get-session-token)' && AWS_NOPIPE=1 ;;
     ssm)    string.contains -- "$*" 'start-session' && AWS_NOPIPE=1 ;;
 
+    '--version'|help)
+            AWS_NOPIPE=1 ;;
     ec2)    cmd+=( ${NOOP:+'--dry-run'} ) ;;
     s3)     cmd+=( ${NOOP:+'--dryrun'} ); __s3_mode=1 ;;
   esac
@@ -231,19 +233,18 @@ function __AWS() {
       cmd+=( '--cli-read-timeout' ${AWS_READ_TIMEOUT:-${__aws_defaults['readTimeout']}} )
 
   #WARN! *seriously* brittle assumption #2: <service> <operation>
-  cmd+=( "$1" "$2" ); shift 2
+  cmd+=( $1 $2 ); shift 2 || shift
 
   if (( ${__aws_windows:-0} )); then
     local -a rewrite_args=()
 
     while (( $# )); do
       if [[ "$1" =~ ^file:// ]]; then
-        rewrite_args+=( "file://$( cygpath -am "${1#file://}" )" )
-      elif (( ${__s3_mode:-0} )) && ! [[ "$1" =~ s3:// ]]; then
-        # weak attempt to differentiate args from files
-        if is_file "$1" || is_dir "$1"; then
-          rewrite_args+=( "$( cygpath -am "$1" )" )
-        else rewrite_args+=( "$1" ); fi
+        rewrite_args+=( "file://`cygpath -am "${1#file://}"`" )
+      elif (( ${__s3_mode:-0} )) && ! [[ "$1" =~ s3:// ]] &&
+          ( is_file "$1" || is_dir "$1" ); then
+          # weak attempt to differentiate args from files
+        rewrite_args+=( "`cygpath -am "$1"`" )
       else
         rewrite_args+=( "$1" )
       fi
@@ -252,8 +253,7 @@ function __AWS() {
     set -- "${rewrite_args[@]}"
   fi
 
-  if is_function "${AWS_POSTPROC-__aws_postproc}" && 
-      ! (( ${AWS_NOPIPE:-0} )); then
+  if is_function "${AWS_POSTPROC=__aws_postproc}" && ! (( ${AWS_NOPIPE:-0} )); then
     ${DEBUG:+ runv} "${cmd[@]}" "$@" | $AWS_POSTPROC
   else
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
