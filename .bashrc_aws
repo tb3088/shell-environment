@@ -40,6 +40,7 @@ export AWS_SESSION_DURATION=$((3600 * 4))
 
 alias aws='__AWS'
 alias aws.clearenv='aws.profile RESET'
+alias aws.pushd='pushd "${AWS_CONFIG_FILE%/*}/${AWS_DEFAULT_REGION}"'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
 # TODO DELETE=1 ec2.connect -i <instnace>
 
@@ -71,17 +72,17 @@ function aws.printenv() { local v; for v in ${!AWS_*}; do printf '%s=%q\n' "$v" 
 
 
 function aws.region() {
-  local region _default
-  local -i OPTIND; local OPTARG opt long_opts=()
+  local region __default=
 
+  local -i OPTIND; local OPTARG opt long_opts=()
   while getopts ':hdPr:-:' opt; do
     case "$opt" in
-      d)    _default=$OPTARG ;;
+      d)    __default=$OPTARG ;;
       P)    region='prompt' ;;
       r)    region=$OPTARG ;;
 
-     \-)    long_opts+=( "--${OPTARG}" )
-            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+     \-)    [[ "$OPTARG" =~ \= ]] || log.notice "assuming simple flag (${!OPTIND})"
+            long_opts+=( "${!OPTIND}" )
             ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
@@ -95,29 +96,28 @@ EOF
   shift $((OPTIND - 1))
 
   : ${region=${1-'prompt'}}
+  [ "$region" = '-' ] && region=
 
   # short-circuit on 'blank' argument or match current
   # except AWS_*REGION can't be left blank since it's non-obvious
-  if [ -z "$region" ]; then
-    [ -n "$AWS_DEFAULT_REGION" ] && return
-  else
-    [ "$region" = "$AWS_DEFAULT_REGION" ] && return
-  fi
+  [ -z "$region" ] && [ -n "$AWS_DEFAULT_REGION" ] && return
+  [ "$region" = "${AWS_DEFAULT_REGION:-__unset__}" ] && return
 
-  # force new value
-  : ${region:=${_default:-`__AWS configure get region`}}
+  : ${region:=${__default:-`__AWS configure get region`}}
 
+  # still unset after multiple attempts
   if [ "${region:-prompt}" = 'prompt' ]; then
-    PS3=`echo -ne "\nChoose REGION:  "`
+    local REPLY= PS3=`echo -ne "\nChoose REGION:  "`
+
     select region in "${__aws_regions[@]}"; do
-      [ -n "$region" ] && break
+      [[ "$region" ]] && break
       # examine REPLY for textual format
-      if [ -n "$REPLY" ]; then array.is_member __aws_regions "$REPLY" && break; fi
+      array.contains __aws_regions "$REPLY" && { region=$REPLY; break; }
     done
   fi
 
   #BUG! Java API uses AWS_REGION; Amazon refused consistency fix
-  export AWS_{DEFAULT_,}REGION=$region
+  export AWS_{DEFAULT_,}REGION=${region:?}
 }
 
 
@@ -140,14 +140,15 @@ function aws.creds-save() {
 
 
 function aws.profile() {
+  local profile region
+
   # hacktastic shortcuts
-  case "$1" in
+  case "${1^^}" in
     RESET)  aws.rmPath; unset ${!AWS_*}; return ;;
 #TODO DELETE=1 $FUNCNAME -p <value>
     LIST)   __AWS configure list-profiles | column; return ;;
   esac
 
-  local profile
   local -i OPTIND; local OPTARG opt long_opts=()
   while getopts ':hlPp:-:' opt; do
     case "$opt" in
@@ -155,8 +156,8 @@ function aws.profile() {
       P)    profile='prompt' ;;
       p)    profile=$OPTARG ;;
 
-     \-)    long_opts+=( "--${OPTARG}" )
-            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+     \-)    [[ "$OPTARG" =~ \= ]] || log.notice "assuming simple flag (${!OPTIND})"
+            long_opts+=( "${!OPTIND}" )
             ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
@@ -169,13 +170,15 @@ EOF
   done
   shift $((OPTIND - 1))
 
+  function __finish() { export ${!AWS_*}; aws.addPath; }
+
   : ${profile=${1-'prompt'}}
+  [ "$profile" = '-' ] && profile=
 
   # short-circuit on 'blank' argument or match current
-  if [ -z "$profile" ]; then
-    [ -n "$AWS_PROFILE" ] && { aws.region "$2"; return; }
-  else
-    [ "$profile" = "$AWS_PROFILE" ] && { aws.region "$2"; return; }
+  if [ -z "$profile" -a -n "$AWS_PROFILE" ] || [ "$profile" = "$AWS_PROFILE" ]; then
+    aws.region "${region-$2}"
+    __finish; return
   fi
 
   if [ "${profile:-'prompt'}" = 'prompt' ]; then
@@ -184,29 +187,30 @@ EOF
     # pattern='$1 ~ /^\[(profile|\w+)/ { gsub(/\[|\]/, "", $NF); print $NF; }'
     # list=( `awk -- "$pattern" "$conf" "$creds" | sort -u` )
 
-    if [ ${#list[@]} -ge 1 ]; then
-      PS3=$( echo -ne "\nChoose PROFILE:  " )
-      select profile in "${list[@]}"; do
-        [ -n "$profile" ] && break
-        # examine REPLY for textual format
-        if [ -n "$REPLY" ]; then array.is_member list "$REPLY" && break; fi
-      done
-    else
-      log.warn "no profile(s) found ($AWS_CONFIG_FILE)"
-      return
-    fi
+    (( ${#list[@]} )) || {
+        log.warn "no profile(s) found (${AWS_CONFIG_FILE:-${__aws_defaults['config']}})"
+        return
+      }
+    local REPLY= PS3=`echo -ne "\nChoose PROFILE:  "`
+
+    select profile in "${list[@]}"; do
+      [[ "$profile" ]] && break
+      # examine REPLY for textual format
+      array.contains list "$REPLY" && { profile=$REPLY; break; }
+    done
   fi
 
   #NOTE 'configure get' does NOT follow 'source_profile' keyword
   # nor fall-thru to 'default' if --profile is specified.
   #
-  # aws-cli (boto-core) returns 255 on ProfileNotFound, but will also
+  # aws-cli (boto-core) returns 255 on ProfileNotFound, but can (fixed?)
   # stacktrace if value of AWS_PROFILE is not defined in file(s).
   #
   # $? == 1 simply means no explicit declaration
-  local region
-  region=$( __AWS ${profile:+ '--profile' "$profile"} configure get region )
-  if [ $? -eq 255 ] || [[ "${region:-X}" =~ ProfileNotFound ]]; then return 255; fi
+
+  local __region
+  __region=$( __AWS ${profile:+'--profile' "$profile"} configure get region )
+  if [ $? -eq 255 ] || [[ "${__region:-X}" =~ ProfileNotFound ]]; then return 255; fi
 
   # cleanup previous environment
   if [ "$profile" != "${AWS_PROFILE:-default}" ]; then
@@ -214,11 +218,9 @@ EOF
 #TODO    iam.session DROP || true
   fi
 
-  if [ "$profile" = 'default' ]; then unset AWS_PROFILE; else AWS_PROFILE=$profile; fi
-  aws.region -d "$region" "$2"
-
-  export ${!AWS_*}
-  aws.addPath
+  [ "$profile" = 'default' ] && unset AWS_PROFILE || AWS_PROFILE=${profile:?}
+  aws.region -d "$__region" "${region-$2}"
+  __finish
 }
 
 
@@ -683,8 +685,9 @@ function ec2.connect() {
                 "${rhost:+host=$rhost}"`
             [ -n "$params" ] && cmd+=( '--parameters' "$params" )
             ;;
-      -)    long_opts+=( "--${OPTARG}" )
-            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})" ;;
+      -)    [[ "$OPTARG" =~ \= ]] || log.notice "assuming simple flag (--${OPTARG})"
+            long_opts+=( "${!OPTIND}" )
+            ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
      \?)    log.error "unsupported (-$OPTARG)" ;&
