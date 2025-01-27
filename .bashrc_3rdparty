@@ -20,7 +20,6 @@ function 3rdparty.add_program() {
   declare -A software_map=(
       ['aws']=${AWSCLI:-aws'{cli,}{v,}'$AWS_VERSION}
       ['session-manager-plugin']=\${AWS_SM_PLUGIN:?}
-      ['git-credential-manager']=GitCredentialManager
       ['mvn']=apache-maven
       ['npm']=nodejs
       ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'$JAVA_VERSION}
