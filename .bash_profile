@@ -16,6 +16,12 @@ export LANG='en_US.utf8'
 #esac
 #[ -f "$OPENSC_LIB" -a  -n "$SSH_AUTH_SOCK" ] && ssh-add -s "$OPENSC_LIB" 2>/dev/null
 
+for f in ${BASH_SOURCE}.local /etc/profile.d/*.sh; do
+  [ -s "$f" ] || continue
+  #badly written scripts abound. ignoring...
+  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f"; }
+done
+
 #TODO? detect inside SSH session; [ -n "$SSH_CONNECTION" ]
 if [ -z "$SSH_AUTH_SOCK" ] && type -p ssh-agent >/dev/null; then
   eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+ -s}}`
@@ -23,13 +29,11 @@ if [ -z "$SSH_AUTH_SOCK" ] && type -p ssh-agent >/dev/null; then
 fi
 
 # Amazon Linux family doesn't support '-q' or much of anything
-[ -S "$SSH_AUTH_SOCK" ] && ssh-add "$HOME"/.ssh/{id_?sa,*.pem} 2>/dev/null
+[ -S "$SSH_AUTH_SOCK" ] && ssh-add 2>/dev/null
+# alt: ssh-add -k (for keys); ssh-add -C (for certs)
 
-
-for f in ${BASH_SOURCE}.local "$HOME"/.bashrc; do
-  [ -s "$f" ] || continue
-  source "$f"
-done
+# self-detects if interactive
+source "$HOME"/.bashrc
 
 
 # vim: expandtab:ts=4:sw=4
