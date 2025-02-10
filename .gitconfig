@@ -34,4 +34,8 @@
 	recurse = true
 	ignore = all
 
-#[credential] put in .gitidentity
+[credential]
+#ref: https://github.com/git-ecosystem/git-credential-manager/releases
+#	helper = <path to 'manager'>
+#	interactive = auto
+#	modalPrompt = true

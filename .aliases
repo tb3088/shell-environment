@@ -44,6 +44,8 @@ alias cdu='cd ..'
 alias cdl='cd ${1:-.}; shift; ls $@'
 alias curl='${DEBUG:+ runv} \curl --connect-timeout 7 --fail --silent ${VERBOSE:+ --verbose --progress-bar}'
 
+alias newtab='wt --window 0 new-tab --'
+
 alias sftp='\sftp -R 256 -B 262144'
 alias ntpdate='sudo /usr/sbin/ntpd -gq'
 
