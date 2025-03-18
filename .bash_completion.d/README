@@ -1,7 +1,0 @@
-# drop symlinks or files to alter Bash completion symantics.
-# WARN do not add items to GIT unless platform neutral or failure resistant!
-
-# Cygwin package managers completely omitted /usr/share/bash-completion/bash-completion
-# which defines '_filedir' used by 'vi' etc. Included here as failsafe.
-#
-# origin: https://raw.githubusercontent.com/scop/bash-completion/master/bash_completion

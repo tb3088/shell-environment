@@ -10,14 +10,16 @@ ${CONTINUE:+set +e}
 # ref: https://www.gnu.org/software/bash/manual/html_node/The-Shopt-Builtin.html
 # don't search PATH for target of 'source'
 shopt -u sourcepath
+shopt -s nullglob
 
 #---------------
+
 for f in "$HOME"/.functions{,.local,_logging}; do
   [ -s "$f" ] || continue
-  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f, aborting.\n"; return 1; }
+  source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f"; return 1; }
 done
 
-QUIET=1 addPath -P -k PATH "$HOME"/{,.local/}bin
+addPath -P -k PATH "$HOME"/{,.local/}bin
 
 case $- in
   # a bit redundant since whole point of .bashrc is 'interactive' use...
@@ -25,7 +27,7 @@ case $- in
           [ -s "$f" ] || continue
           grep -qE '\.swp$|\.bak$|~$' - -- <<< "$f" && continue
 
-          source "$f" || { log.error "RC=$? during $f, aborting."; return; }
+          source "$f" || { log.error "RC=$? during $f, aborting."; pause; return 1; }
         done
 
         eval "$( dircolors -b - < <( cat .dir{,_}colors{,.local} 2>/dev/null ) )" || true
@@ -48,25 +50,21 @@ case $- in
         # History Options
         shopt -s histappend histreedit no_empty_cmd_completion
 
-        # programmable completion enhancements
-        # Any completions you add in ~/.bash_completion are sourced last.
-        for f in {,/usr/local}/etc/{,profile.d/}bash_completion{,.sh,.d/*} \
-            .bash_completion{,.d/*}; do
-          [ -s "$f" ] || continue
-          source "$f" || log.error "RC=$? during $f"
-        done
+#DEPRECATED when bash-completion is installed *properly* !!
+# (opt) populate ${BASH_COMPLETION_USER_FILE=~/.bash_completion} with directives
+#
+#        for f in {{,/usr/local}/etc/,"$HOME"/.}bash_completion{.sh,.d/*}; do
+#          [ -s "$f" ] || continue
+#          source "$f" || log.error "RC=$? during $f"
+#        done
 
-        #WARN! nullglob=on, failglob=off has DANGEROUS side-effects!
-        shopt -s failglob
-        shopt -u nullglob
+        # use VI mode on command-line (else emacs)
+        #ref: http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
+        #set -o vi
         ;;
   *c*)  SSH_AGENT=
 esac
 #---------------
-
-# use VI mode on command-line (else emacs)
-# http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
-#set -o vi
 
 HISTCONTROL="erasedups ignorespace"
 HISTFILESIZE=100
@@ -74,6 +72,10 @@ HISTSIZE=500
 HISTTIMEFORMAT="%H:%M "
 # Ignore some controlling instructions
 HISTIGNORE="[ \t]*:[bf]g:exit:ls:ll:d[uf]:pwd:history:nslookup:ping:screen"
+
+#WARN! nullglob=on, failglob=off has DANGEROUS side-effects!
+shopt -s failglob
+shopt -u nullglob
 
 
 # vim: expandtab:ts=4:sw=4

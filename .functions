@@ -166,7 +166,7 @@ EOF
 
     exec*)  local bin
             while (( $# )); do
-              # cant use 'command' since matches on alias and functions
+              #NOTE don't use 'command' since matches on alias and functions
               bin=$( __WHICH "$1" 2>/dev/null ) || {
                   [ -n "$QUIET" ] || log.error "$keyword not found ($1)"
                   return 1

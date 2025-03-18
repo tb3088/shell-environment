@@ -1,0 +1,8 @@
+# WARN do not add items to GIT unless platform neutral or failure resistant!
+#
+# previously Cygwin maintainers completely omitted /usr/share/bash-completion/bash-completion
+# which defines '_filedir()' used by 'vi' etc. Include here as failsafe.
+#
+# origin: https://raw.githubusercontent.com/scop/bash-completion/master/bash_completion
+#
+#eg. source "$HOME"/.bash_completion.d/*

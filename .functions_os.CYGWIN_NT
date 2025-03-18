@@ -15,8 +15,9 @@ readonly -f __WHICH
 
 # override CYGWIN default which uses non-portable Junctions
 function ln() {
-  local flag destdir=
+  is_exec mklink.exe || { /bin/ln "$@"; return; }
 
+  local flag destdir=
   local -i OPTIND; local opt OPTARG
   while getopts ':hHJst:v' opt; do
     case "$opt" in

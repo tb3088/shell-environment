@@ -9,10 +9,11 @@ __tag=1
 #------------------
 
 
-if is_exec -q git; then
+if is_exec git; then
 #--- BEGIN git ---
 
-source ${BASH_SOURCE%_*}_3rdparty git-credential-manager
+#source ${BASH_SOURCE%_*}_3rdparty git-credential-manager
+#alt: git config --global credential.helper=<full path>
 
 alias gsb='\git status --short --branch'
 alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
