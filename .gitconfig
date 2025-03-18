@@ -1,6 +1,7 @@
 [include]
 	path = .gitidentity
 	path = .gitaliases
+	path = .gitconfig.local
 [init]
         defaultBranch = master
 [checkout]
@@ -34,4 +35,3 @@
 	recurse = true
 	ignore = all
 
-#[credential] put in .gitidentity
