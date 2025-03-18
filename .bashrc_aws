@@ -51,7 +51,7 @@ __tag=1
 function __prompt.aws() {
   [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}${AWS_SESSION_TOKEN}" ] || return 0
 
-  local _config=${AWS_CONFIG_FILE#$HOME/}; _config=${_config#.aws/}; _config=${_config%/config};
+  local _config=${AWS_CONFIG_FILE#*/.aws/}; _config=${_config%/config};
   #alt: $( sed -E "s|^$HOME/(.aws/)?||; s|/config$||" <<< "$AWS_CONFIG_FILE" )
 
   echo -ne "\n${UL}AWS:${RS} ${FMAG}${_config:---} ${HC}${AWS_PROFILE:---}${RS} / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}${RS}"
@@ -150,7 +150,7 @@ function aws.profile() {
   esac
 
   local -i OPTIND; local OPTARG opt long_opts=()
-  while getopts ':hlPp:-:' opt; do
+  while getopts ':hlPp:-' opt; do
     case "$opt" in
       l)    $FUNCNAME LIST; return ;;
       P)    profile='prompt' ;;
@@ -263,7 +263,7 @@ function iam.session-load() {
             input=$( < "$OPTARG" ) ;;
 
      \-)    long_opts+=( "--${OPTARG}" )
-            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
+            [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag w/o argument (--${OPTARG})"
             ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
@@ -276,12 +276,10 @@ EOF
   done
   shift $((OPTIND - 1))
 
-  if is_file "$1"; then
-    input=$( < "$1" )
-  else
-    : ${input:=$( < /dev/stdin )}
+  if [ -z "$input" ]; then
+    is_file "$1" && { input=$( < "$1" ); shift; } || input=$( < /dev/stdin )
   fi
-  [ -n "$input" ] || { log.error "empty input"; return; }
+  [ -n "$input" ] || { log.error "empty input"; return 2; }
 
   local format
   is_json "$input" && format='json'
@@ -779,7 +777,7 @@ done
 #       https://stackoverflow.com/questions/48491662/comparing-two-version-numbers-in-a-shell-script
 #       https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
 
-__aws_api=$( __AWS --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
+__aws_api=$( \aws --version | awk '{ split($1, terms, "/"); print terms[2]; }' )
 [[ ${__aws_api} > 2.3.7 ]] || [[ ${__aws_api} > 2.10 ]] ||
     log.warn "very old CLI version ($__aws_api)"
 unset __aws_api
