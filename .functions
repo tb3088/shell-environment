@@ -155,52 +155,70 @@ EOF
     dir*|file)
             while (( $# )); do
               if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]; else [ -f "$1" ]; fi || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found (${1:?})"; return 1; }
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"
+                  return 1
+                }
+              ${VERBOSE:+echo "$1"}
               shift
             done
             return
             ;;
+
     exec*)  local bin
             while (( $# )); do
-              #WARN 'command' returns matches on alias and functions
-              bin=$( __WHICH "${1:?}" 2>/dev/null ) || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found (${1:?})"; return 1; }
-
+              #NOTE don't use 'command' since matches on alias and functions
+              bin=$( __WHICH "$1" 2>/dev/null ) || {
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"
+                  return 1
+                }
               ${VERBOSE:+echo "$bin"}
               shift
             done
             return
             ;;
+
     func*)  while (( $# )); do
               declare -F "$1" &>/dev/null || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"; return 1; }
-
+                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"
+                  return 1
+                }
               ${VERBOSE:+whereis_function "$1"}
               shift
             done
             return
             ;;
-    read*)  local -i _readonly=1 ;;
 
-    *)      [ -n "${__types[$keyword]}" ] || {
-                log.error "unsupported type ($keyword)"; return 2; }
+    read*)  keyword='readonly'
+            ;;
+
+    *)      case ${#__types[$keyword]} in
+              0)    log.error "unsupported type ($keyword)"; return 2 ;;
+              1)    : ;;
+              *)    # always set to long form. otherwise comparo will fail
+                    keyword=${__types[$keyword]}
+            esac
   esac
 
-  local whatami flag=
+  local whatami flag
   while (( $# )); do
     # naked '-' not absorbed by getopts()
-    [ "$1" != '-' ] || return
+    [ -n "$1" -a "$1" != '-' ] || { shift; continue; }
+    flag=
 
     # suss out functions during 'readonly'
-    [ "$( type -t "$1" )" = 'function' ] && flag='-F'
+    [ "`type -t $1`" = 'function' ] && flag='-F'
 
-    whatami=$( declare -p $flag "$1" 2>/dev/null | awk '{ print $2; }' ) || {
-        log.error "type detection failed ($1)"; return 1
+    whatami=$( declare -p $flag "$1" | awk '{ print $2; }' 2>/dev/null ) || {
+        log.error "type detection failed ($1)"
+        return 1
       }
-    (( $_readonly )) && whatami=${whatami//[^r]/} || whatami=${whatami//[r-]/}
+
+    # remove confounding flags
+    if [ "$keyword" = 'readonly' ]; then whatami=${whatami//[^r]/}
+    else whatami=${whatami//[r-]/}; fi
 
     [[ "${whatami#-}" =~ ${__types[$keyword]} ]] || {
-        [ -n "$QUIET" ] || log.error "type mismatch ($1: ${__types[${whatami#-}]} != $keyword)"
+        [ -n "$QUIET" ] || log.error "type mismatch ($1: ${whatami#-} != ${__types[$keyword]})"
         return 1
       }
     shift
@@ -430,13 +448,11 @@ EOF
   shift $((OPTIND - 1))
 
   local _format="${quote}%s${quote}\n"
-  [ ${escape:-0} -eq 1 ] && _format='%q\n'
-  local IFS=$'\n'
+  (( ${escape:-0} )) && _format='%q\n'
 
-  [ ${abs:-0} -eq 1 ] && set -- `readlink -m "$@"`
-  if is_windows; then
-	set -- `cygpath "${long_opts[@]}" -- "$@" 2>/dev/null`
-  fi
+#  local IFS=$'\n'
+  (( ${abs:-0} )) && set -- $(readlink -m "$@")
+  is_windows && set -- $(cygpath "${long_opts[@]}" -- "$@")
 
   printf "$_format" "$@"
 }
@@ -564,7 +580,7 @@ function addPath() {
   # but does NOT sub-divide arguments!
 
 #TODO use string.join() to handle arbitrary delimiters and whitespace
-#TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <VARNAME> $1 $2`
+#TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <variable> $1 $2`
   local PREPEND k
   local -i prepend=0 use_stdin=0
   [ -n "${PREPEND+X}" ] && prepend=1
@@ -601,7 +617,7 @@ _EOF
   esac
 
   : ${delim:=${PATHSEP:-':'}}
-  local -n kval=${k:?VAR_name}
+  local -n kval=${k:?variable}
 
 #FIXME detect if new path already has ^/cygpath and don't invoke cygpath()
 
@@ -627,7 +643,7 @@ _EOF
 
 #TODO simply treat as DELETE=1 addPath
 function rmPath() {
-  : ${1:?VAR_name or path}
+  : ${1:?variable or path}
   local k delim
 
   case "${k:=$1}" in
@@ -639,7 +655,7 @@ function rmPath() {
   esac
 
   : ${delim:=${PATHSEP:-':'}}
-  local -n kval=${k:?VAR_name}
+  local -n kval=${k:?variable}
   # split into tokens. unset array element to erase
   #alt: eval $k=`loop`
   kval=$( IFS=$delim
@@ -656,6 +672,14 @@ function rmPath() {
   kval=${kval##$delim}; kval=${kval%%$delim}
   kval=${kval//${delim}${delim}/$delim}
 }
+
+
+function string.trim() (
+  shopt -s extglob
+  set -- "${@##*([[:space:]])}"; set -- "${@%%*([[:space:]])}"
+  shopt -u extglob
+  local IFS=$'\n'; echo "$*"
+)
 
 
 #TODO? if QUOTE=1 use printf '%q'
@@ -737,7 +761,7 @@ function to_lower() { if (( $# )); then local IFS=$'\n'; echo "${*,,}"; else tr 
 
 
 function bool_to_int() {
-# Usage: [-u] <value|VAR_NAME> ...
+# Usage: [-u] <value|variable> ...
   local -i to_bool unset
 
   local -i OPTIND; local opt OPTARG
@@ -819,8 +843,9 @@ function version_to_int() (
   set -- "${@//-/.}"; set -- "${@//[^0-9]/}"
 
   while (( $# )); do
-    printf '%.3d' ${1//./ }		#deliberate un-quoted
-    echo; shift
+    printf '%.3d' ${1//./ }     #deliberate un-quoted
+    echo
+    shift
   done
 )
 
@@ -950,17 +975,21 @@ function max() { min -r "$@"; }
 #
 if [[ "$BASH_VERSION" =~ 5|4.4 ]]; then
 #----
-function keys() { values "$@"; }
+function keys() { values -k "$@"; }
 
 function values() {
-  local format keys
+  local format
+  local -i key_mode=0 single=0 use_stdin=0
 
   local -i OPTIND; local opt OPTARG
-  while getopts ':hf:lqu' opt; do
+  while getopts ':f:1klQSu' opt; do
     case "$opt" in
+      1)    single=1 ;;
       f)    format=${OPTARG} ;;
+      k)    key_mode=1 ;;
       l)    format='@L' ;;
-      q)    format='@Q' ;;
+      Q)    format='@Q' ;;
+      S)    use_stdin=1 ;;
       u)    format='@U' ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
@@ -973,65 +1002,66 @@ EOF
   done
   shift $((OPTIND - 1))
 
-#FIXME
-#  local -n object
-#  is_nref "${1:?array}" && eval object="\${!$1}" || object=$1
-#  is_array -v "${!object}" || return
-
-  local -n nref=${1:?varname}
-  if [ "${FUNCNAME[1]}" = keys ]; then
-    keys='!nref'; LOG_LEVEL=WARN is_hash "${!nref}"
-    set --      # remove args to force '*'
-  fi
+  local -i use_pipe=0
+  [ "${FUNCNAME[1]}" = 'keys' ] && key_mode=1
 
   case "$format" in
-    '')     : ;;
-    \@L|,,) [ -n "${keys+X}" ] && format=to_lower ;;&
-    \@U|^^) [ -n "${keys+X}" ] && format=to_upper ;;&
-    # fake 'keys' to use pipe
-    ?(to_)@(upper|lower)) : ${keys=''} ;;&
-
-    #NOTE adds quotes when empty which breaks [ -n "`value ...`" ]
-    \@[kQ]) local IFS= ;;&
-    # keys & format can not be combined
-    *)      [ -z "$keys" ] || {
-                log.error "unsupported format ($format) ${keys+with keys}"
-                return 2; }
+    #NOTE
+    # @Q adds quotes when empty, which breaks [ -n "`$FN ...`" ]
+    # @k expands to <k v> ...
+    # @* notation only works with 'echo'
+    \@[LUkQ]|,,|^^|'')
+			: ;;
+    ?(to_)@(upper|lower))
+            is_function "$format" || return ;&
+    *)      use_pipe=1
   esac
 
-#FIXME just ugly as sin
-  local printf='%s\n'   #NOTE '%q' emits '' when empty, which breaks [ -n "`values ..." ]
-  # use printf() since IFS ignored when $2
-  if [ "${keys+X}${format+Y}" = "XY" ]; then
-    eval printf '%s\\n' "\${${keys:-nref}[${2:-*}]}" | $format
-  else
-    eval printf '%s\\n' "\${${keys:-nref}[${2:-*}]${format}}"
-  fi
+  # read STDIN (pipe) if no args
+  [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin )
+
+  while (( $# )); do
+    [ -n "$1" ] || { shift; continue; }
+    local -n nref=$1
+
+    if (( ${key_mode:-0} )); then
+      LOG_LEVEL=NOTICE is_hash "${!nref}"
+      if (( ${use_pipe:-0} )); then printf '%s\n' "${!nref[@]}" | "${format[@]}"
+      else local IFS=$'\n'; eval echo "\${!nref[*]${format}}"; fi
+    else
+      if (( ${use_pipe:-0} )); then printf '%s\n' "${nref[@]}" | "${format[@]}"
+      else local IFS=$'\n'; eval echo "\${nref[*]${format}}"; fi
+    fi
+
+    (( ${single:-0} )) && break
+    shift
+  done
 }
 #----
 #else
 # non-nref method
 fi
 
-#WARN complex formatting (eg. @[kQ]) have unintended side-effects
-function value() { values "$@" | head -n 1; }
+#WARN complex formatting (eg. @[kQ]) will have unintended side-effects!
+function value() { values -1 "$@"; }
 
 
 function array.print() {
-  local printf
-  local -i to_json= with_keys=
+  local one FIXmE?
+  local -i to_json=0 with_keys=0 single=0
+  local -A format=()
 
   local -i OPTIND; local opt OPTARG
   while getopts ':hjkPV' opt; do
     case "$opt" in
-      *)    with_keys=1; local -A printf=() ;;&
-      k)    printf=( ['key']='%s\n' ['value']='%q ' ) ;;
-      P)    printf=( ['key']='%s\t' ['value']='%q ' ) ;;  #alt: key='%s\n' value='\t%s\n'
-      j)    printf=( ['key']='%s\n' ['value']='%s,' ); to_json=1 ;;
+      k|P|j|V) with_keys=1 ;;&
+      k)    format=( ['key']='%s\n' ['value']='%q ' ) ;;
+      P)    format=( ['key']='%s\t' ['value']='%q ' ) ;;  #alt: key='%s\n' value='\t%s\n'
+      j)    format=( ['key']='%s\n' ['value']='%s,' ); to_json=1 ;;
 
       # consume with eval
-      V)    printf=( ['key']='%s=' ['value']='%q' ['keyf']='^^' )
-            local one=''
+      V)    format=( ['key']='%q=' ['value']='%q' ['keyf']='^^' )
+            one=''      # setting to empty string causes 'value()'
             ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
@@ -1044,29 +1074,31 @@ EOF
   done
   shift $((OPTIND - 1))
 
-  local vref=${1:?varname} kval=$2
-  shift 2
+  local vref=${1:?variable} kval=$2; shift 2
+#TODO while (( $# ))
 
+FIXME whats with 'valuef' and 'keyf'?
 #TODO? leverage formatting as defined in values()
 #https://www.gnu.org/savannah-checkouts/gnu/bash/manual/html_node/Shell-Parameter-Expansion.html
 
-  if [ ${with_keys:-0} -eq 1 ] && LOG_LEVEL=WARN is_hash "$vref"; then
+  if (( ${with_keys:-0} )); then
     while read key; do
       # simple filter on 'key'
       [ -n "$kval" ] && { [ "$key" = "$kval" ] || continue; }
-
-      eval printf "${printf['key']@Q}" "\${key${printf['keyf']}}"
-      printf "${printf['value']}" $( value${one-s} ${printf['valuef']:+'-f' "${printf['valuef']}"} "$vref" "$key" )
+FIXME hacky sack
+      eval printf "${format['key']@Q}" "\${key${format['keyf']}}"
+      printf "${format['value']}" $( value${one-s} ${format['valuef']:+'-f' "${format['valuef']}"} "$vref" "$key" )
       echo
     done < <( keys "$@" ) |
-        if [ ${to_json:-0} -eq 1 ]; then
+        if (( ${to_json:-0} )); then
           __JQ -Rn 'reduce inputs as $i ({}; . + {($i): (input | fromjson? // split(",") - [""] | [ .[] | tonumber? // . ])})'
         else cat; fi
   else
-    [ ${to_json:-0} -eq 1 ] || {        # single path bandaid
-        [ ${with_keys:-0} -eq 1 ] && unset 'printf[value]'; }
-    printf "${printf['value']:-%s\n}" $( values ${printf['valuef']:+'-f' "${printf['valuef']}"} "$vref" ) |
-        if [ ${to_json:-0} -eq 1 ]; then
+    if (( ${to_json:-0} )); then        # single pass bandaid
+       unset 'format[value]'
+    fi
+    printf "${format['value']:-%s\n}" $( values ${format['valuef']:+'-f' "${format['valuef']}"} "$vref" ) |
+        if (( ${to_json:-0} )); then
           __JQ -R 'split(",") - [""] | [ .[] | tonumber? // . ]'
         else cat; fi
   fi
@@ -1098,6 +1130,54 @@ function expand_dvq() {
   done
 }
 
+
+#emit lines directly useable to definite Hash
+#  ['sections'] list of headings, ['keys'] list of LHS terms
+#  [<section><delim><key>]=<value>
+function inifile_to_hash() {
+  local delim filename
+  
+  local -i OPTIND; local opt OPTARG
+  while getopts ':Df:' opt; do
+    case "$opt" in
+      D)    delim=$OPTARG ;;
+      f)    filename=$OPTARG; is_file -v "$filename" || return ;;
+
+      :)    log.error "missing argument (${!OPTIND})" ;;&
+     \?)    log.error "unsupported option (-$OPTARG)" ;&
+      h|*)  >&2 cat << EOF
+Usage: $FUNCNAME ...
+EOF
+            return 2
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  : ${delim='/'}		#alt: '.' or ':' are probably safe
+  local -a sections=() keys=()
+  local -A inihash=()	#[<section><delim><key]=value
+
+  local section='_global_' key value
+  while read line; do
+    # skip comments
+#    [[ "$line"  =~ ^[[:space:]]*(;|#) ]] && continue
+
+    line=`string.trim "$line"`
+    if [[ "$line" =~ ^\[(.*)\]$ ]]; then
+      section=${BASH_REMATCH[1]}
+      sections+=( "$section" )
+    elif [[ "$line" =~ ^([^=]+)=([^=]+)$ ]]; then
+	  _key=`string.trim "${BASH_REMATCH[1]}"`
+	  _value=`string.trim "${BASH_REMATCH[2]}"`
+    fi
+
+  done < "$filename"
+
+FIXME
+reduce sections and keys to unique; echo $* | sort -u; use 'read -a <array>' or just go to in-place assignment?
+  local IFS=$'\n'; printf '%s=%q\n' `echo "${hash[*]@k}"`
+}
+#alt: python3 -c "import configparser; c = configparser.ConfigParser(); c.read('parameters.ini'); print(c['parameters.ini']['database_version'])"
 
 # simple implementation
 function log() {

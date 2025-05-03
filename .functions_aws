@@ -10,11 +10,9 @@ __aws_bin=`is_exec -v "${AWS_BIN:-aws${AWS_VERSION}}"` || return 127
 declare -i __aws_windows=0
 
 #TODO theoretically windows OR cygwin could invoke a WSL binary
-if is_windows "$__aws_bin"; then
-  __aws_windows=1
-  function __aws_postproc() { tr -d '\r'; }
-fi
+is_windows "$__aws_bin" && __aws_windows=1
 
+#FIXME define as in .function, shouldn't be this brittle
 declare -F __JQ{,R} >/dev/null || { log.error "missing required function (__JQ)"; return 127; }
 
 
@@ -44,17 +42,21 @@ declare -Ar __aws_session=(
   )
 
 #json: .AssumedRoleUser
+#ref: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html
 declare -Ar __aws_role=(
-    ['AssumedRoleId']='role_session_name'
+    ['AssumedRoleId']='role_session_name'   #techincally: <autogen>:role_session_name
     ['Arn']='role_arn'
   )
 
 declare -Ar __aws_regex=(
     ['token']='^[0-9]{6}'
+    ['account']='^[0-9]{12}'
     ['role_arn']='^arn:aws:iam::[0-9]{12}:role/'
+    ['assumed_role_arn']='^arn:aws:sts::[0-9]{12}:assumed-role/'
     ['region']='^[a-z]{2}-[a-z]+-[0-9]'
-    ['profile']='^[a-zA-Z]+'
+    ['profile']='^[a-zA-Z0-9]+'
   )
+#FIXME pretty sure profile names can include limited punc
 
 #ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html
 # aws ec2 describe-regions | __JQR '.Regions[].RegionName' | sort
@@ -114,10 +116,12 @@ function __AWS() {
   local -i AWS_NOPIPE
   local -a cmd=()
 
+  function __aws_postproc() { tr -d '\r'; }
+
   if [ -z "$AWS_CONFIG_FILE" ]; then
     unset AWS_{CONFIG,SHARED_CREDENTIALS}_{FILE,WINDOWS}
   else
-    is_file "$AWS_CONFIG_FILE" || return
+    is_file -v "$AWS_CONFIG_FILE" || return
     #NOTE Amazon CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
     : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
 
@@ -129,15 +133,20 @@ function __AWS() {
       AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
     fi
 
+    cmd+=( 'env' )
+
     #WARN! *_WINDOWS can easily diverge
     if (( ${__aws_windows:-0} )); then
-      AWS_CONFIG_FILE=${AWS_CONFIG_WINDOWS:=`cygpath -am "$AWS_CONFIG_FILE"`}
-      AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_WINDOWS:=`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}
+      cmd+=(
+          AWS_CONFIG_FILE="${AWS_CONFIG_WINDOWS:=`cygpath -am "$AWS_CONFIG_FILE"`}"
+          AWS_SHARED_CREDENTIALS_FILE="${AWS_SHARED_CREDENTIALS_WINDOWS:=`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}"
+        )
+    else
+      cmd+=(
+          AWS_CONFIG_FILE="$AWS_CONFIG_FILE"
+          AWS_SHARED_CREDENTIALS_FILE="$AWS_SHARED_CREDENTIALS_FILE"
+        )
     fi
-
-    cmd+=( 'env'
-        AWS_CONFIG_FILE="$AWS_CONFIG_FILE"
-        AWS_SHARED_CREDENTIALS_FILE="$AWS_SHARED_CREDENTIALS_FILE" )
   fi
 
   cmd+=( "$__aws_bin" )
@@ -251,10 +260,12 @@ function __AWS() {
       shift
     done
     set -- "${rewrite_args[@]}"
+
+    : ${AWS_POSTPROC:=__aws_postproc}
   fi
 
-  if is_function "${AWS_POSTPROC=__aws_postproc}" && ! (( ${AWS_NOPIPE:-0} )); then
-    ${DEBUG:+ runv} "${cmd[@]}" "$@" | $AWS_POSTPROC
+  if ! (( ${AWS_NOPIPE:-0} )) && [ -n "$AWS_POSTPROC" ]; then
+    ${DEBUG:+ runv} "${cmd[@]}" "$@" | "${AWS_POSTPROC[@]}"
   else
     ${DEBUG:+ runv} "${cmd[@]}" "$@"
   fi
