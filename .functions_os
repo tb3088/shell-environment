@@ -10,16 +10,19 @@ function is_windows() { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; }
 #TODO is_linux, or is_os that can emit solaris, windows, cygwin, etc
 
 # cribbed from common ZFS script. add ### bar graph? '%*s', size[i] "#"
-function os.filesize_histogram() {
+#function os.filesize.histogram
+function os.filesize.dist() {
+  #alt but SLOW: find . -type f -exec stat --format '%b %n' {} \;
   ls -1 --block-size=1K --size -AFB "$@" | 
   awk '+$1 && $2 !~ /[@/]$/ { n=int(log($1)/log(2)); size[n]++ } END {
-      for (i in size) { unit=1; j=i
-	    while (j > 9) { unit++; j-=10 };
+      PROCINFO["sorted_in"] = "@ind_num_asc"
+      for (i in size) { unit=1; j=i; while (j > 9) { unit++; j-=10 }
         printf("%3d%s: %d\n", 2^j, substr("kMGTEPYZ",unit,1), size[i])
 	  }	
     }'
 }
-#TODO write as pure bash while+read and takes '-H' for human units
+#TODO? write as pure bash while+read
+
 
 function os.tree() {
   local filter= type= reverse= flags=()
