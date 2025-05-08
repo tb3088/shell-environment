@@ -5,9 +5,8 @@
 __link=`readlink -f "$BASH_SOURCE"`
 declare -n __tag=SOURCE_${__link//[^a-zA-Z0-9_]/}
 [ ${__tag:-0} -eq 0 ] || return 0
-
+__tag=1
 #------------------
-
 
 # multi-version support
 #AWS_VERSION=2
@@ -23,6 +22,8 @@ if is_windows; then
 fi
 
 source ${BASH_SOURCE%_*}_3rdparty aws
+is_exec aws$AWS_VERSION || return 0
+
 
 [ -n "$AWS_SM_PLUGIN" ] &&
     source ${BASH_SOURCE%_*}_3rdparty session-manager-plugin
@@ -43,10 +44,6 @@ alias aws.clearenv='aws.profile RESET'
 alias aws.pushd='pushd "${AWS_CONFIG_FILE%/*}/${AWS_DEFAULT_REGION}"'
 #alias ec2.disconnect='__AWS ssm terminate-session --session'
 # TODO DELETE=1 ec2.connect -i <instnace>
-
-__tag=1
-#------------------
-
 
 function __prompt.aws() {
   [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}${AWS_SESSION_TOKEN}" ] || return 0

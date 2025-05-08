@@ -56,19 +56,22 @@ function 3rdparty.add_program() {
 }
 
 
+declare -i multi_arg=0
 # multiple arguments supported, but not recommend
 while (( $# )); do
+  multi_arg=1
   [ -n "$1" ] || { shift; continue; }
 
   3rdparty.add_program "$1"
   shift
 done
 
-j=`readlink -e "$BASH_SOURCE"`
-k=${BASH_SOURCE#*.bashrc_}
-[ "${j#*.bashrc_}" = "$k" ] || 3rdparty.add_program "$k"
-unset j k
+if ! ((multi_arg)); then
+  j=`readlink -e "$BASH_SOURCE"`
+  k=${BASH_SOURCE#*.bashrc_}
+  [ "${j#*.bashrc_}" = "$k" ] || { 3rdparty.add_program "$k" || return; }
+  unset j k
+fi
 
-return 0
 
 # vim: expandtab:ts=4:sw=4

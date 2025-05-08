@@ -14,7 +14,8 @@ shopt -s nullglob
 
 #---------------
 
-for f in "$HOME"/.functions{,.local,_logging}; do
+#for f in "$HOME"/.functions{,.local,_logging}; do
+for f in "$HOME"/.functions; do
   [ -s "$f" ] || continue
   source "$f" || { >&2 echo -e "ERROR\tRC=$? during $f"; return 1; }
 done
