@@ -559,7 +559,7 @@ _EOF
 
     elif [ -n "$delim" ]; then
       local _IFS=$delim
-      (( ${#delim} > 1 )) && _IFS=$'ง'   #(shell: Alt+0167, vi: C-v+167)
+      (( ${#delim} > 1 )) && _IFS=$'ยง'  #shell: Alt+0167, vi: C-v+167
       IFS=$_IFS read -r -a tokens <<< "${object//$delim/$_IFS}"
 
       local -i found=0
@@ -1171,36 +1171,33 @@ EOF
 	  _value=`string.trim "${BASH_REMATCH[2]}"`
     fi
 
-  done < "$filename"
-
-FIXME
-reduce sections and keys to unique; echo $* | sort -u; use 'read -a <array>' or just go to in-place assignment?
+  done < "${filename:-/dev/stdin}"
+#FIXME
+#reduce sections and keys to unique; echo $* | sort -u; use 'read -a <array>' or just go to in-place assignment?
   local IFS=$'\n'; printf '%s=%q\n' `echo "${hash[*]@k}"`
 }
 #alt: python3 -c "import configparser; c = configparser.ConfigParser(); c.read('parameters.ini'); print(c['parameters.ini']['database_version'])"
 
 # simple implementation
 function log() {
-  local -u level
-  local fname=
-  local -i offset=1
+  local -u level; local -i offset=1
+  local prefix=
 
   if [ "${FUNCNAME[1]:0:4}" = 'log.' ]; then
     : ${level:=${FUNCNAME[1]:4}}
-    : $((offset++))
+    ((offset++))
   fi
-  [ -n "${FUNCNAME[$offset]}" ] &&
-      fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
+  [ -n "${FUNCNAME[offset]}" ] &&
+      prefix="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}]  "
 
-  if [ $# -eq 0 ]; then
-    local line=$( < /dev/stdin )
-    >&2 echo -e "${level:-LOG}\t${fname}${line}"
-  else
-    while (( $# )); do
-      >&2 echo -e "${level:-LOG}\t${fname}$1"
-      shift
-    done
+  # fall-back to stdin
+  if [ -z "${1+X}" ] || [ "$1" = '-' ]; then
+    local IFS=$'\n'; set -- $(</dev/stdin)
   fi
+
+  while (( $# )); do
+    >&2 echo -e "${level:-LOG}\t${prefix}$1"; shift
+  done
 }
 
 function log.none() { return; }

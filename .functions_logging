@@ -65,7 +65,7 @@ readonly -f log.mask
 #
 #    [4-9])  VERBOSE=3 ;&
 #    [1-3])
-#            [ -n "$DEBUG" ] || : $((_level--))
+#            [ -n "$DEBUG" ] || ((_level--))
 #            [ $_level -eq 0 ] ||
 #_VERBOSE="-`printf -- '%.0sv' {1..$_level}`"
 #        }
@@ -129,11 +129,12 @@ function __log_lookup() {
 
   [[ $result == [0-8] ]] && echo "$result" || echo "$key"
 }
-readonly -f __log_lookup
 
 
 function log() {
-  local -i level mask offset=1
+  local -i level mask offset
+  # conditional init of offset. others are hard-set below
+  : ${offset:=1}
 
   # auto-detect level from invocation style
   if level=`__log_lookup ${level:-$LOG_LEVEL}`; then
@@ -144,12 +145,11 @@ function log() {
     shift
   else
     # inside recursion from <level>() or log_<LEVEL>()
-    level=`__log_lookup "${FUNCNAME[1]}"` && ((offset++))
+    level=`__log_lookup "${FUNCNAME[offset]#${FUNCNAME}?}"` && ((offset++))
   fi
 
   mask=`__log_lookup ${mask:-$LOG_MASK}`
-
-  # set 'mask' on externalities
+  # consult external factors
   [ -n "$VERBOSE" ] && mask=`__log_lookup 'INFO'`
 
   if [ -n "$DEBUG" ]; then
@@ -167,43 +167,56 @@ function log() {
   # squelch messages below mask
   [ $level -le $mask ] || return 0
 
-  if [ -n "$LOG_STACKTRACE" -a "${FUNCNAME[1]}" != "$FUNCNAME" ]; then
-    local -a msg=()
+  # abort recursion
+  [ "${FUNCNAME[offset]}" != "$FUNCNAME" ] || return 0
 
-    for ((i=${#FUNCNAME[@]}-1; i>0; i--))  do
-      msg+=("callstack: ${BASH_SOURCE[i]}/${FUNCNAME[i]}")
-    done
-    # prevent recursion loop with 'offset' value - see L:176
-    mask='TRACE' level='TRACE' offset=2 $FUNCNAME "${msg[@]}"
-  fi
 
-  local fname= level_name=${__log_levels[$level]}
+  # minimize processing inside __print()
+  local level_name=${__log_levels[$level]}
+  local prefix= format=${LOG_FORMAT:-'%-5s\t%s'}
+  local ts=`date '+%FT%T.%3N'`
   local logger_bin=`is_exec -v "${LOGGER:-logger}"`
 
-  # embed FUNCNAME in output
-  [ -n "${FUNCNAME[offset]}" -a "${FUNCNAME[1]}" != "$FUNCNAME" ] &&
-      fname="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
+  #NOTE intentionally only prints 1st argument. otherwise format must
+  # be amended with arg-width sequence of '[\t\t]%s\n ...' or similar.
+  function __print() {
+    local line= 
 
-  if [ $# -eq 0 ]; then
-    local input=$( < /dev/stdin )
-    __log_print "$input"
+    printf -v line "${LOG_TIMESTAMP:+$ts }${format}" "$level_name" "$1"
+    echo -e "$line" | >&2 tee ${LOGFILE:+'-a' "$LOGFILE"}
+
+    if [ -n "$logger_bin" ] && is_true "$SYSLOG"; then
+      "$logger_bin" --priority user.${level_name,,} -- "$line"
+    fi
+  }
+
+  if [ -n "$LOG_STACKTRACE" ]; then
+    local -a stack=(); local -i frame=1
+    while read line func filenm < <(caller $frame); do
+      stack[$frame]="${filenm}:L${line} $func()"
+      ((frame++))
+    done
+    for ((i=frame - 1; i>0; i--));  do
+      level_name=TRACE __print "callstack($i): ${stack[i]}"
+#alt:
+#    for ((i=${#FUNCNAME[@]} - 1; i>0; i--));  do
+#      level_name=TRACE __print "callstack($i): ${BASH_SOURCE[i]}/${FUNCNAME[i]}"
+    done
   else
-    while (( $# )); do __log_print "$1"; shift; done
+      prefix="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
   fi
+
+  # fall-back to stdin
+  if [ -z "${1+X}" ] || [ "$1" = '-' ]; then
+    local IFS=$'\n'; set -- $(</dev/stdin)
+  fi
+
+  while (( $# )); do
+    __print "${prefix}$1"; shift
+  done
 }
 readonly -f log
 
 
-function __log_print() {
-  local line format=${LOG_FORMAT:-'%-5s\t%s'}
-
-  printf -v line "${LOG_TIMESTAMP:+`date '+%FT%T.%3N'` }${format}" "$level_name" "${fname}$1"
-  >&2 echo -e "$line" | tee ${LOGFILE:+'-a' "$LOGFILE"}
-
-  if [ -n "${SYSLOG}" -a -n "$logger_bin" ]; then
-    "$logger_bin" --priority user.${level_name,,} -- "$line"
-  fi
-}
-readonly -f __log_print
 
 # vim: expandtab:ts=8:sw=4
