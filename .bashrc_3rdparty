@@ -28,7 +28,7 @@ function 3rdparty.add_program() {
       ['ruby']=${RUBY_BASE:-'ruby{-,}'$RUBY_VERSION}
     )
 
-  [ -n "${software_map[$pkg]}" ] || { log.error "unsupported software ($pkg)"; return; }
+  [ -n "${software_map[$pkg]}" ] || { log.notice "undefined software package ($pkg)"; return; }
 
   local exp=( `eval printf '%q\\\n' "${software_map[$pkg]}"` )
 
@@ -52,7 +52,7 @@ function 3rdparty.add_program() {
     )
 
   if [ -n "$pbin" ]; then addPath "${pbin%/*}"
-  else log.warn "software not found ($pkg)"; fi
+  else log.warn "software package not found ($pkg)"; fi
 }
 
 
@@ -62,16 +62,18 @@ while (( $# )); do
   multi_arg=1
   [ -n "$1" ] || { shift; continue; }
 
-  3rdparty.add_program "$1"
+  3rdparty.add_program "$1"; RC=$((RC | $?))
   shift
 done
 
 if ! ((multi_arg)); then
   j=`readlink -e "$BASH_SOURCE"`
   k=${BASH_SOURCE#*.bashrc_}
-  [ "${j#*.bashrc_}" = "$k" ] || { 3rdparty.add_program "$k" || return; }
+  [ "${j#*.bashrc_}" = "$k" ] || { 3rdparty.add_program "$k"; RC=$?; }
   unset j k
 fi
+unset multi_arg
+return ${RC:-0}
 
 
 # vim: expandtab:ts=4:sw=4
