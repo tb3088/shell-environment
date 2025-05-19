@@ -235,6 +235,18 @@ function is_number() { to_int $1 &>/dev/null; }
 
 function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]; }
 
+function is_true() {
+  [ $# -gt 0 ] || return
+  local -n nref 
+
+  while (( $# )); do
+    [ -n "$1" ] && nref=$1 || return
+
+    (( $1 )) || (( $nref )) ||
+        [[ "${1,,}" =~ ^[yt] ]] || [[ "${nref,,}" =~ ^[yt] ]] || return
+    shift
+  done
+}
 
 #DO NOT MOVE!!
 # Properly belongs in '.functions_os[.cygwin]' but required for various
@@ -426,11 +438,11 @@ function convert_path() {
 
   local -i escape=1 abs=0
   local -i OPTIND; local opt OPTARG long_opts=()
-  while getopts ':haeEq:t:-:' opt; do
+  while getopts ':haEeq:t:-:' opt; do
     case "$opt" in
       a)    abs=1 ;;
-      e)    escape=1 ;;     # default
       E)    escape=0 ;;
+      e)    escape=1 ;;     # pedant
       q)    quote=$OPTARG; readonly escape=0 ;;
       t)    long_opts+=( '--type' "$OPTARG" ) ;;
 
@@ -450,11 +462,18 @@ EOF
   local _format="${quote}%s${quote}\n"
   (( ${escape:-0} )) && _format='%q\n'
 
-#  local IFS=$'\n'
-  (( ${abs:-0} )) && set -- $(readlink -m "$@")
-  is_windows && set -- $(cygpath "${long_opts[@]}" -- "$@")
+  local -a items=()
+  while (( $# )); do
+    # blank strings cause errors, but emit to preserve arg count and order
+    [ -n "$1" ] || { items+=( '' ); shift; continue; }
+    local item=$1
 
-  printf "$_format" "$@"
+    (( ${abs:-0} )) && item=`readlink -m "$item"`
+    is_windows && item=`cygpath "${long_opts[@]}" -- "$item"`
+    items+=( "$item" ); shift
+  done
+
+  printf "$_format" "${items[@]}"
 }
 #TODO
 #function convert_path=os.filepath.print
@@ -1187,7 +1206,7 @@ function log() {
     : ${level:=${FUNCNAME[1]:4}}
     ((offset++))
   fi
-  [ -n "${FUNCNAME[offset]}" ] &&
+  [ -n "${FUNCNAME[offset]}" ] && [ -n "${DEBUG}${VERBOSE}" ] &&
       prefix="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}]  "
 
   # fall-back to stdin

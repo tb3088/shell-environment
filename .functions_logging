@@ -133,7 +133,7 @@ function __log_lookup() {
 
 function log() {
   local -i level mask offset
-  # conditional init of offset. others are hard-set below
+  # conditional init because recursion
   : ${offset:=1}
 
   # auto-detect level from invocation style
@@ -197,13 +197,13 @@ function log() {
       ((frame++))
     done
     for ((i=frame - 1; i>0; i--));  do
-      level_name=TRACE __print "callstack($i): ${stack[i]}"
+      level_name='TRACE' __print "callstack($i): ${stack[i]}"
 #alt:
 #    for ((i=${#FUNCNAME[@]} - 1; i>0; i--));  do
 #      level_name=TRACE __print "callstack($i): ${BASH_SOURCE[i]}/${FUNCNAME[i]}"
     done
-  else
-      prefix="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}] "
+  elif is_true DEBUG VERBOSE; then
+      prefix="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}]  "
   fi
 
   # fall-back to stdin
