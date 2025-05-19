@@ -21,11 +21,10 @@ if is_windows; then
 #  AWS_SM_PLUGIN=${AWSCLI%/*}/SessionManagerPlugin
 fi
 
-source ${BASH_SOURCE%_*}_3rdparty aws && { is_exec aws$AWS_VERSION || return; }
-
+3rdparty.add_program aws || return 0
 
 [ -n "$AWS_SM_PLUGIN" ] &&
-    source ${BASH_SOURCE%_*}_3rdparty session-manager-plugin
+    3rdparty.add_program session-manager-plugin
 
 #TODO just use 'aws shell' instead
 if link=`is_exec -v aws_completer`; then
