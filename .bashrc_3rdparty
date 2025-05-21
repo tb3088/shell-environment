@@ -14,17 +14,17 @@
 function 3rdparty.add_program() {
   local pkg=$1
 
-  # search spec defined here so as to see current environment
-  # close curly must be escaped when inside parameter expansion
+  # define search spec here to utilize current environment
+  # brace expansion must be single-quoted inside parameter expansion
   declare -A software_map=(
-      ['aws']=${AWSCLI:-aws'{cli,\}{v,\}'$AWS_VERSION}
+      ['aws']=${AWSCLI:-aws'{cli,}{v,}'$AWS_VERSION}
       ['session-manager-plugin']=$AWS_SM_PLUGIN
       ['mvn']=apache-maven
       ['npm']=nodejs
-      ['java']=${JAVA_HOME:-'j{re,dk,se\}{-,\}'$JAVA_VERSION}
+      ['java']=${JAVA_HOME:-j'{re,dk,se}{-,}'$JAVA_VERSION}
       ['puppet']=${PUPPET_BASE:-puppetlabs}
-      ['go']=${GOROOT:-'go{,lang\}{-,\}'$GO_VERSION}
-      ['ruby']=${RUBY_BASE:-'ruby{-,\}'$RUBY_VERSION}
+      ['go']=${GOROOT:-go'{,lang}{-,}'$GO_VERSION}
+      ['ruby']=${RUBY_BASE:-ruby'{-,}'$RUBY_VERSION}
     )
 
   [ -n "${software_map[$pkg]}" ] || {
@@ -41,19 +41,17 @@ function 3rdparty.add_program() {
       while read tld; do
         while read mid; do
           [ -n "$mid" ] || continue
+          prefix=`convert_path -E "${tld:+$tld/}${mid#$tld}"`
 
           #WARN don't use /**/ since VERY slow
-          for exe in "${tld:+$tld/}${mid#$tld}"*/{bin/,}"$pkg"; do
+          for exe in "${prefix}"*/{bin/,}"$pkg"; do
             [ -x "$exe" ] && { echo "$exe"; return; }
           done
-        done < <(   # brace expansion
-            if [[ "${software_map[$pkg]}" =~ [\,{] ]]; then
-              eval printf '%s\\n' "${software_map[$pkg]}"
-            else convert_path -E "${software_map[$pkg]}"; fi
-          )
+        # lazy eval w/ brace expansion
+        done < <( eval printf '%q\\n' "${software_map[$pkg]}" )
       done < <(
-          printf '%s\n' '' /opt /usr/local
-          convert_path -E "${USERPROFILE:-$HOME}" "$LOCALAPPDATA" "$PROGRAMFILES"
+          printf '%q\n' '' /opt /usr/local \
+              "${USERPROFILE:-$HOME}" "$LOCALAPPDATA" "$PROGRAMFILES"
         )
   )
 
