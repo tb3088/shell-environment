@@ -104,9 +104,9 @@ function _ssh() {
       [ -s "$file" ] && { SSH_CONFIG="$file"; break; }
     done < <(
         for dir in "${SEARCH_DIRS[@]}"; do
-          [ -n "$dir" ] || continue
+          [ -d "$dir" ] || continue
 
-          prefix="$dir" file=config genlist "$REGION" "$PROFILE"
+          prefix=$dir file='config' genlist "$REGION" "$PROFILE"
         done
       )
 
