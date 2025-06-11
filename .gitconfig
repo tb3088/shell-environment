@@ -1,7 +1,7 @@
 [include]
-	path = .gitidentity
-	path = .gitaliases
-	path = .gitconfig.local
+	path = ~/.gitidentity
+	path = ~/.gitaliases
+	path = ~/.gitconfig.local
 [init]
         defaultBranch = master
 [checkout]
