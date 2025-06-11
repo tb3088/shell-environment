@@ -24,14 +24,14 @@ addPath -P -k PATH "$HOME"/{,.local/}bin
 
 case $- in
   # a bit redundant since whole point of .bashrc is 'interactive' use...
-  *i*)  for f in "$HOME"/{.bashrc{.local,_{os,*}},.aliases{,.local}}; do
+  *i*)  for f in "$HOME"/{.bashrc{.local,_{os,3rdparty,*}},.aliases{,.local}}; do
           [ -s "$f" ] || continue
           grep -qE '\.swp$|\.bak$|~$' - -- <<< "$f" && continue
 
           source "$f" || { log.error "RC=$? during $f, aborting."; pause; return 1; }
         done
 
-        eval "$( dircolors -b - < <( cat .dir{,_}colors{,.local} 2>/dev/null ) )" || true
+        eval "`dircolors -b - < <( cat .dir{,_}colors{,.local} 2>/dev/null )`" || true
         : ${EDITOR:=`type -p vim vi nano pico emacs | head -n 1`}
         : ${PAGER:='less -RF'}
         export EDITOR PAGER
@@ -51,7 +51,7 @@ case $- in
         # History Options
         shopt -s histappend histreedit no_empty_cmd_completion
 
-#DEPRECATED when bash-completion is installed *properly* !!
+#DEPRECATED when bash-completion package is installed *properly* !!
 # (opt) populate ${BASH_COMPLETION_USER_FILE=~/.bash_completion} with directives
 #
 #        for f in {{,/usr/local}/etc/,"$HOME"/.}bash_completion{.sh,.d/*}; do

@@ -1,15 +1,11 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
-
-# short-circuit inside screen or sub-shell
-[ -z "$STY" -a ${SHLVL:-1} -eq 1 ] || return 0
 #------------------
-
+#
 # Usage:
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty <pkg> ...
 #   3) func: 3rdparty.add_program <pkg> ...
-
 
 function 3rdparty.add_program() {
   local pkg=$1
@@ -62,18 +58,22 @@ function 3rdparty.add_program() {
 }
 
 
-declare -i __rc=0
+# short-circuit inside screen or sub-shell
+[ -z "$STY" -a ${SHLVL:-1} -eq 1 ] || return 0
+
+
+declare -i _rc=0
 # multiple arguments supported, but not recommend
 while (( $# )); do
   [ -n "$1" ] || { shift; continue; }
 
-  3rdparty.add_program "$1"; __rc=$((__rc | $?))
+  3rdparty.add_program "$1"; _rc=$((_rc | $?))
   shift
 done
 
 j=`readlink -e "$BASH_SOURCE"`
 k="${BASH_SOURCE#*.bashrc_}"
-[ "${j#*.bashrc_}" != "$k" ] && { 3rdparty.add_program "$k"; __rc=$?; }
+[ "${j#*.bashrc_}" != "$k" ] && { 3rdparty.add_program "$k"; _rc=$?; }
 unset j k
 
 # always return 0 when whole-file

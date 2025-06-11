@@ -1246,10 +1246,8 @@ function log.error() {
   local -i rc=$?
 
   log "$@"
-  if [ ${SHLVL:-1} -eq 1 -o -z "$BASH_SOURCE" ] ||
-      [[ $(\ps -p $PPID | awk 'END { print $NF; }') =~ screen ]]; then
-    return ${RC:-$rc}
-  fi
+  { [ ${SHLVL:-1} -eq 1 ] || [ -z "$BASH_SOURCE" ]; } && return ${RC:-$rc}
+
   __continue || exit ${RC:-$rc}
 }
 
