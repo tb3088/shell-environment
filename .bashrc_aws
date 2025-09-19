@@ -58,7 +58,7 @@ function __prompt.aws() {
   fi
 }
 #FIXME secret handshake from .bashrc_prompt
-__prompts+=( __prompt.aws )
+__prompts+=( '__prompt.aws' )
 
 
 function aws.printenv() { local v; for v in ${!AWS_*}; do printf '%s=%q\n' "$v" "${!v}"; done; }

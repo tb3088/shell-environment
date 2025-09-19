@@ -20,15 +20,18 @@ __tag=1
 __uname=`uname`  # alt: uname|sed -E 's/(-[0-9.]+)+$//'
 for f in "${BASH_SOURCE/bashrc/functions}" "${BASH_SOURCE}".{$OSTYPE,${__uname%%-*}}; do
   [ -s "$f" ] || continue
+
   source "$f" || { log.error "RC=$? during $f"; return; }
 done
 
-
-is_exec -q tree{,.com} || { is_function os.tree && alias tree='os.tree'; }
-
-#TODO activate .functions_os first
+#TODO activate .functions_os first?
 #declare -F os.file.replace && alias replace_file='os.file.replace'
 #os.detect
+
+#TODO while/do
+for fn in os.{ln,sudo,tree}; do
+  if is_function $fn; then alias ${fn#os.}=$fn; fi
+done    # <( declare -F | awk '$3 ~ /^os/ { print $3 }' )
 
 
 # vim: expandtab:ts=4:sw=4

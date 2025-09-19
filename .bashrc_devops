@@ -16,7 +16,7 @@ if is_exec git; then
 #alt: git config --global credential.helper=<full path>
 
 alias gsb='\git status --short --branch'
-alias git.render="\git diff | sed -E 's/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d'"
+alias git.render='\git diff | sed -E "s/^[+ ]([^+]|$)/\1/; /^\-([^\-]+|$)/ d"'
 #undo unhelpful whitespace changes
 #  git diff --ignore-space-change --numstat | awk '$1 == 0 && $2 == 0 { print $NF }' | xargs git checkout HEAD --
 
@@ -25,17 +25,13 @@ function __GIT() {
   ${DEBUG:+runv GIT_TRACE=2} \git ${NOOP:+'--no-commit' '--no-ff'} "$@"
 }
 
+alias git=__GIT
 
 function __prompt.git() {
   [ -n "$GIT_PROMPT" ] || return 0
 
   local _branch _upstream _stat{us,} _delta
   local -i _mod _del _add _unk _ign _tot
-
-  #TODO
-  # short-circuit on not a git repo
-  # set branch,upstream via git branch --show-current or git branch -vv --color | awk '{ print $2, $3, $4 }'
-  # then get rid of '--branch' below
 
   eval $(
     set -e -o pipefail
@@ -52,7 +48,7 @@ function __prompt.git() {
         $1 ~ /\?/ { unk++ }
         $1 ~ /!/ { ign++ }
         END { printf "_mod=%d _del=%d _add=%d _unk=%d _ign=%d _tot=%d", mod, del, add, unk, ign, NR-1 }
-    ' < <( git --no-pager status --untracked-files=all --ignore-submodules --porcelain --branch 2>/dev/null )
+    ' < <( \git --no-pager status --untracked-files=all --ignore-submodules --porcelain --branch 2>/dev/null )
   ) && [ -n "$_branch" ] || return 0
 
   _upstream=${_branch#*...*/}
@@ -77,7 +73,7 @@ function __prompt.git() {
   _stat=( ${_mod+M$_mod} ${_del+D$_del} ${_add+A$_add} ${_unk+U$_unk} ${_ign+I$_ign} )
   echo -ne "\n${UL}Git:${RS} ${HC}$_branch${_upstream:+...$_upstream}${RS} ${_status:+$_status} ${_stat:+${FRED}${_stat[@]}${RS}}"
 }
-__prompts+=( __prompt.git )
+__prompts+=( '__prompt.git' )
 
 
 function git.current() { __GIT branch | awk '$1 == "*" { print $2; exit; }'; }

@@ -21,5 +21,9 @@ function proc.cache-hit() {
   echo -n "WRITE "; bc <<< "scale=3; (1 - $wbytes / $wchar)"
 }
 
+function net.switchport() {
+  tcpdump -nn -v -i ${1:?interface} -s 1500 -c 1 'ether[20:2] == 0x2000'
+}
+
 
 # vim: expandtab:ts=4:sw=4

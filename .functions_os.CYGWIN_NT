@@ -14,7 +14,7 @@ function __WHICH() { \which --skip-alias --skip-functions "$@"; }
 readonly -f __WHICH
 
 # override CYGWIN default which uses non-portable Junctions
-function ln() {
+function os.ln() {
   is_exec mklink.exe || { /bin/ln "$@"; return; }
 
   local flag destdir=
@@ -63,13 +63,12 @@ _EOF
 	shift
   done
 }
-readonly -f ln
 
 
 #https://www.authlite.com/kb/allow-runas-but-block-interactive-logon
 #https://helpdeskgeek.com/free-tools-review/5-windows-alternatives-linux-sudo-command/
 is_exec -q sudo ||
-function sudo() (
+function os.sudo() (
   local who cmd preserve
   local -a flags=()
 
@@ -114,7 +113,6 @@ _EOF
   # powershell start-process powershell -verb runas
   # powershell -Command "Start-Process cmd -ArgumentList '/K cd /D %CD%' -Verb RunAs"
 )
-readonly -f sudo
 
 
 # vim: expandtab:ts=4:sw=4
