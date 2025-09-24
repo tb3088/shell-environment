@@ -8,7 +8,31 @@
 # AddHandler markdown .md
 # DirectoryIndex index.html index.md
 
-echo -ne 'Content-type: text/html\r\n'
+
+function http_error() {
+  echo "Status: 400 Bad Request"
+  echo -ne 'Content-type: text/plain\r\n'
+  echo "Error: bad path or wrong format ($PATH_INFO)"
+  exit 1
+}
+
+function http_ok() {
+  echo "Status: 200 OK"
+  echo -ne 'Content-type: text/plain\r\n'
+}
+
+function realpath() { readlink -e "$1"; }
+#alt: cd "${1%/*}" && echo `pwd -P`/${1##*/}
+
+
+# validate
+DOCROOT=/var/www/html
+real_path=`realpath "$PATH_TRANSLATED"` &&
+    [[ "$real_path" =~ ^"${DOCROOT}"/ ]] &&
+    file "$real_path" | grep -q 'ASCII text' || http_error
+
+
+http_ok
 cat << __DOCUMENT
 <!DOCTYPE html>
 <html>
@@ -23,7 +47,7 @@ cat << __DOCUMENT
   -->
   <xmp theme="paper" style="display:none;">
 <!-- don't indent the markdown payload -->
-$(cat "$PATH_TRANSLATED")
+$(cat "${real_path:?}")
   </xmp>
   <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/Naereen/StrapDown.js@master/strapdown.min.js?nonnavbar=y&keepicon=1"></script>
   <!-- alt:
@@ -33,3 +57,5 @@ $(cat "$PATH_TRANSLATED")
 </body>
 </html>
 __DOCUMENT
+
+exit 0
