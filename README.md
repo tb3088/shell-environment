@@ -9,19 +9,21 @@ so a simple `git clone` will not work. The following sequence is best way forwar
 
 Cygwin 'git' may complain about some of the submodules so add `ignore = all` to .gitmodules as needed.
 
-## Integration
+## Integrations
 Dropbox and environment-specific hooks (eg. Windows/Cygwin) can be helpful.
-Use `mklink` on certain shared paths to exure maximum compatability.
+Suggest using `mklink` on certain shared paths helps to ensure maximum compatability.
 
 ### Tie Windows into Cygwin
 While within Cygwin `/home` is intuitive, but feeding a path element to CMD.exe
-(without calling `cygpath [-w|m]` which always fully qualifies) needs a symlink to avoid silly errors. 
+(without calling `cygpath [-w|m]` which always fully qualifies) needs a symlink to avoid silly errors.
 ```
-#/etc/fstab
-C:/Users /home none binary 0 0
+#file: /etc/fstab
+
+none    /tmp    usertemp binary,posix=0 0 0
+C:/Users /home  none    binary          0 0
 ```
 let Windows tools understand /cygdrive/ via CMD.exe
-```
+```shell
 mklink /D home C:\Users
 
 mkdir C:\cygdrive; cd C:\cygdrive
@@ -29,32 +31,22 @@ mklink /D c C:\
 ```
 
 ### Tie in Window to WSL
-```
+```bash
 ln -s /mnt/c/Users/$USER .USERPROFILE
 ln -s .USERPROFILE/Dropbox
 ```
+
 ### HOMEDIR sym-links
-Git-Bash (MINGW) doesn't support symlinks at all!
+*Git-Bash (MINGW) doesn't support symlinks at all!*
 
-While it's tempting to not set CYGWIN and leverage the new WSL-compatible reparse-points, Win10+ doesn't
-properly render or follow them be it binaries (eg. AWS CLI) or Explorer. A function `ln()` is defined
-to invoke `mklink` instead.
-
-[reference](https://cygwin.com/faq/faq.html#faq.api.symlinks)
-
-
-Deprecated:
-Launch `gpedit.msc` and navigate to
-`Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
-
+While it's tempting to not set the `CYGWIN=` environment variable, and thereby leverage the new WSL-compatible reparse-points, Win10+ doesn't properly render or follow them. This is particularly annoying with Windows/DOS-native binaries (eg. AWS CLI, Python|Ruby|Go|Puppet runtimes) or Explorer. My environment overrides the `ln` command with a function of the same name to transparently invoke `mklink` when in Cygwin.  [reference](https://cygwin.com/faq/faq.html#faq.api.symlinks)
 
 ```bash
-# .bashrc_os.cygwin|msys
+# file:.bashrc_os.cygwin|msys
 CYGWIN|MSYS='winsymlinks:nativestrict'
 ```
 
-Reload SHELL before proceeding! Then just use `ln -s` as normal since it's now a wrapper.
-```
+```shell
 mklink /D home [C:]\Users
 
 mklink /D .WPHOME Dropbox/Work_Projects/XXX
@@ -67,10 +59,13 @@ mklink /D workspace AppData/Local/workspace"	# WSL: .USERPROFILE/...
 ln -st . .WPHOME/.*.local
 ```
 
-## Environment Variables
-`GIT_PROMPT=1` shows current repo state. `AWS_*` are automatically displayed.
+*(Deprecated)* It used to be that symlinks required advanced Windows rights. Thankfully, M$ finally got a clue. Otherwise, launch `gpedit.msc` and navigate to
+`Computer Configuration -> Windows Settings -> Security Settings -> Local Policies -> User Rights Assignment`
 
-# Suggested Packages and Dependencies
+## Environment Variables
+`GIT_PROMPT=1` turns on a status bar showing current repo state, while `AWS_*` variables are automatically displayed on another line.
+
+## Suggested Packages and Dependencies
 * Bash Autocomplete
 * Vim
 * Python3, Pip3
@@ -80,12 +75,11 @@ ln -st . .WPHOME/.*.local
 * [Elastic Beanstalk CLI](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb-cli3-install.html)
 
 # Windows Subsystem for Linux
-Integration with Windows OS can be trickly and can have unfortunate side-effects like 
-preferring DOS/WIN commands over Linux. The `mask` directives rationalize how directory
-listings appear as WSL interprets NTFS security markings.
+Integration with Windows OS can be trickly and can have unfortunate side-effects like preferring DOS/WIN commands over Linux. The `mask` directives rationalize how directory listings appear as WSL interprets NTFS security markings.
 
-/etc/wsl.conf
 ```
+# file:/etc/wsl.conf
+
 [automount]
 enabled=true
 options="metadata,umask=027"
