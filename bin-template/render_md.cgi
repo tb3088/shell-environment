@@ -1,4 +1,4 @@
-#!/bin/bash -re
+#!/bin/bash -r
 
 # cribbed from https://gist.github.com/tsaarni/67222455916ac38d94e8
 # ref: https://naereen.github.io/StrapDown.js/
@@ -8,11 +8,11 @@
 # AddHandler markdown .md
 # DirectoryIndex index.html index.md
 
-
 function http_error() {
   echo "Status: 400 Bad Request"
   echo -ne 'Content-type: text/plain\r\n'
-  echo "Error: bad path or wrong format ($PATH_INFO)"
+  echo "possible bad path or wrong format ($PATH_INFO)"
+  printf "%s\n" "rc=$1 at line $2" "${@:3}"
   exit 1
 }
 
@@ -25,11 +25,14 @@ function realpath() { readlink -e "$1"; }
 #alt: cd "${1%/*}" && echo `pwd -P`/${1##*/}
 
 
+set -Eeuo pipefail
+trap 'http_error $? $LINENO' ERR
+
 # validate
 DOCROOT=/var/www/html
 real_path=`realpath "$PATH_TRANSLATED"` &&
     [[ "$real_path" =~ ^"${DOCROOT}"/ ]] &&
-    file "$real_path" | grep -q 'ASCII text' || http_error
+    file "$real_path" | grep -q 'ASCII text'
 
 
 http_ok
