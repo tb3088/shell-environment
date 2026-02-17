@@ -24,6 +24,7 @@ function os.filesize.dist() {
 #TODO? write as pure bash while+read
 
 
+is_exec -q tree{,.com} ||
 function os.tree() {
   local filter= type= reverse= flags=()
   local -a cmd=( \find )    #alt: \ls -R -1 --quoting-style=shell
