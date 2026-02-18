@@ -21,44 +21,49 @@ function http_ok() {
   echo -ne 'Content-type: text/plain\r\n'
 }
 
-function realpath() { readlink -e "$1"; }
+function realpath() { readlink -e "${1:?}"; }
 #alt: cd "${1%/*}" && echo `pwd -P`/${1##*/}
 
 
 set -Eeuo pipefail
 trap 'http_error $? $LINENO' ERR
 
-# validate
+#NOTE! ContentRoot is hard-coded; allowing injection could be disasterous!
 DOCROOT=/var/www/html
-real_path=`realpath "$PATH_TRANSLATED"` &&
-    [[ "$real_path" =~ ^"${DOCROOT}"/ ]] &&
-    file "$real_path" | grep -q 'ASCII text'
 
+# validate file location (absolute) and content
+real_path=`realpath "$PATH_TRANSLATED"` &&
+    [[ "$real_path" =~ ^"${DOCROOT}"/ ]]
+
+file "$real_path" | grep -q 'ASCII text'
 
 http_ok
+
 cat << __DOCUMENT
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>$(echo "${PATH_INFO##*/}")</title>
+  <title>${PATH_INFO##*/}</title>
 </head>
 
 <body>
   <!-- themes from https://bootswatch.com/, omit='default'
-    can use 'textarea' tag instead of 'xmp'
-  -->
-  <xmp theme="paper" style="display:none;">
+    can use 'textarea' tag instead of 'xmp' -->
+
 <!-- don't indent the markdown payload -->
-$(cat "${real_path:?}")
+  <xmp theme="paper" style="display:none;">
+$( < "$real_path" )
   </xmp>
+
   <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/Naereen/StrapDown.js@master/strapdown.min.js?nonnavbar=y&keepicon=1"></script>
-  <!-- alt:
-    https://lbesson.bitbucket.io/md/strapdown.min.js
-    https://raw.githubusercontent.com/Naereen/StrapDown.js/refs/heads/master/strapdown.min.js
-  -->
 </body>
 </html>
 __DOCUMENT
 
 exit 0
+
+
+## alt:
+##    https://lbesson.bitbucket.io/md/strapdown.min.js
+##    https://raw.githubusercontent.com/Naereen/StrapDown.js/refs/heads/master/strapdown.min.js
