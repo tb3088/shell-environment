@@ -122,7 +122,7 @@ function __AWS() {
     unset AWS_{CONFIG,SHARED_CREDENTIALS}_{FILE,WINDOWS}
   else
     is_file -v "$AWS_CONFIG_FILE" || return
-    #NOTE Amazon CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
+    # Amazon CLI can't derive CREDENTIALS_FILE from CONFIG_FILE
     : ${AWS_SHARED_CREDENTIALS_FILE:=${AWS_CONFIG_FILE%/*}/credentials}
 
     #FIXME use readlink to make honest compare
@@ -132,23 +132,16 @@ function __AWS() {
           "AWS_SHARED_CREDENTIALS_FILE: $AWS_SHARED_CREDENTIALS_FILE"
       AWS_SHARED_CREDENTIALS_FILE=${AWS_CONFIG_FILE%/*}/credentials
     fi
-
-    cmd+=( 'env' )
-
-    #WARN! *_WINDOWS can easily diverge
-    if (( ${__aws_windows:-0} )); then
-      cmd+=(
-          AWS_CONFIG_FILE="${AWS_CONFIG_WINDOWS:=`cygpath -am "$AWS_CONFIG_FILE"`}"
-          AWS_SHARED_CREDENTIALS_FILE="${AWS_SHARED_CREDENTIALS_WINDOWS:=`cygpath -am "$AWS_SHARED_CREDENTIALS_FILE"`}"
-        )
-    else
-      cmd+=(
-          AWS_CONFIG_FILE="$AWS_CONFIG_FILE"
-          AWS_SHARED_CREDENTIALS_FILE="$AWS_SHARED_CREDENTIALS_FILE"
-        )
-    fi
   fi
 
+  # resolve windows paths for AWS_ variables
+  if (( ${__aws_windows:-0} )); then
+    for v in AWS_{CONFIG,SHARED_CREDENTIALS}_FILE AWS_CA_BUNDLE; do
+      [ -z "${!v}" ] || { eval "$v"=`cygpath -am "${!v}"`; export "$v"; }
+    done
+  fi
+
+  [ -n "$cmd" ] && cmd=( 'env' "${cmd[@]}" )
   cmd+=( "$__aws_bin" )
 
   # special keywords mimics ssh-wrapper

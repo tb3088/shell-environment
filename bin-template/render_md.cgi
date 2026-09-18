@@ -21,17 +21,19 @@ function http_ok() {
   echo -ne 'Content-type: text/plain\r\n'
 }
 
-function realpath() { readlink -e "$1"; }
+which realpath &>/dev/null ||
+function realpath { readlink -e "$1"; }
 #alt: cd "${1%/*}" && echo `pwd -P`/${1##*/}
+
+DOCROOT=/var/www/html
 
 
 set -Eeuo pipefail
 trap 'http_error $? $LINENO' ERR
 
 # validate
-DOCROOT=/var/www/html
-real_path=`realpath "$PATH_TRANSLATED"` &&
-    [[ "$real_path" =~ ^"${DOCROOT}"/ ]] &&
+real_path=`realpath "${PATH_TRANSLATED:?}"` &&
+    [[ "$real_path" =~ ^"$DOCROOT"/ ]] &&
     file "$real_path" | grep -q 'ASCII text'
 
 

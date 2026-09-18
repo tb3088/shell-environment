@@ -44,5 +44,6 @@
 [credential "https://dev.azure.com"]
         useHttpPath = true
 
-[credential "https://github.com"]
-        provider = github
+# rely on 'auto' mode. maybe set to '' if behind web proxy
+#[credential "https://github.com"]
+#        provider = github
