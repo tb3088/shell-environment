@@ -33,9 +33,9 @@ set -Eeuo pipefail
 trap 'http_error $? $LINENO' ERR
 
 # validate file location (absolute) and content
-real_path=`realpath "${PATH_TRANSLATED:?}"` &&
-    [[ "$real_path" =~ ^"${DOCROOT}"/ ]] &&
-    file "$real_path" | grep -q 'ASCII text'
+real_path=`realpath "${PATH_TRANSLATED:?}"`
+[[ "${real_path:?}" =~ ^"${DOCROOT}"/ ]] && file "$real_path" | grep -q 'ASCII text'
+
 
 http_ok
 
@@ -56,7 +56,7 @@ cat << __DOCUMENT
 $( < "$real_path" )
   </xmp>
 
-  <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/Naereen/StrapDown.js@master/strapdown.min.js?nonnavbar=y&keepicon=1"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/Naereen/StrapDown.js@v1.1.1/strapdown.min.js?nonnavbar=y&keepicon=1"></script>
 </body>
 </html>
 __DOCUMENT
@@ -64,6 +64,5 @@ __DOCUMENT
 exit 0
 
 
-## alt:
-##    https://lbesson.bitbucket.io/md/strapdown.min.js
-##    https://raw.githubusercontent.com/Naereen/StrapDown.js/refs/heads/master/strapdown.min.js
+## ref: https://github.com/Naereen/Strapdown.js/
+## alt: https://raw.githubusercontent.com/Naereen/StrapDown.js/refs/tags/v1.1.1/strapdown.min.js
