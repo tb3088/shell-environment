@@ -9,19 +9,16 @@ declare -F is_windows &>/dev/null ||
 function is_windows() { [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]; }
 #TODO is_linux, or is_os that can emit solaris, windows, cygwin, etc
 
-# cribbed from common ZFS script. add ### bar graph? '%*s', size[i] "#"
-#function os.filesize.histogram
-function os.filesize.dist() {
-  #alt but SLOW: find . -type f -exec stat --format '%b %n' {} \;
-  ls -1 --block-size=1K --size -AFB "$@" | 
-  awk '+$1 && $2 !~ /[@/]$/ { n=int(log($1)/log(2)); size[n]++ } END {
-      PROCINFO["sorted_in"] = "@ind_num_asc"
-      for (i in size) { unit=1; j=i; while (j > 9) { unit++; j-=10 }
-        printf("%3d%s: %d\n", 2^j, substr("kMGTEPYZ",unit,1), size[i])
-	  }	
-    }'
+
+#TODO? write as pure bash while+read, add ### bar graph
+function os.filesize_histogram() {
+  /bin/ls -1AUF${RECURSE:+R} --block-size=1K --size "${@:-.}" |
+      awk '+$1 && $2 !~ /[@/]$/ { n=int(log($1)/log(2)); size[n]++ } END {
+        PROCINFO["sorted_in"] = "@ind_num_asc"
+        for (i in size)
+          printf("%3d%s %6d\n", 2^i, substr("kMGTEPYZ", i/10, 1), size[i])
+      }'
 }
-#TODO? write as pure bash while+read
 
 
 is_exec -q tree{,.com} ||

@@ -46,7 +46,7 @@ alias aws.pushd='pushd "${AWS_CONFIG_FILE%/*}/${AWS_DEFAULT_REGION}"'
 function __prompt.aws() {
   [ -n "${AWS_PROFILE}${AWS_CONFIG_FILE}${AWS_DEFAULT_REGION}${AWS_SESSION_TOKEN}" ] || return 0
 
-  local _config=${AWS_CONFIG_FILE#*/.aws/}; _config=${_config%/config};
+  local _config=${AWS_CONFIG_FILE#$HOME/.aws/}; _config=${_config%/config};
   #alt: $( sed -E "s|^$HOME/(.aws/)?||; s|/config$||" <<< "$AWS_CONFIG_FILE" )
 
   echo -ne "\n${UL}AWS:${RS} ${FMAG}${_config:---} ${HC}${AWS_PROFILE:---}${RS} / ${FBLE}${HC}${AWS_DEFAULT_REGION:---}${RS}"
@@ -134,6 +134,17 @@ function aws.creds-save() {
 }
 
 
+#TODO remove a profile section
+# printf -v pattern '/^\[(profile )?\s*%s\]/' <name>
+# sed -Ee "$pattern"',/^\[/ {// !d}' -e "${pattern} d" <file>
+#   or
+# sed -Ee "$pattern"',/^\[/ { '"$pattern" 'd; /^\[/ !d }' <file>
+#
+# to print JUST the profile (and any blank or embedded comments
+# sed -n "$pattern"',/^\[/ { /^\[/ !p }'
+
+#TODO aws.configure() that wraps the native and does RECURSION (-R) to look for stuff, like region and mfa or role.
+
 function aws.profile() {
   local profile region
 
@@ -219,9 +230,10 @@ EOF
 }
 
 
-# Config directive 'source_profile' can NOT be chained to  pick up MFA
+# Config directive 'source_profile' can NOT be chained to pick up MFA
 # if role_arn defined, CLI will transparently invoke 'assume-role' and prompt for TOTP
 # and saves session creds to cli/cache.
+#
 #{
 #  "Credentials": {
 #    "AccessKeyId": "ASIAB",
@@ -233,17 +245,6 @@ EOF
 #    "AssumedRoleId": "AROAQ7JR2ZADYF5UFG4GB:botocore-session-1697069671",
 #    "Arn": "arn:aws-us-gov:sts::067213379591:assumed-role/deployer/botocore-session-1697069671"
 #  }
-#
-# so any profile that requires MFA must explicitely call it out? even if duplicated over and over? yes
-
-#TODO aws.configure() that wraps the native and does RECURSION (-R) to look for stuff, like region and mfa or role.
-# delete a profile via:
-#   sed  '/^\[profile deployer/,/^\[/ { /^\[profile deployer/ d; /^\[/ !d; }' $AWS_CONFIG_FILE
-# but ^^^ will eat any commented out lines unlucky enough to be within the range
-# similar for credentials file just without the keyword 'profile'
-# to print JUST the profile (and any blank or embedded comments
-# sed -n '/^\[profile deployer/,/^\[/ { /^\[/ !p; }' or
-# sed '/^\[profile deployer/,/^\[/ !d' | sed '$d'
 
 
 function iam.session-load() {
