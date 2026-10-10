@@ -23,12 +23,13 @@ done
 addPath -P -k PATH "$HOME"/{,.local/}bin
 
 case $- in
-  # a bit redundant since whole point of .bashrc is 'interactive' use...
+  # redundant since whole point of .bashrc is 'interactive' use...
   *i*)  for f in "$HOME"/{.bashrc{.local,_{os,3rdparty,*}},.aliases{,.local}}; do
           [ -s "$f" ] || continue
-          grep -qE '\.swp$|\.bak$|~$' - -- <<< "$f" && continue
+          # bypass backup file suffixes  
+          grep -qE '\.(swp|bak)|~)$' - -- <<< "$f" && continue
 
-          source "$f" || { log.error "RC=$? during $f, aborting."; pause; return 1; }
+          source "$f" || { log.error "RC=$? during $f, aborting."; return 1; }
         done
 
         eval "`dircolors -b - < <( cat .dir{,_}colors{,.local} 2>/dev/null )`" || true
