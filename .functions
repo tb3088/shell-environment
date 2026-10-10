@@ -8,6 +8,9 @@ shopt -s extglob
 #pedant, ref: http://mywiki.wooledge.org/glob#nullglob
 shopt -u nullglob
 
+#truthiness
+declare -i __true=1 __false=0 __success=0 __fail=1 __invalid=2
+readonly __true __false __success __fail __invalid
 
 #NOTE 'command' is unsuitable since returns aliases and functions
 function __WHICH() { \which "$@"; }
@@ -19,6 +22,7 @@ function __JQR() { \jq "$@" | \jq --exit-status --raw-output '. // empty'; }
 
 #TODO call it merge1 since it ONLY handles 1st level
 function __JQ_merge() { \jq --slurp 'reduce .[] as $item ({}; . * $item)'; }
+
 #TODO merge_deep(er)
 #jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)'
 #TODO when key1: valu1, key1: valu2 -> key1: [ valu1, valu2 ]
@@ -117,18 +121,21 @@ function __is_type() {  #WARN! selective short-circuit on first error
     )
 
   local keyword=${FUNCNAME[1]#is_}
-  local DEBUG QUIET=1 VERBOSE
+  local -i DEBUG QUIET=$__true VERBOSE
   local -i use_stdin=0
 
   local -i OPTIND; local opt OPTARG long_opts=()
   while getopts ':hdqvS' opt; do
     case "$opt" in
-      d)    DEBUG=1 ;;
-      q)    QUIET=1 ;;
-      v)    VERBOSE=1;;
-      S)    use_stdin=1 ;;
+      d)    DEBUG=$__true ;;
+      q)    QUIET=$__true ;;
+      v)    VERBOSE=$__true ;;
+      S)    use_stdin=$__true ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
+
+#FIXME missing dash in pattern? look at other implementations for '--'
+#look at ssh-wrapper.sh for methodology
      \-)    [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
             long_opts+=( "--${OPTARG}" )
             (( OPTIND++ ))
@@ -141,8 +148,9 @@ EOF
     esac
   done
   shift $((OPTIND - 1))
-  #FIXME naked '-' implies problem with getopts
-  [ "$1" != '-' ] || { log.error "naked dash (-) argument"; return; }
+
+  # naked '-' implies problem with getopts, or treat as stdin mode?
+  [ "$1" != '-' ] || { log.error "naked dash (-) argument"; return $__fail; }
 
   # evaluate verbosity flags
   [ -n "${DEBUG}${VERBOSE}" ] && unset QUIET
@@ -154,9 +162,9 @@ EOF
   case "${keyword:?}" in
     dir*|file)
             while (( $# )); do
-              if [[ "$keyword" =~ dir ]]; then [ -d "$1" ]; else [ -f "$1" ]; fi || {
-                  [ -n "$QUIET" ] || log.error "$keyword not found ($1)"
-                  return 1
+              [[ "$keyword" =~ dir ]] && [ -d "$1" ] || [ -f "$1" ] || {
+                  (( $QUIET )) || log.error "$keyword not found ($1)"
+                  return $__fail
                 }
               ${VERBOSE:+echo "$1"}
               shift
@@ -229,46 +237,58 @@ for f in array dir{,ectory} exec{,utable} file hash integer string function read
   eval function is_$f '{ __is_type "$@"; }'
 done
 
+function is_number() { grep -qE '^(0x[0-9a-f]+|0o[0-7]+|[0-9]+\.?[0-9]+)$' - -- <<< "$@"; }
+#alt: while (( $# )); do [[ "$1" =~ <regex above> ]] || return; done
 
-#alt: grep -qE '^0x[0-9a-f]+$|[0-9]+$' - -- <<< "$@"
-function is_number() { to_int $1 &>/dev/null; }
-
+#FIXME? move to .functions_os
 function is_interactive() { [[ $- =~ i ]] || tty -s || [ -n "`tset -q`" ]; }
 
+function is_var() { [[ "$1" =~ ^[a-zA-Z]+[0-9_]* ]]; }
+
 function is_true() {
-  [ $# -gt 0 ] || return
-  local -n nref 
+  [ -n "$1" ] || return
+  local pattern='^(Y(ES)?|T(RUE)?)$'
 
   while (( $# )); do
-    [ -n "$1" ] && nref=$1 || return
-
-    (( $1 )) || (( $nref )) ||
-        [[ "${1,,}" =~ ^[yt] ]] || [[ "${nref,,}" =~ ^[yt] ]] || return
-    shift
+    (( $1 )) || [[ "${1^^}" =~ $pattern ]] || {
+        is_var "$1" && $FUNCNAME "${!1}"
+      } || return
+	shift
   done
 }
+
 
 #DO NOT MOVE!!
 # Properly belongs in '.functions_os[.cygwin]' but required for various
 # scripts and helper functions. Leaving it here simplifies includes.
-function is_windows() {
-  if [ $# -eq 0 ]; then
-    [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]]
-    return
-  fi
 
-  local bin
-  #WARN multi-arg supported, but not recommended
+function is_windows_file() {
+  local bin match=$__false ops=( 'echo' 'readlink -e' 'is_exec -v' )
+
   while (( $# )); do
-    for op in 'echo' 'readlink -e' 'is_exec -v'; do
+    [ -n "$1" ] || { shift; continue; }
+
+    for op in "${ops[@]}"; do
       bin=`$op "$1"` || continue
-      if [ "${bin:0:1}" = '/' ]; then break; fi
+      [ "${bin:0:1}" = '/' ] && { match=$__true; break; }
     done
-    [[ "${bin:?}" =~ ^/cygdrive ]] || { file "$bin" | grep -q 'for MS Windows'; } || return
+    (( $match )) || return
+
+    #NOTE cygwin/msys binaries satisfy `file|grep` test which is false positive
+    # assumes standard install location
+    [[ "`cygpath -w "$1"`" =~ cygwin|msys ]] && return $__fail
+
+	file "$bin" | grep -q 'for MS Windows' || return
     shift
   done
 }
-readonly -f is_windows
+
+function is_windows() {
+  [[ "${OSTYPE:-`uname -o`}" =~ [cC]ygwin|[mM]sys ]] || return
+
+  #FIXME legacy invocation
+  is_windows_file "$@"
+}
 
 
 function __is_markup() {
@@ -298,7 +318,7 @@ function __is_markup() {
   #ref: https://unix.stackexchange.com/a/254747, signal(7)
   [ $rc -eq 0 -o $? -eq 141 ] || {
       [ -n "${VERBOSE}" ] && log.error "invalid input" "$1"
-      return 1
+      return $__fail
     }
 }
 
@@ -389,14 +409,14 @@ function copy_function() {
 
     #log.* may not be defined as yet
     if declare -F "$target" &>/dev/null; then
-      if [ ${overwrite:-0} -eq 1 ]; then
-#        is_readonly "$target" && {
-#            [ -n "$VERBOSE" ] && log "ERROR\toverwrite read-only function ($target)"
-#            return 1
-#          }
-        [ -n "$VERBOSE" ] && log "NOTICE\toverwriting function ($target)"
+      if (( ${overwrite:-$__false} )); then
+        if is_readonly "$target"; then
+          (( "$VERBOSE" )) && log "ERROR\toverwrite read-only function ($target)"
+          return $__fail
+        fi
+        (( "$VERBOSE" )) && log "NOTICE\toverwriting function ($target)"
       else
-        [ -n "$VERBOSE" ] && log "WARN\tfunction exits ($target)"
+        (( "$VERBOSE" )) && log "WARN\tfunction exits ($target)"
         continue
       fi
     fi
@@ -411,7 +431,9 @@ function rename_function() {
   copy_function "${1:?source}" "${2:?dest}" && unset -f "$1"
 }
 
+#TODO multiple functions use quoting or escaping mechanism. unify?
 
+#TODO move to .functions_os
 function convert_path() {
   # Usage: caller use 'while read()' one entry per line for whitespace
   # management if providing multiple arguments, assign to array, or set --
@@ -432,21 +454,26 @@ function convert_path() {
   # or requesting Windows output from Windows input yields garbage. But
   # Unix output from Unix input is usually benign.
 
-  local QUOTE quote flags=()
+  local QUOTE quote= flags=()
   # do NOT default quote character
-  [ -n "${QUOTE+X}" ] && : ${quote=$QUOTE}
+  [ -n "${QUOTE+X}" ] && quote=$QUOTE
 
-  local -i escape=1 abs=0
-  local -i OPTIND; local opt OPTARG long_opts=()
+  local -i escape=$__true abs=$__false
+  local -i OPTIND
+  local opt OPTARG long_opts=()
   while getopts ':haEeq:t:-:' opt; do
     case "$opt" in
-      a)    abs=1 ;;
-      E)    escape=0 ;;
-      e)    escape=1 ;;     # pedant
-      q)    quote=$OPTARG; readonly escape=0 ;;
+      a)    abs=$__true ;;
+      E)    escape=$__false ;;
+      e)    escape=$__true ;;     # pedant
+#TODO	  Q)	quote=1 ;;
+      q)    quote=$OPTARG
+            readonly escape=$__false ;;
       t)    long_opts+=( '--type' "$OPTARG" ) ;;
 
      \-)    long_opts+=( "--${OPTARG}" )
+#FIXME why no (( OPTIND++ )) or checking for just '--' which indicates end of opts?
+# is getopts smart enough to handle that?
             [[ "$OPTARG" =~ \= ]] || log.notice "assuming flag (--${OPTARG})"
             ;;
       :)    log.error "missing argument (${!OPTIND})" ;;&
@@ -462,17 +489,17 @@ EOF
   local _format="${quote}%s${quote}\n"
   (( ${escape:-0} )) && _format='%q\n'
 
-  local -a items=()
+  local -a items=(); local item
   while (( $# )); do
     # blank strings cause errors, but emit to preserve arg count and order
     [ -n "$1" ] || { items+=( '' ); shift; continue; }
-    local item=$1
+    item=
 
-    (( ${abs:-0} )) && item=`readlink -m "$item"`
-    is_windows && item=`cygpath "${long_opts[@]}" -- "$item"`
-    items+=( "$item" ); shift
+    (( $abs )) && item=`readlink -m "$1"`
+    is_windows && item=`cygpath "${long_opts[@]}" -- "$1"`
+    items+=( "${item:-$1}" )
+	shift
   done
-
   printf "$_format" "${items[@]}"
 }
 #TODO
@@ -483,7 +510,7 @@ EOF
 #FIXME keys/values use same nref detection
 function array.contains() {
 #Usage: <array|hash> value(s) ...
-  (( $# > 1 )) || return 2
+  (( $# > 1 )) || return $__invalid
 
   local -n object
   is_nref "${1:?array}" && eval object="\${!$1}" || object=$1
@@ -507,8 +534,8 @@ function array.contains() {
 
 function string.contains() {
 #Usage: <object> substring(s) ...
-  local DELIM delim op flags=()
-  [ -n "${DELIM+X}" ] && : ${delim=$DELIM}
+  local DELIM delim= op flags=()
+  [ -n "${DELIM+X}" ] && delim=$DELIM
 
   local -i skip_blank=0 use_stdin=0 reverse_arg=0 exact=0
 #FIXME rename flags to grep_opts, and use assoc array of flags([use_stdin]=0 etc
@@ -544,14 +571,15 @@ Usage: $FUNCNAME [ options ] <object> [ substring ... ]
   -R        reverse argument order; <substring> [ object ... ]
 ...
 _EOF
+            return 2
     esac
   done
   shift $((OPTIND - 1))
 
 #TODO handle nref like array.contains()
   local object=${1:?object}; shift
-  (( $# )) || { [ ${use_stdin:-0} -eq 1 ] && set -- $( < /dev/stdin ); }
-  (( $# )) || return 2
+  (( $# )) || { (( ${use_stdin:-0} )) && set -- $( < /dev/stdin ); }
+  (( $# )) || { log.error "insufficient arguments"; return $__invalid; }
 
   function __compare() {
     case "$op" in
@@ -566,9 +594,7 @@ _EOF
 
   while read sub; do
     # empty string is 'false' but can be ignored
-    if [ -z "$sub" ]; then
-      (( $skip_blank )) && continue || return
-    fi
+	[ -n "$sub" ] || { (( $skip_blank )) && continue; } || return
 
     (( $reverse_arg )) && { object=$sub; sub=$_save; }
 
@@ -581,28 +607,31 @@ _EOF
       (( ${#delim} > 1 )) && _IFS=$'§'  #shell: Alt+0167, vi: C-v+167
       IFS=$_IFS read -r -a tokens <<< "${object//$delim/$_IFS}"
 
-      local -i found=0
+      local -i found=$__false
       for tok in "${tokens[@]}"; do
-        __compare "$sub" "$tok" && { found=1; break; }
+        __compare "$sub" "$tok" && { found=$__true; break; }
       done
       (( $found ))
 
-    else __compare "$sub" "$object"; fi || return
+    else
+      __compare "$sub" "$object"
+	fi || return
   done < <( IFS=$'\n'; echo "$*" )
 }
 
 #TODO define is_substring() to call above
 
-
+#TODO move to .functions_os
 function addPath() {
   # pre-/post-pend [multiple] elements to an environment variable
   # but does NOT sub-divide arguments!
 
 #TODO use string.join() to handle arbitrary delimiters and whitespace
 #TODO? rewrite callers as PATH=`DELIM=$delim string.join -v <variable> $1 $2`
-  local PREPEND k
+  local PREPEND k= DELIM delim=
   local -i prepend=0 use_stdin=0
   [ -n "${PREPEND+X}" ] && prepend=1
+  [ -n "${DELIM+X}" ] && delim="$DELIM"
 
   local -i OPTIND; local OPTARG opt
   while getopts ':hk:PS' opt; do
@@ -695,15 +724,15 @@ function rmPath() {
 
 function string.trim() (
   shopt -s extglob
-  set -- "${@##*([[:space:]])}"; set -- "${@%%*([[:space:]])}"
+  set -- "${@##*([[:space:]])}"
+  set -- "${@%%*([[:space:]])}"
   shopt -u extglob
   local IFS=$'\n'; echo "$*"
 )
 
 
-#TODO? if QUOTE=1 use printf '%q'
 function string.join() {
-  local DELIM delim QUOTE quote ESCAPE escape
+  local DELIM delim= QUOTE quote= ESCAPE escape=
   [ -n "${DELIM+X}" ] && delim=$DELIM
   [ -n "${QUOTE+X}" ] && quote=$QUOTE
   [ -n "${ESCAPE+X}" ] && escape=$ESCAPE
@@ -712,10 +741,11 @@ function string.join() {
   local -i OPTIND; local opt OPTARG
   while getopts ':d:e:lq:uz' opt; do
     case "$opt" in
-      d)    delim=$OPTARG ;;
-      e)    escape=$OPTARG ;;
+      d)    delim="$OPTARG" ;;
+      e)    escape="$OPTARG" ;;
       l)    flags+=l ;;     # to_lower
-      q)    quote=$OPTARG ;;
+#TODO      Q)    quote=1 ;;
+      q)    quote="$OPTARG" ;;
       u)    flags+=u ;;     # to_upper
       z)    flags+=z ;;     # remove blanks
 
@@ -732,13 +762,12 @@ _EOF
   done
   shift $((OPTIND - 1))
 
-  # legacy invocation
-  [ -n "${delim+X}" ] || { delim=$1; shift; }
-
+#TODO [ "$quote" = 1 ] or -Q sets quote_mode=true
   # escape whitespace, or even delimiter (rare)
   if [ -n "$quote" ]; then
     [ "$quote" = "$delim" ] && escape=$delim
   else
+#FIXME doesn't handle '\t'
     : ${escape=${IFS:0:1}}
   fi
 
@@ -755,12 +784,15 @@ _EOF
   [ -n "$escape" ] && set -- "${@//$escape/\\$escape}"
   #WARN unintended side-effects
   [[ "${escape}${delim}${quote}" =~ [a-zA-Z] && "$flags" =~ l|u ]] &&
-      log.warn "case change poses severe risk (escape=${escape}, delim=${delim}, quote=${quote})"
+      log.warn "Changing case poses SEVERE risk (escape=${escape}, delim=${delim}, quote=${quote})"
+
   [[ "$flags" =~ l ]] && set -- "${@,,}"
   [[ "$flags" =~ u ]] && set -- "${@^^}"
 
-  # shortcut
+  # shortcut; delim=$'\n|\t' has length=1
   [ -z "$quote" -a ${#delim} -le 1 ] && { local IFS=$delim; echo "$*"; return; }
+
+#TODO? if $quote=1 use printf '%q'
 
   # prepend each word during expansion
   local IFS=
@@ -817,6 +849,7 @@ _EOF
 }
 function to_bool() { bool_to_int -r "$1"; }
 
+#NOTE invalid values (eg. text) emit '0' so check $?
 function to_int() { printf '%d\n' "${@:-X}" 2>/dev/null; }
 
 #function __GETOPT() {
