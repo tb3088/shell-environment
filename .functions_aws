@@ -446,7 +446,7 @@ function aws.describe() {
             shift
             # specify tags
             #TODO escape special chars like '[],' also use aws.format_tags()
-            [ $# -ge 1 ] && filter+=( Name=key,Values=`string.join -zd ',' "$@"` )
+            [ $# -ge 1 ] && filter+=( "Name=key,Values=`string.join -zd ',' "$@"`" )
 
             function pre_process() {
               __JQ '.[] | { (.ResourceId): { (.Key): (.Value) } }' | __JQ_merge
