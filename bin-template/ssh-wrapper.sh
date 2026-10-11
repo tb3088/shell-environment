@@ -147,9 +147,14 @@ function _ssh() (
   esac
   : "${cmd:=SSH}"
 
-  # save known env since 'screen' discards
-  local -a save_env=(); local -u var
+  # needed for L:166,178
+  shopt -u failglob
+  shopt -s nullglob
 
+  # save known env since 'screen' discards
+  local -a save_env=()
+
+  local -u var
   while read var; do
     # ignore some SSH_* handled below
     [[ "$var" =~ SSH_?(IDENTITY|CONFIG|KNOWN_HOSTS|OPTS|VERBOSE) ]] && continue
@@ -158,7 +163,6 @@ function _ssh() (
     while read item; do
       save_env+=( "$item" )
     done < <( printf '%s=%q\n' "$var" "${!var}" )
-
   done < <( eval printf '%s\\n' DEBUG VERBOSE REGION "\${!${CLOUD}_\*}" "${!SSH_*}" )
 
   # path-munge if Cygwin|WSL and binary is Windows
@@ -171,8 +175,9 @@ function _ssh() (
   fi
 
   # Add keys to agent
-  local ssh_keys=( "${SSH_CONFIG%/*}"/{id_*,*.pem} )
-  ssh-add "${SSH_VERBOSE}" "${ssh_keys[@]%/*.pub}"
+  read -a ssh_keys < <( printf '%q\n' "${SSH_CONFIG%/*}"/{id_*,*.pem} | grep -v '\.pub$' | uniq )
+  #alt: `set -- .../{id_*,*.pem}; printf '%s\n' "${@%.pub}" | uniq`
+  ssh-add ${SSH_VERBOSE:-'-q'} "${ssh_keys[@]}"
 
   ${DEBUG:+ runv} "${_screen[@]}" /bin/env "${save_env[@]}" "${!cmd}" ${SSH_VERBOSE:-'-q'} \
       ${SSH_IDENTITY:+'-i' "$SSH_IDENTITY"} \
@@ -181,18 +186,20 @@ function _ssh() (
       ${SSH_LOGFILE:+'-E' "$SSH_LOGFILE"} \
       "${SSH_OPTS[@]}" "$@"
 
-  # Remove requires .pub files to exist
-  ssh-add "${SSH_VERBOSE}" -d "${ssh_keys[@]%/*.pub}"
+  # Remove requires .pub files to exist?
+  ssh-add -d ${SSH_VERBOSE:-'-q'} "${ssh_keys[@]}"
 )
 
 
 function init_logs() {
   local -i level=0
 
-  [ -n "$VERBOSE" ] && level=1
-  [ -n "$DEBUG" ] && : $((level++))
+  for flag in VERBOSE DEBUG; do
+    if [ -n "${!flag}" ]; then (( "${!flag}" )) && level+=${!flag} || : $((level++)); fi
+  done
 
-  (( $level )) && SSH_VERBOSE="-$( eval printf '%.0sv' "{1..$level}" )"
+  # shellcheck disable=SC2051
+  (( $level )) && SSH_VERBOSE="-$( printf '%.0sv' {1..$level} )"
 }
 
 
