@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2034
 
 # Usage:
 #
@@ -32,7 +33,6 @@ function genlist() {
   local prefix file stub combo=() item1=$1 item2=$2
   : "${file:?}"
 
-  # shellcheck disable=SC2034
   local -a delims=( '/' '.' '_' '-' )
 
   # bulk-set D* from defaults if unset
@@ -45,7 +45,6 @@ function genlist() {
   else stub='${b}$c'; fi
 
   for b in "$item1" "$item2" ''; do
-    # shellcheck disable=SC2034
     for c in "$item2" "$item1" ''; do
       # short-circuit blank or overlap
       if [ -n "${b}$c" ]; then [ "$b" != "$c" ] || continue; else unset stub; fi
@@ -166,7 +165,6 @@ function _ssh() (
   if is_windows "${!cmd}"; then
     for v in SSH_{CONFIG,IDENTITY,KNOWN_HOSTS,LOGFILE}; do
       declare -n vref=$v
-      # shellcheck disable=SC2034
       vref=`convert_path "${!v}"`      # silently ignore empty value
     done
 	unset vref
@@ -210,7 +208,6 @@ BASEDIR="${_progdir%/bin}"
 [ "${_prog%.*}" = "${_PROG%.*}" ] || PROFILE=$_prog
 
 
-# shellcheck disable=SC2034
 declare -a SSH_OPTS=() long_opts=()
 declare -i OPTIND; declare opt OPTARG
 while getopts ':qE:F:i:' opt; do
@@ -263,7 +260,7 @@ init_logs
 for p in SSH SCP SFTP SCREEN; do
   declare -n pp=$p
 
-  # shellcheck disable=SC2034       # don't clobber even if empty
+  # don't clobber even if empty
   [ -n "${!p+X}" ] || pp=$( is_exec -v "${p,,}" )
   log.info "$p == ${!p-undefined}"
 done
