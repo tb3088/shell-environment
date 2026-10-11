@@ -24,7 +24,7 @@ done
 
 #TODO? detect inside SSH session; [ -n "$SSH_CONNECTION" ]
 if [ -z "$SSH_AUTH_SOCK" ] && type -p ssh-agent >/dev/null; then
-  eval `ssh-agent ${SSH_AGENT_ARGS:-${BASH_VERSION:+'-s'}}`
+  eval `ssh-agent "${SSH_AGENT_ARGS[@]}" ${BASH_VERSION:+'-s'}`
   [ -n "$SSH_AGENT_PID" ] && trap "kill -9 $SSH_AGENT_PID" EXIT
   #alt: ssh-add -k for trap statement
 fi
