@@ -8,10 +8,12 @@
 #
 # symlink to this wrapper will automatically set PROFILE
 
+# shellcheck disable=SC1090
 source ~/.functions
+
 is_function log runv || {
   >&2 echo -e "ERROR\tmissing essential functions (log, runv)"
-  exit $__invalid
+  exit "${__invalid:-2}"
 }
 
 
@@ -27,25 +29,26 @@ function genlist() {
   # config_REGION                   config_PROFILE
   # [.ssh/]config
 
-  declare -a delims=( '/' '.' '_' '-' )    # flavor to taste
-  # bulk-set D* variable from defaults if not already set
-  for i in D{1..3}; do [ -n "${!i:+X}" ] || declare -n $i=delims ; done
-
-  local prefix stub combo=()
-  local item1=$1 item2=$2
-  local file
+  local prefix file stub combo=() item1=$1 item2=$2
   : "${file:?}"
 
+  # shellcheck disable=SC2034
+  local -a delims=( '/' '.' '_' '-' )
+
+  # bulk-set D* from defaults if unset
+  for i in D{1..3}; do [ -n "${!i+X}" ] || declare -n "$i"=delims ; done
+
+  # shellcheck disable=SC2016
   if [ -n "$item1" ] && [ -n "$item2" ]; then
     combo=( '${c}${d3}$b' '${b}${d3}$c' )
     stub='${b}${d2}$c'
   else stub='${b}$c'; fi
 
   for b in "$item1" "$item2" ''; do
+    # shellcheck disable=SC2034
     for c in "$item2" "$item1" ''; do
       # short-circuit blank or overlap
-      if [ -n "${b}$c" ]; then [ "$b" != "$c" ] || continue
-      else unset stub; fi
+      if [ -n "${b}$c" ]; then [ "$b" != "$c" ] || continue; else unset stub; fi
 
       for d1 in "${D1[@]}"; do
         for d2 in "${D2[@]}"; do
@@ -76,7 +79,7 @@ function genlist() {
 }
 
 
-function _ssh() {
+function _ssh() (
   # environment:
   #   SCREEN            disable use of screen if set+empty
   #   PROFILE, REGION   stub used to compute SSH_CONFIG
@@ -86,7 +89,6 @@ function _ssh() {
   #   SSH_VERBOSE       specific to SSH verbosity and not script body
   #   SSH_OPTS          options intercepted by getopts()
 
-  local file
   # check that SSH_* files exist if already defined
   for v in SSH_{CONFIG,KNOWN_HOSTS} ; do
     [ -n "${!v}" ] || continue
@@ -109,9 +111,10 @@ function _ssh() {
           prefix=$dir file='config' genlist "$REGION" "$PROFILE"
         done
       )
-
-    : "${SSH_CONFIG:?not found}"
   fi
+
+  # pedant
+  : ${SSH_CONFIG:?not found}
 
   # UserKnownHostFile must be carefully defined inside 'config' if
   # SSH binary is Windoze. Cygwin/Linux et. al. should be safe.
@@ -138,44 +141,51 @@ function _ssh() {
     edit)   cmd=${EDITOR:-vi}
             ;&
     # assumes operation against either of SSH_CONFIG or SSH_KNOWN_HOSTS
-    echo|file) [ -f "$2" ] || declare -n file=${2:-SSH_CONFIG}
+    'echo'|'file')
+            [ -f "$2" ] || declare -n file=${2:-SSH_CONFIG}
             ${cmd:-$1} "${file:-$2}"
             return
   esac
   : "${cmd:=SSH}"
 
   # save known env since 'screen' discards
-  local -a env=(); local -u var
+  local -a save_env=(); local -u var
+
   while read var; do
     # ignore some SSH_* handled below
     [[ "$var" =~ SSH_?(IDENTITY|CONFIG|KNOWN_HOSTS|OPTS|VERBOSE) ]] && continue
     [ -n "${!var+X}" ] || continue
 
-    env+=( `printf '%s=%q\n' "$var" "${!var}"` )
+    while read item; do
+      save_env+=( "$item" )
+    done < <( printf '%s=%q\n' "$var" "${!var}" )
+
   done < <( eval printf '%s\\n' DEBUG VERBOSE REGION "\${!${CLOUD}_\*}" "${!SSH_*}" )
 
   # path-munge if Cygwin|WSL and binary is Windows
   if is_windows "${!cmd}"; then
     for v in SSH_{CONFIG,IDENTITY,KNOWN_HOSTS,LOGFILE}; do
       declare -n vref=$v
+      # shellcheck disable=SC2034
       vref=`convert_path "${!v}"`      # silently ignore empty value
     done
 	unset vref
   fi
 
   # Add keys to agent
-  ssh-add "${SSH_CONFIG%/*}"/{id_*,*.pem} 2>/dev/null
+  local ssh_keys=( "${SSH_CONFIG%/*}"/{id_*,*.pem} )
+  ssh-add "${SSH_VERBOSE}" "${ssh_keys[@]%/*.pub}"
 
-  ${DEBUG:+ runv} "${_screen[@]}" /bin/env "${env[@]}" "${!cmd}" ${SSH_VERBOSE:-'-q'} \
+  ${DEBUG:+ runv} "${_screen[@]}" /bin/env "${save_env[@]}" "${!cmd}" ${SSH_VERBOSE:-'-q'} \
       ${SSH_IDENTITY:+'-i' "$SSH_IDENTITY"} \
       ${SSH_CONFIG:+'-F' "$SSH_CONFIG"} \
       ${SSH_KNOWN_HOSTS:+'-o' UserKnownHostsFile="$SSH_KNOWN_HOSTS"} \
       ${SSH_LOGFILE:+'-E' "$SSH_LOGFILE"} \
       "${SSH_OPTS[@]}" "$@"
 
-  # Remove keys requires .pub files exist
-  ssh-add -d "${SSH_CONFIG%/*}"/{id_*,*.pem} 2>/dev/null
-}
+  # Remove requires .pub files to exist
+  ssh-add "${SSH_VERBOSE}" -d "${ssh_keys[@]%/*.pub}"
+)
 
 
 function init_logs() {
@@ -184,15 +194,15 @@ function init_logs() {
   [ -n "$VERBOSE" ] && level=1
   [ -n "$DEBUG" ] && : $((level++))
 
-  [ $level -ge 1 ] && SSH_VERBOSE="-`eval printf '%.0sv' "{1..$level}"`"
+  (( $level )) && SSH_VERBOSE="-$( eval printf '%.0sv' "{1..$level}" )"
 }
 
 
 #--- main ---
 
-_prog="${BASH_SOURCE##*/}"
-_progdir=$( cd "`dirname "$BASH_SOURCE"`" && pwd )
-_PROG=`readlink -e "$BASH_SOURCE"` || log.error "broken link ($BASH_SOURCE)"
+_prog="${BASH_SOURCE[0]##*/}"
+_progdir=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+_PROG=$( readlink -e "${BASH_SOURCE[0]}" ) || log.error "broken link (${BASH_SOURCE[0]})"
 _PROGDIR="${_PROG%/*}"
 _PROG="${_PROG##*/}"
 BASEDIR="${_progdir%/bin}"
@@ -200,6 +210,7 @@ BASEDIR="${_progdir%/bin}"
 [ "${_prog%.*}" = "${_PROG%.*}" ] || PROFILE=$_prog
 
 
+# shellcheck disable=SC2034
 declare -a SSH_OPTS=() long_opts=()
 declare -i OPTIND; declare opt OPTARG
 while getopts ':qE:F:i:' opt; do
@@ -242,6 +253,7 @@ while getopts ':qE:F:i:' opt; do
 done
 shift $((OPTIND-1))
 
+
 [ -n "$1" ] || RC=2 log.error 'insufficient arguments'
 [ -n "$SSH_CONFIG" ] && unset PROFILE
 
@@ -251,10 +263,11 @@ init_logs
 for p in SSH SCP SFTP SCREEN; do
   declare -n pp=$p
 
-  # don't clobber even if empty
-  [ -n "${!p+X}" ] || pp=`VERBOSE=1 is_exec "${p,,}"`
+  # shellcheck disable=SC2034       # don't clobber even if empty
+  [ -n "${!p+X}" ] || pp=$( is_exec -v "${p,,}" )
   log.info "$p == ${!p-undefined}"
 done
+unset -n pp
 
 
 # There be DRAGONS!
@@ -275,11 +288,11 @@ done
 [ -n "${!AWS_*}" ] && CLOUD=aws
 
 if [ -n "$CLOUD" ]; then
+  #NOTE do NOT override PROFILE
   cloud_prefix=
 
-  #TODO?  source ~/.functions_$CLOUD || exit
-  #NOTE do NOT override PROFILE
   case "$CLOUD" in
+    #TODO?  source ~/.functions_$CLOUD || exit
     #TODO? run `aws config show`
     aws)    declare -n REGION=${CLOUD^^}_REGION
             [ -s "$AWS_CONFIG_FILE" ] && : ${cloud_prefix:=${AWS_CONFIG_FILE%/*}}
@@ -290,6 +303,7 @@ if [ -n "$CLOUD" ]; then
   # don't duplicate search
   [ "$BASEDIR" != "${cloud_prefix}" ] &&
       SEARCH_DIRS=( "${cloud_prefix}" "${SEARCH_DIRS[@]}" )
+
   unset cloud_prefix
 fi
 
