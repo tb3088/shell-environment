@@ -4,17 +4,20 @@
 #------------------
 
 set -o pipefail
+
+#NOTE shopts reset inside scripts - no inheritance from parent shell
 shopt -s extglob
-#pedant, ref: http://mywiki.wooledge.org/glob#nullglob
-shopt -u nullglob
+
+#ref: http://mywiki.wooledge.org/glob#nullglob
+shopt -s nullglob
 
 #truthiness
-declare -i __true=1 __false=0 __success=0 __fail=1 __invalid=2
-readonly __true __false __success __fail __invalid
+declare -i __TRUE=1 __FALSE=0 __SUCCESS=0 __FAIL=1 __INVALID=2
+readonly __TRUE __FALSE __SUCCESS __FAIL __INVALID
 
 #NOTE 'command' is unsuitable since returns aliases and functions
-function __WHICH() { \which "$@"; }
-function __READLINK() { \readlink ${VERBOSE:+ -v} "$@"; }
+function __WHICH() { \which --skip-alias --skip-functions "$@"; }
+function __READLINK() { \readlink ${DEBUG:+'-v'} --canonicalize "$@"; }
 
 #function __YQ() { \yq ??? "$@"; }
 function __JQ() { \jq --exit-status "$@"; }
@@ -85,13 +88,14 @@ function confirm() {
 
 # mimic 'set -x' and send STDERR to file
 function runv() {
-  local indent=`printf '%.0s+' {1..$SHLVL}`
-  #TODO wrap arguments in " for easy copy+paste
-  >&2 printf '%s %s\n' "$indent" "$*"
+  local indent=$( printf '%.0s+' {1..$SHLVL} )
+
+  >&2 printf '%s %q\n' "$indent" "$*"
 
   # set to <blank> is insufficient
-  ${NOOP:+return 0}
+  [ -n "${NOOP:+X}" ] && return 0
 
+#FIXME use expand_dvq()? or at least (( $var >= 1 ))
   if [ `to_int $DEBUG` -gt 1 -o `to_int $TRACE` -eq 1 ]; then
     local command=${FUNCNAME[1]:-$1}
     local outf=`mktemp -t "${command##*/}-XXXXXXXX"`
@@ -121,16 +125,16 @@ function __is_type() {  #WARN! selective short-circuit on first error
     )
 
   local keyword=${FUNCNAME[1]#is_}
-  local -i DEBUG QUIET=$__true VERBOSE
+  local -i DEBUG QUIET=$__TRUE VERBOSE
   local -i use_stdin=0
 
   local -i OPTIND; local opt OPTARG long_opts=()
   while getopts ':hdqvS' opt; do
     case "$opt" in
-      d)    DEBUG=$__true ;;
-      q)    QUIET=$__true ;;
-      v)    VERBOSE=$__true ;;
-      S)    use_stdin=$__true ;;
+      d)    DEBUG=$__TRUE ;;
+      q)    QUIET=$__TRUE ;;
+      v)    VERBOSE=$__TRUE ;;
+      S)    use_stdin=$__TRUE ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
 
@@ -150,7 +154,7 @@ EOF
   shift $((OPTIND - 1))
 
   # naked '-' implies problem with getopts, or treat as stdin mode?
-  [ "$1" != '-' ] || { log.error "naked dash (-) argument"; return $__fail; }
+  [ "$1" != '-' ] || { log.error "naked dash (-) argument"; return $__FAIL; }
 
   # evaluate verbosity flags
   [ -n "${DEBUG}${VERBOSE}" ] && unset QUIET
@@ -164,7 +168,7 @@ EOF
             while (( $# )); do
               [[ "$keyword" =~ dir ]] && [ -d "$1" ] || [ -f "$1" ] || {
                   (( $QUIET )) || log.error "$keyword not found ($1)"
-                  return $__fail
+                  return $__FAIL
                 }
               ${VERBOSE:+echo "$1"}
               shift
@@ -253,7 +257,7 @@ function is_true() {
     (( $1 )) || [[ "${1^^}" =~ $pattern ]] || {
         is_var "$1" && $FUNCNAME "${!1}"
       } || return
-	shift
+    shift
   done
 }
 
@@ -263,22 +267,22 @@ function is_true() {
 # scripts and helper functions. Leaving it here simplifies includes.
 
 function is_windows_file() {
-  local bin match=$__false ops=( 'echo' 'readlink -e' 'is_exec -v' )
+  local bin match=$__FALSE ops=( 'echo' 'readlink -e' 'is_exec -v' )
 
   while (( $# )); do
     [ -n "$1" ] || { shift; continue; }
 
     for op in "${ops[@]}"; do
       bin=`$op "$1"` || continue
-      [ "${bin:0:1}" = '/' ] && { match=$__true; break; }
+      [ "${bin:0:1}" = '/' ] && { match=$__TRUE; break; }
     done
     (( $match )) || return
 
     #NOTE cygwin/msys binaries satisfy `file|grep` test which is false positive
     # assumes standard install location
-    [[ "`cygpath -w "$1"`" =~ cygwin|msys ]] && return $__fail
+    [[ "`cygpath -w "$1"`" =~ cygwin|msys ]] && return $__FAIL
 
-	file "$bin" | grep -q 'for MS Windows' || return
+    file "$bin" | grep -q 'for MS Windows' || return
     shift
   done
 }
@@ -318,7 +322,7 @@ function __is_markup() {
   #ref: https://unix.stackexchange.com/a/254747, signal(7)
   [ $rc -eq 0 -o $? -eq 141 ] || {
       [ -n "${VERBOSE}" ] && log.error "invalid input" "$1"
-      return $__fail
+      return $__FAIL
     }
 }
 
@@ -409,10 +413,10 @@ function copy_function() {
 
     #log.* may not be defined as yet
     if declare -F "$target" &>/dev/null; then
-      if (( ${overwrite:-$__false} )); then
+      if (( ${overwrite:-$__FALSE} )); then
         if is_readonly "$target"; then
           (( "$VERBOSE" )) && log "ERROR\toverwrite read-only function ($target)"
-          return $__fail
+          return $__FAIL
         fi
         (( "$VERBOSE" )) && log "NOTICE\toverwriting function ($target)"
       else
@@ -458,17 +462,17 @@ function convert_path() {
   # do NOT default quote character
   [ -n "${QUOTE+X}" ] && quote=$QUOTE
 
-  local -i escape=$__true abs=$__false
+  local -i escape=$__TRUE abs=$__FALSE
   local -i OPTIND
   local opt OPTARG long_opts=()
   while getopts ':haEeq:t:-:' opt; do
     case "$opt" in
-      a)    abs=$__true ;;
-      E)    escape=$__false ;;
-      e)    escape=$__true ;;     # pedant
-#TODO	  Q)	quote=1 ;;
+      a)    abs=$__TRUE ;;
+      E)    escape=$__FALSE ;;
+      e)    escape=$__TRUE ;;     # pedant
+#TODO     Q)    quote=1 ;;
       q)    quote=$OPTARG
-            readonly escape=$__false ;;
+            readonly escape=$__FALSE ;;
       t)    long_opts+=( '--type' "$OPTARG" ) ;;
 
      \-)    long_opts+=( "--${OPTARG}" )
@@ -498,7 +502,7 @@ EOF
     (( $abs )) && item=`readlink -m "$1"`
     is_windows && item=`cygpath "${long_opts[@]}" -- "$1"`
     items+=( "${item:-$1}" )
-	shift
+    shift
   done
   printf "$_format" "${items[@]}"
 }
@@ -510,7 +514,7 @@ EOF
 #FIXME keys/values use same nref detection
 function array.contains() {
 #Usage: <array|hash> value(s) ...
-  (( $# > 1 )) || return $__invalid
+  (( $# > 1 )) || return $__INVALID
 
   local -n object
   is_nref "${1:?array}" && eval object="\${!$1}" || object=$1
@@ -579,7 +583,7 @@ _EOF
 #TODO handle nref like array.contains()
   local object=${1:?object}; shift
   (( $# )) || { (( ${use_stdin:-0} )) && set -- $( < /dev/stdin ); }
-  (( $# )) || { log.error "insufficient arguments"; return $__invalid; }
+  (( $# )) || { log.error "insufficient arguments"; return $__INVALID; }
 
   function __compare() {
     case "$op" in
@@ -594,7 +598,7 @@ _EOF
 
   while read sub; do
     # empty string is 'false' but can be ignored
-	[ -n "$sub" ] || { (( $skip_blank )) && continue; } || return
+    [ -n "$sub" ] || { (( $skip_blank )) && continue; } || return
 
     (( $reverse_arg )) && { object=$sub; sub=$_save; }
 
@@ -607,15 +611,15 @@ _EOF
       (( ${#delim} > 1 )) && _IFS=$'§'  #shell: Alt+0167, vi: C-v+167
       IFS=$_IFS read -r -a tokens <<< "${object//$delim/$_IFS}"
 
-      local -i found=$__false
+      local -i found=$__FALSE
       for tok in "${tokens[@]}"; do
-        __compare "$sub" "$tok" && { found=$__true; break; }
+        __compare "$sub" "$tok" && { found=$__TRUE; break; }
       done
       (( $found ))
 
     else
       __compare "$sub" "$object"
-	fi || return
+    fi || return
   done < <( IFS=$'\n'; echo "$*" )
 }
 
@@ -1063,7 +1067,7 @@ EOF
     # @k expands to <k v> ...
     # @* notation only works with 'echo'
     \@[LUkQ]|,,|^^|'')
-			: ;;
+            : ;;
     ?(to_)@(upper|lower))
             is_function "$format" || return ;&
     *)      use_pipe=1
@@ -1163,20 +1167,30 @@ function hash.print() { array.print -k "$@"; }
 #TODO array.append|.add|.insert, prune|delete, length, equal, is_empty, clear, dedup, index_of|key,
 
 
+# key off often used 'special' variables
 function expand_dvq() {
-  # standardize behavior keyed off of 'special' variables
-  local v level
+  >&2 echo "ERROR\tnot implemented"
+  return 2
+
+  local -l char
+  local -i level arg=$1
 
   for v in DEBUG VERBOSE QUIET NOOP; do
-    local -n vref="__${v,,}"
-    c=${v:0:1}; c=${c,,}
+    [ -z "${!v}" ] || (( "${!v}" == 0 )) && continue
 
-    # String compare is more robust than Integer
-    [ -z "${!v}" -o "${!v}" = "0" ] && continue
+    char=${v:0:1}
+    case "$v" in
+      QUIET|NOOP) # max level=1
+                :
+                ;;
+        # ssh and many others max=3
+    esac
+##    local -n vref="_${v,,}"
 
-    level=$(printf "%d" ${!v} 2>/dev/null) || level=1
-    # {1..$level} doesn't work without eval
-    eval printf -v vref "%0.s$c" {1..$level}
+    level=`to_int ${!v}`
+
+    # {1..$level} doesn't work without eval or sub-shell
+    eval printf -v vref "%0.s${char}" {1..$level}
     # prepend '-' (dash)
     vref="-${vref}"
   done
@@ -1187,72 +1201,75 @@ function expand_dvq() {
 #  ['sections'] list of headings, ['keys'] list of LHS terms
 #  [<section><delim><key>]=<value>
 function inifile_to_hash() {
-  local delim filename
+>&2 echo "incomplete/not implemented"; return 1
+
+  local delim= filename=
+  local -n vref
   
   local -i OPTIND; local opt OPTARG
-  while getopts ':Df:' opt; do
+  while getopts ':Df:V:' opt; do
     case "$opt" in
       D)    delim=$OPTARG ;;
       f)    filename=$OPTARG; is_file -v "$filename" || return ;;
+      V)    vref=$OPTARG ;;
 
       :)    log.error "missing argument (${!OPTIND})" ;;&
      \?)    log.error "unsupported option (-$OPTARG)" ;&
       h|*)  >&2 cat << EOF
 Usage: $FUNCNAME ...
 EOF
-            return 2
+            return $__INVALID
     esac
   done
   shift $((OPTIND - 1))
 
-  : ${delim='/'}		#alt: '.' or ':' are probably safe
+  : ${delim='/'}        #alt: '.' or ':' are probably safe
   local -a sections=() keys=()
-  local -A inihash=()	#[<section><delim><key]=value
+  local -A inihash=()   #[<section><delim><key]=value
 
   local section='_global_' key value
   while read line; do
-    # skip comments
-#    [[ "$line"  =~ ^[[:space:]]*(;|#) ]] && continue
-
     line=`string.trim "$line"`
+
     if [[ "$line" =~ ^\[(.*)\]$ ]]; then
       section=${BASH_REMATCH[1]}
       sections+=( "$section" )
     elif [[ "$line" =~ ^([^=]+)=([^=]+)$ ]]; then
-	  _key=`string.trim "${BASH_REMATCH[1]}"`
-	  _value=`string.trim "${BASH_REMATCH[2]}"`
+      _key=`string.trim "${BASH_REMATCH[1]}"`
+      _value=`string.trim "${BASH_REMATCH[2]}"`
     fi
+  done < <( grep -vE '^[[:space:]]*(;|#)' "${filename:-/dev/stdin}" )
 
-  done < "${filename:-/dev/stdin}"
 #FIXME
-#reduce sections and keys to unique; echo $* | sort -u; use 'read -a <array>' or just go to in-place assignment?
+#reduce sections and keys to unique; echo $* | sort -u; use 'readarray -t <array>' or just go to in-place assignment?
   local IFS=$'\n'; printf '%s=%q\n' `echo "${hash[*]@k}"`
 }
 #alt: python3 -c "import configparser; c = configparser.ConfigParser(); c.read('parameters.ini'); print(c['parameters.ini']['database_version'])"
 
-# simple implementation
+
 function log() {
-  local -u level; local -i offset=1
-  local prefix=
+  local -u level=${FUNCNAME}
+  local -i offset=1
+  local prefix dv_prefix=
 
-  if [ "${FUNCNAME[1]:0:4}" = 'log.' ]; then
-    : ${level:=${FUNCNAME[1]:4}}
-    ((offset++))
-  fi
-  [ -n "${FUNCNAME[offset]}" ] && [ -n "${DEBUG}${VERBOSE}" ] &&
-      prefix="[${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]}]  "
+  [[ "${FUNCNAME[offset]:0:4}" == 'log.' ]] && {
+      level=${FUNCNAME[offset]:4}; ((offset++)); }
 
-  # fall-back to stdin
-  if [ -z "${1+X}" ] || [ "$1" = '-' ]; then
+  [[ -n "${DEBUG}${VERBOSE}" ]] && [[ -n "${FUNCNAME[offset]}" ]] &&
+      dv_prefix="[ ${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]} ]"
+
+  # fallback to stdin
+  if (($# == 0)) || [[ "$1" == '-' ]]; then
+    #TODO? use read() with prompt
     local IFS=$'\n'; set -- $(</dev/stdin)
   fi
 
-  while (( $# )); do
-    >&2 echo -e "${level:-LOG}\t${prefix}$1"; shift
+  while (($#)); do
+    >&2 echo -e "${level-+}\t${dv_prefix:-${prefix:+$prefix  }$1}"
+    [[ -n "$dv_prefix" ]] && { unset dv_prefix level; continue; }
+    shift
   done
 }
-
-function log.none() { return; }
 
 function log.debug() {
   local -i rc=$?
@@ -1264,13 +1281,6 @@ function log.debug() {
 function log.info() {
   local -i rc=$?
 
-  [ -n "${VERBOSE}${DEBUG}" ] && log "$@"
-  return ${RC:-$rc}
-}
-
-function log.notice() {
-  local -i rc=$?
-
   log "$@"
   return ${RC:-$rc}
 }
@@ -1279,17 +1289,17 @@ function log.error() {
   local -i rc=$?
 
   log "$@"
-  { [ ${SHLVL:-1} -eq 1 ] || [ -z "$BASH_SOURCE" ]; } && return ${RC:-$rc}
+  ((${SHLVL:-1} == 1)) || [[ -z "$BASH_SOURCE" ]] && return ${RC:-$rc}
 
   __continue || exit ${RC:-$rc}
 }
 
 copy_function log.debug log.trace
-copy_function log.notice log.warn
+copy_function log.info log.{notice,warn}
 
 
 # more efficient
-if is_exec -q pv; then
+if is_exec pv; then
   function cat() { pv -q "$@"; }
 fi
 

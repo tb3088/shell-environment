@@ -1,7 +1,7 @@
 #----- header -----
 [ "${0##*/}" != "${BASH_SOURCE##*/}" ] || { >&2 echo -e "ERROR\tfile must be sourced ($0)"; return 2; }
 #------------------
-#
+
 # Usage:
 #   1) symlink: .bashrc_mvn -> .bashrc_3rdparty
 #   2) args: .bashrc_3rdparty <pkg> ...
@@ -12,12 +12,14 @@ function 3rdparty.add_program() {
 
   # define search spec here to utilize current environment
   # brace expansion must be single-quoted inside parameter expansion
+  #
+  #NOTE array populated on invocation so variable escape not needed
   declare -A software_map=(
       ['aws']=${AWSCLI:-aws'{cli,}{v,}'$AWS_VERSION}
       ['session-manager-plugin']=$AWS_SM_PLUGIN
       ['mvn']=apache-maven
       ['npm']=nodejs
-      ['java']=${JAVA_HOME:-j'{re,dk,se}{-,}'$JAVA_VERSION}
+      ['java']=${JAVA_HOME:-'j{re,dk,se}{-,}'$JAVA_VERSION}
       ['puppet']=${PUPPET_BASE:-puppetlabs}
       ['go']=${GOROOT:-go'{,lang}{-,}'$GO_VERSION}
       ['ruby']=${RUBY_BASE:-ruby'{-,}'$RUBY_VERSION}
@@ -29,37 +31,39 @@ function 3rdparty.add_program() {
   is_exec "$pkg" && return
 
   function bin_search() (
-      # process embedded glob patterns
-      shopt -u failglob
-      shopt -s globstar nullglob
-      local IFS=$'\n'
+    # process embedded glob patterns
+    shopt -u failglob
+    shopt -s globstar nullglob
+    local IFS=$'\n'
 
-      while read tld; do
-        while read mid; do
-          [ -n "$mid" ] || continue
-          prefix=`convert_path -E "${tld:+$tld/}${mid#$tld}"`
+    while read tld; do
+      while read mid; do
+        [ -n "$mid" ] || continue
+        prefix=`convert_path -E "${tld:+$tld/}${mid#$tld}"`
 
-          #WARN don't use /**/ since VERY slow
-          for exe in "${prefix}"*/{bin/,}"$pkg"; do
-            [ -x "$exe" ] && { echo "$exe"; return; }
-          done
-        # lazy eval w/ brace expansion
-        done < <( eval printf '%q\\n' "${software_map[$pkg]}" )
-      done < <(
-          printf '%q\n' '' /opt /usr/local \
-              "${USERPROFILE:-$HOME}" "$LOCALAPPDATA" "$PROGRAMFILES"
-        )
+        #WARN don't use /**/ since VERY slow
+        for exe in "${prefix}"*/{bin/,}"$pkg"; do
+          [ -x "$exe" ] && { echo "$exe"; return; }
+        done
+      # lazy eval w/ brace expansion
+      done < <( eval printf '%q\\n' "${software_map[$pkg]}" )
+    done < <( printf '%q\n' '' /opt /usr/local \
+          "${USERPROFILE:-$HOME}" "$LOCALAPPDATA" "$PROGRAMFILES" )
+
+    return $__FAIL
   )
 
-  local pbin=`bin_search "$pkg"`
+  local pbin
+  pbin=`bin_search "$pkg"` || log.warn "software package not found ($pkg)"
 
-  if [ -n "$pbin" ]; then addPath "${pbin%/*}"
-  else log.warn "software package not found ($pkg)"; fi
+  addPath "${pbin%/*}"
 }
 
 
+#----- main -----
+
 # short-circuit inside screen or sub-shell
-[ -z "$STY" -a ${SHLVL:-1} -eq 1 ] || return 0
+[ -z "$STY" ] && [ ${SHLVL:-1} -eq 1 ] || return 0
 
 
 declare -i _rc=0
@@ -71,13 +75,14 @@ while (( $# )); do
   shift
 done
 
+# shellcheck disable=SC2128
 j=`readlink -e "$BASH_SOURCE"`
 k="${BASH_SOURCE#*.bashrc_}"
 [ "${j#*.bashrc_}" != "$k" ] && { 3rdparty.add_program "$k"; _rc=$?; }
-unset j k
+unset j k _rc
 
 # always return 0 when whole-file
-return 0    # ${__rc}
+return 0
 
 
 # vim: expandtab:ts=4:sw=4
