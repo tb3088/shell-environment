@@ -1205,7 +1205,7 @@ function inifile_to_hash() {
 
   local delim= filename=
   local -n vref
-  
+
   local -i OPTIND; local opt OPTARG
   while getopts ':Df:V:' opt; do
     case "$opt" in
@@ -1259,15 +1259,20 @@ function log() {
       dv_prefix="[ ${BASH_SOURCE[offset]##*/}:${FUNCNAME[offset]} ]"
 
   # fallback to stdin
-  if (($# == 0)) || [[ "$1" == '-' ]]; then
-    #TODO? use read() with prompt
-    local IFS=$'\n'; set -- $(</dev/stdin)
-  fi
+  (($#)) || set -- '-'
 
   while (($#)); do
-    >&2 echo -e "${level-+}\t${dv_prefix:-${prefix:+$prefix  }$1}"
-    [[ -n "$dv_prefix" ]] && { unset dv_prefix level; continue; }
-    shift
+    # continuation mode where STDIN can inject further items
+    if [[ "$1" == '-' ]]; then
+      #TODO? use read() with prompt
+      local IFS=$'\n'; set -- $(</dev/stdin)
+    else
+      >&2 echo -e "${level-+}\t${dv_prefix:-${prefix:+$prefix  }$1}"
+      [[ -n "$dv_prefix" ]] && { unset dv_prefix level; continue; }
+
+      # n>1 uses '+' to denote continuation
+      unset level; shift
+    fi
   done
 }
 
