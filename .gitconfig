@@ -44,6 +44,8 @@
 [credential "https://dev.azure.com"]
         useHttpPath = true
 
-# rely on 'auto' mode. maybe set to '' if behind web proxy
-#[credential "https://github.com"]
-#        provider = github
+[credential "https://github.com"]
+        provider = github
+
+[credential]
+	autoDetectTimeout = -1
