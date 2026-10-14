@@ -6,7 +6,7 @@
 # long_opts are dangerous since AWSCLI doesn't obey '--long_opt=value' pattern
 #
 #ref: https://docs.aws.amazon.com/cli/latest/reference/index.html#cli-aws
-__aws_bin=`is_exec -v "${AWS_BIN:-aws${AWS_VERSION}}"` || return 127
+__aws_bin=`is_exec -p "${AWS_BIN:-aws${AWS_VERSION}}"` || return 127
 declare -i __aws_windows=0
 
 #TODO theoretically windows OR cygwin could invoke a WSL binary
