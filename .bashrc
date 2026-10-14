@@ -1,6 +1,15 @@
 # To pick up the latest recommended .bashrc content,
 # look in /etc/defaults/etc/skel/.bashrc
 
+source /etc/bash.bashrc
+
+# only CYGWIN system files omit PATH to self unless '--login' (/etc/profile)
+if [[ "${OSTYPE}" =~ [cC]ygwin|[mM]sys ]]; then
+  [[ "$PATH" == */usr/bin* ]] || PATH=/usr/local/bin:/usr/bin:$PATH
+fi
+
+export LANG=$(locale -uU)        # 'en_US.utf8'
+
 # Disable core files
 ulimit -S -c 0
 
@@ -11,12 +20,13 @@ for dir in "$HOME"/{,.local/}bin; do
   [ -d "$dir" ] && PATH="${dir}:$PATH"
 done
 
+shopt -u sourcepath
+shopt -s nullglob
+
 #FIXME deliberate typo to exclude logging
+#TODO short-cut when invoked by screen? use SHLVL>1 or check BASH_SOURCE[1]?
 case $- in
-  *i*)  shopt -u sourcepath
-        shopt -s nullglob
-        for f in "$HOME"/.functions{,.local,_loging}; do
-        #,.bashrc{.local,_{os,3rdparty,*}},.aliases{,.local}}; do
+  *i*)  for f in "$HOME"/{.functions{,.local,_loging},.bashrc{.local,_{os,3rdparty,*}},.aliases{,.local}}; do
           [ -s "$f" ] || continue
           # bypass backup file suffixes
           grep -qE '\.(swp|bak)|~)$' - -- <<< "$f" && continue
@@ -57,10 +67,13 @@ case $- in
         # use VI mode on command-line (else emacs)
         #ref: http://www.catonmat.net/download/bash-vi-editing-mode-cheat-sheet.txt
         #set -o vi
-        ;;
-  *c*)  unset SSH_AGENT
-esac
 
+        cd "$HOME"
+        ;;
+
+# still have to invoke as `bash -c "source ~/.bashrc; ..."`
+  *c*)  source ~/.functions
+esac
 
 HISTCONTROL="erasedups ignorespace"
 HISTFILESIZE=100

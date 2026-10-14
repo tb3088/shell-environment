@@ -1,5 +1,3 @@
-export LANG='en_US.utf8'
-
 # kill WINDOWS' PATH inheritance, but MUST set in ControlPanel->System->Environment
 # see logic in /etc/profile via CYGWIN_NOWINPATH
 
