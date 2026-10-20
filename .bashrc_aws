@@ -27,7 +27,7 @@ fi
     3rdparty.add_program session-manager-plugin
 
 #TODO just use 'aws shell' instead
-if link=`is_exec -v aws_completer`; then
+if link=`is_exec -p aws_completer`; then
   complete -C `printf '%q' "$link"` aws
 fi
 unset link

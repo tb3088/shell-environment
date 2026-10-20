@@ -48,4 +48,4 @@
         provider = github
 
 [credential]
-	autoDetectTimeout = 5000
+	autoDetectTimeout = -1
