@@ -67,6 +67,10 @@ is_exec -q nslookup && \
 is_exec -q dig && \
   alias myip='dig +short myip.opendns.com @resolver1.opendns.com.'
 
+# reset screen title
+alias sctitle='\printf \\033k%s\\033\\134'
+
+
 return 0
 
 # vim: expandtab:ts=4:sw=4

@@ -1,7 +1,7 @@
 # http://quenenni.domainepublic.net/screenrc.txt
 # http://aperiodic.net/screen/appearance, title_examples
 
-shell ${SHELL}       # ^- makes it a login shell
+#shell ${SHELL}       # ^- makes it a login shell
 shelltitle "$ |shell"
 
 vbell off
@@ -15,6 +15,7 @@ startup_message off
 
 defscrollback 2000
 #defbce on           # clear background
+#defnonblock on
 
 # disable problems with 'cs' inherited from /etc/screenrc
 termcapinfo xterm* cs
@@ -25,8 +26,9 @@ termcapinfo cygwin "ti@:te@"
 #term screen-256color
 
 hardstatus alwayslastline
-hardstatus string "%{gk}%-w%{kg}%50>%n %t%{-}%+w%<"
-#hardstatus string "%{-b gk}%-w%{+b kg}%50>%n %t%{-b gk}%+w"
+#hardstatus string "%{gk}%-w%{kg}%50>%n %t%{-}%+w%<"
+hardstatus string "%-w%50>%{+rb3}*%n %t%{-}%+w%<"
+#hardstatus string "%{-b gk}%-w%50>%{+b kg}%n %t%{-}%+w%<"
 #hardstatus string "%?%{yk}%-Lw%?%{wb}%n*%f %t%?(%u)%?%?%{yk}%+Lw%?"
 #hardstatus string "%-Lw%{= BW}%50>%n%f* %t%{-}%+Lw%<"
 #hardstatus string "%{.bW} %-w%{.rW}%n %t%{-}%+w %=%{..} %l | @%H | %D %c:%s %d.%m.%Y"
@@ -51,12 +53,19 @@ bind }
 bind ^}
 #-------
 
-bind ^r eval "source $HOME/.screenrc"
+# use ctrl-Oh or F11 instead of Ctrl-a for command mode
+escape ^Oo
+
+# use command-mode ':' "source $HOME/.screenrc"
+#alt: bind ^r eval "source $HOME/.screenrc"
 bind j focus down
 bind k focus up
 bind h focus left
 bind l focus right
 bind ' ' windowlist -b
+#reset window title
+bind t title
+bind T title ""
 
 # do 'ctrl-v <keypress>' in normal window to see escape codes
 bindkey "^[[1;3D" prev  # ALT-left arrow
@@ -69,9 +78,6 @@ bindkey -k k2 select 2
 bindkey -k k3 select 3
 bindkey -k k4 select 4
 
-# use ctrl-Oh or F11 instead of Ctrl-a for command mode
-escape ^Oo
-
 # ALT-minus/equals to enter COPY mode
 bindkey "^[-" copy
 bindkey "^[=" copy
@@ -79,8 +85,8 @@ bindkey "^[=" copy
 bindkey "^[[5~" eval copy 'stuff ^u'
 bindkey "^[[6~" eval copy 'stuff ^d'
 
-bufferfile "$HOME/.screen_exchange"
-# alt: /tmp/screen-exchange-$PPID
+bufferfile /tmp/.screen_exchange-$PPID
+# was: "$HOME/.screen_exchange"
 
 # Optimize copy/paste in screen for usage within Cygwin
 #bind "^c" writebuf "exec sh -c 'cat $HOME/.screen_exchange | unix2dos > /dev/clipboard'"
