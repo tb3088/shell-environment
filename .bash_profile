@@ -25,7 +25,7 @@ done
 #TODO? detect inside SSH session; [ -n "$SSH_CONNECTION" ]
 if [ -z "$SSH_AUTH_SOCK" ] && type -p ssh-agent >/dev/null; then
   #NOTE if '~/.ssh/' symlinks into Dropbox the socket is unusable
-  eval $( ssh-agent "${SSH_AGENT_ARGS[@]:-'-T'}" ${BASH_VERSION:+'-s'} )
+  eval $( ssh-agent "${SSH_AGENT_ARGS[@]:--T}" ${BASH_VERSION:+'-s'} )
 
   [ -n "$SSH_AGENT_PID" ] && trap "kill -9 $SSH_AGENT_PID" EXIT
   #alt: ssh-add -k for trap statement
